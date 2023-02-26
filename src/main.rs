@@ -112,8 +112,7 @@ async fn main() {
 
     let token = if cfg!(debug_assertions) { env::var("DEBUG_DISCORD_TOKEN").unwrap() } else { env::var("DISCORD_TOKEN").unwrap() };
 
-    let intents = GatewayIntents::non_privileged()
-        | GatewayIntents::GUILD_MESSAGES
+    let intents = GatewayIntents::GUILD_MESSAGES
         | GatewayIntents::MESSAGE_CONTENT
         | GatewayIntents::GUILD_WEBHOOKS;
 
