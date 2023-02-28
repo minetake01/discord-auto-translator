@@ -24,7 +24,7 @@ impl EventHandler for Handler {
         let url_re = Regex::new(r"((https?://)[^\s]+)").unwrap();
         let urls: Vec<_> = url_re.find_iter(&msg.content).map(|mat| mat.as_str()).collect();
         for (index, url) in urls.iter().enumerate() {
-            let tag = format!("<u>{}</u>", index);
+            let tag = format!("<u id=\"{}\"></u>", index);
             msg_content = msg_content.replacen(url, &tag, 1);
         }
         
@@ -46,7 +46,7 @@ impl EventHandler for Handler {
             // タグをURLに置換
             let mut translated_msg = response.translations[0].text.clone();
             for (index, url) in urls.iter().enumerate() {
-                let tag = format!("<u>{}</u>", index);
+                let tag = format!("<u id=\"{}\"></u>", index);
                 translated_msg = translated_msg.replacen(&tag, url, 1);
             }
 
