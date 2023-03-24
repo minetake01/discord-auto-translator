@@ -6,9 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+thiserror= "1"
 dotenv = "0.15.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.7.2"
 regex = "1"
-serenity = { version = "0.11", default-features = false, features = ["client", "cache", "gateway", "rustls_backend", "model"] }
+poise = { version = "0.5.2", features = ["cache"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-deepl = "0.4.0"
+deepl = "0.4.1"
 url = "2.3.1"
