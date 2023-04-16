@@ -1,0 +1,7 @@
+translate: 
+  failure: 
+    new: 
+      lang: "指定できる言語は次の通りです。`%{langs}`"
+  success: 
+    new: 
+      title: 翻訳グループを作成しました
