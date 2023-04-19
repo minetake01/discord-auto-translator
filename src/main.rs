@@ -23,6 +23,8 @@ pub enum AppError {
     DeepL(#[from] deepl::Error),
     #[error("{0}")]
     SeaOrm(#[from] sea_orm::error::DbErr),
+    #[error("not found database entity")]
+	NotFoundEntity,
 }
 
 pub struct Data {
