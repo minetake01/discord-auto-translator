@@ -26,7 +26,6 @@ pub enum AppError {
 }
 
 pub struct Data {
-    pub deepl: DeepLApi,
     pub db: DatabaseConnection,
 }
 
@@ -34,11 +33,8 @@ async fn setup(ctx: &Context, _ready: &Ready, framework: &Framework<Data, AppErr
     //Slash Commandを登録
     poise::builtins::register_globally(&ctx.http, &framework.options().commands).await.unwrap();
 
-    let deepl = DeepLApi::with(&env::var("DEEPL_API_KEY")?).new();
-
     let db = Database::connect("sqlite:./db/database.sqlite").await?;
     Ok(Data{
-        deepl,
         db,
     })
 }
