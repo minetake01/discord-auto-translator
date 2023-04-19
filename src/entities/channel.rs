@@ -7,6 +7,7 @@ pub struct Model {
     pub id: u64,
     pub lang: String,
     pub group_name: String,
+	pub parent_id: Option<u64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
