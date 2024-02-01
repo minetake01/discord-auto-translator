@@ -4,21 +4,42 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "message")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub id: u64,
-    pub translated_id: u64,
-    pub lang: String,
-    pub group_name: String,
+    pub message_id: i64,
+    pub original_message_id: Option<i64>,
+    pub channel_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    #[sea_orm(has_one = "super::translation_group::Entity")]
-    TranslationGroup,
+    #[sea_orm(
+        belongs_to = "Entity",
+        from = "Column::OriginalMessageId",
+        to = "Column::MessageId",
+    )]
+    OriginalMessage,
+    #[sea_orm(
+        belongs_to = "super::channel::Entity",
+        from = "Column::ChannelId",
+        to = "super::channel::Column::ChannelId",
+    )]
+    Channel,
 }
 
-impl Related<super::translation_group::Entity> for Entity {
+pub struct OriginalMessageLink;
+
+impl Linked for OriginalMessageLink {
+    type FromEntity = Entity;
+
+    type ToEntity = Entity;
+
+    fn link(&self) -> Vec<RelationDef> {
+        vec![Relation::OriginalMessage.def()]
+    }
+}
+
+impl Related<super::channel::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::TranslationGroup.def()
+        Relation::Channel.def()
     }
 }
 

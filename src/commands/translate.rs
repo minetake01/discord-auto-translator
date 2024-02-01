@@ -1,68 +1,96 @@
-use poise::{serenity_prelude::{Channel, futures}, futures_util::{Stream, StreamExt}};
+use poise::serenity_prelude::{Channel, CreateWebhook, Role};
+use sea_orm::{ActiveModelTrait, Set};
+use secrecy::ExposeSecret;
 
-use crate::{Data, AppError};
+use crate::{
+    entities::{
+        guild::ActiveModel as GuildActiveModel,
+        translation_group::ActiveModel as GroupActiveModel,
+        channel::ActiveModel as ChannelActiveModel,
+    }, error::CommandError, AppError, Data
+};
 
 type Context<'a> = poise::Context<'a, Data, AppError>;
-
-async fn autocomplete_lang<'a>(
-    _ctx: Context<'_>,
-    partial: &'a str,
-) -> impl Stream<Item = String> + 'a {
-    futures::stream::iter(&["BG", "CS", "DA", "DE", "EL", "EN", "ES", "ET", "FI", "FR", "HU", "ID", "IT", "JA", "KO", "LT", "LV", "NB", "NL", "PL", "PT", "RO", "RU", "SK", "SL", "SV", "TR", "UK", "ZH"])
-        .filter(move |name| futures::future::ready(name.starts_with(partial)))
-        .map(|name| name.to_string())
-}
 
 #[poise::command(
     slash_command,
     hide_in_help,
-    subcommands("new", "info")
+    subcommands("init", "new", "add")
 )]
 pub async fn translate(_: Context<'_>) -> Result<(), AppError> { Ok(()) }
 
-/// Set up automatic translation for this channel.
 #[poise::command(
     slash_command,
-    description_localized("ja", "このチャンネルに自動翻訳を設定します。"),
 )]
-pub async fn new(
+async fn init(
     ctx: Context<'_>,
-    #[description = "Name of the automatic translation group"]
-    #[description_localized("ja", "自動翻訳グループの名前")]
-    group: String,
-    #[description = "Channel language"]
-    #[description_localized("ja", "チャンネルの言語")]
-    #[autocomplete = "autocomplete_lang"]
-    lang: String,
-    #[description = "Channel to create an automatic translation group"]
-    #[description_localized("ja", "自動翻訳グループを作成するチャンネル")]
-    channel: Option<Channel>,
-    #[description = "Whether to automatically create a thread for each language when a thread is created"]
-    #[description_localized("ja", "スレッドが作成された時に、自動で各言語用スレッドを作成するか")]
-    auto_threading: Option<bool>,
-    #[description = "Whether to translate thread titles when automatically creating threads"]
-    #[description_localized("ja", "自動でスレッドを作成する際、スレッドのタイトルを翻訳するか")]
-    translate_title: Option<bool>,
-    #[description = "Whether the BOT reacts on behalf of the target message when a reaction is attached remains uncertain"]
-    #[description_localized("ja", "メッセージにリアクションが付いた時に、翻訳先のメッセージにBOTが代理でリアクションを付けるか")]
-    reaction_proxy: Option<bool>,
+    deepl_key: String,
+    deepl_pro: Option<bool>,
+    admin_role: Option<Role>,
+    ignore_role: Option<Role>,
 ) -> Result<(), AppError> {
+    let db = &ctx.data().db;
+    let guild_id = ctx.guild_id().ok_or(AppError::Command(CommandError::GuildOnly))?;
+
+    let new_guild = GuildActiveModel {
+        guild_id: Set(guild_id.into()),
+        deepl_key: Set(deepl_key),
+        deepl_pro: Set(deepl_pro.unwrap_or(false)),
+        admin_role: Set(admin_role.map(|role| role.id.into())),
+        ignore_role: Set(ignore_role.map(|role| role.id.into())),
+    };
+    new_guild.insert(db).await?;
+
     Ok(())
 }
 
-/// Create a role group and include existing roles.
 #[poise::command(
     slash_command,
-    description_localized("ja", "ロールグループを作成し、既存のロールを含める。"),
 )]
-pub async fn info(
+async fn new(
     ctx: Context<'_>,
-    #[description = "Name of the role group to create"]
-    #[description_localized("ja", "作成するロールグループの名前")]
     name: String,
-    #[description = "Whether to create in flexible mode"]
-    #[description_localized("ja", "フレキシブルモードで作成するかどうか")]
-    flexible: Option<bool>,
+    reaction_agent: Option<bool>,
+    auto_threading: Option<bool>,
+    translate_title: Option<bool>,
 ) -> Result<(), AppError> {
+    let db = &ctx.data().db;
+    let guild_id = ctx.guild_id().ok_or(AppError::Command(CommandError::GuildOnly))?;
+
+    let new_group = GroupActiveModel {
+        guild_id: Set(guild_id.into()),
+        group_name: Set(name),
+        auto_threading: Set(auto_threading.unwrap_or(true)),
+        translate_title: Set(translate_title.unwrap_or(true)),
+        reaction_agent: Set(reaction_agent.unwrap_or(true)),
+    };
+    new_group.insert(db).await?;
+
+    Ok(())
+}
+
+#[poise::command(
+    slash_command,
+)]
+async fn add(
+    ctx: Context<'_>,
+    group_name: String,
+    channel: Channel,
+    lang: String,
+) -> Result<(), AppError> {
+    let db = &ctx.data().db;
+
+    let webhook = channel.id().create_webhook(ctx, CreateWebhook::new("Auto Translator")).await?;
+
+    let new_channel = ChannelActiveModel {
+        channel_id: Set(channel.id().into()),
+        parent_channel_id: Set(None),
+        group_name: Set(group_name),
+        lang: Set(lang),
+        webhook_id: Set(webhook.id.into()),
+        webhook_token: Set(webhook.token.clone().map(|token| token.expose_secret().clone()).unwrap_or_default()),
+    };
+    new_channel.insert(db).await?;
+    
     Ok(())
 }

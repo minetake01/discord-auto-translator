@@ -1,4 +1,4 @@
-pub mod channel;
-pub mod translation_group;
-pub mod message;
 pub mod guild;
+pub mod translation_group;
+pub mod channel;
+pub mod message;
