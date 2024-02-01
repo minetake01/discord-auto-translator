@@ -9,9 +9,9 @@ pub enum CommandError {
 #[derive(thiserror::Error, Debug)]
 pub enum DatabaseModelError {
     #[error("Message ID: {0} does not belong to the channel.")]
-    MessageNotBelongToChannel(u64),
+    MessageNotBelongToChannel(i64),
     #[error("Channel ID: {0} does not belong to the group.")]
-    ChannelNotBelongToGroup(u64),
+    ChannelNotBelongToGroup(i64),
     #[error("Group Name: {0} does not belong to the guild.")]
     GroupNotBelongToGuild(String),
 }

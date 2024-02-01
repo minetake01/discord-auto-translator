@@ -61,7 +61,7 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
     let parent_group = original_parent_channel.find_related(GroupEntity)
         .one(&data.db)
         .await?
-        .ok_or(AppError::DatabaseModel(DatabaseModelError::ChannelNotBelongToGroup(original_parent_id.into())))?;
+        .ok_or(AppError::DatabaseModel(DatabaseModelError::ChannelNotBelongToGroup(original_parent_channel.channel_id)))?;
 
     // 自動スレッド機能が無効の場合は終了
     if !parent_group.auto_threading { return Ok(()) };
