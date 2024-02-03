@@ -4,9 +4,7 @@ use secrecy::ExposeSecret;
 
 use crate::{entities::channel::{Model as ChannelModel, ActiveModel as ChannelActiveModel}, AppError};
 
-/// 必ずWebhookを作成できるチャンネルのモデルを与えてください。
-/// 
-/// スレッドなどはWebhookを作成できないため、panicします。
+/// スレッドの場合は親チャンネルのWebhookが取得されます。
 pub async fn get_webhook(ctx: &Context, db: &DatabaseConnection, channel_model: &ChannelModel) -> Result<Webhook, AppError> {
     match Webhook::from_id_with_token(ctx, channel_model.webhook_id as u64, &channel_model.webhook_token.clone()).await {
         Ok(webhook) => Ok(webhook),
