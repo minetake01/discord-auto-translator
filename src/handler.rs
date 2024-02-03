@@ -4,6 +4,7 @@ mod guild_delete;
 mod channel_delete;
 mod thread_create;
 mod shard_ready;
+mod message;
 
 use poise::{serenity_prelude::{Context, FullEvent}, FrameworkContext};
 
@@ -16,6 +17,7 @@ use self::{
     guild_delete::guild_delete,
     channel_delete::channel_delete,
     thread_create::thread_create,
+    message::message,
 };
 
 pub async fn event_handler<'a>(
@@ -34,7 +36,7 @@ pub async fn event_handler<'a>(
         FullEvent::ThreadCreate { thread } => thread_create(ctx, data, thread).await,
         FullEvent::ThreadUpdate { old, new } => todo!("ThreadUpdate"),
         FullEvent::ThreadDelete { thread, full_thread_data } => todo!("ThreadDelete"),
-        FullEvent::Message { new_message } => todo!("Message"),
+        FullEvent::Message { new_message } => message(ctx, data, new_message).await,
         FullEvent::MessageUpdate { old_if_available, new, event } => todo!("MessageUpdate"),
         FullEvent::MessageDelete { channel_id, deleted_message_id, guild_id } => todo!("MessageDelete"),
         FullEvent::MessageDeleteBulk { channel_id, multiple_deleted_messages_ids, guild_id } => todo!("MessageDeleteBulk"),
