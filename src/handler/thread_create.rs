@@ -127,7 +127,7 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
                 .thread_name(translated_name)
                 .avatar_url(starter_message.author.avatar_url().unwrap_or(starter_message.author.default_avatar_url()))
                 .username(starter_message.author.name.clone());
-            let message = webhook.execute(ctx, true, webhook_builder).await?.ok_or(AppError::Unexpected)?;
+            let message = webhook.execute(ctx, true, webhook_builder).await?.ok_or(AppError::Unexpected)?;  // 送信されたメッセージが取得できない場合はエラー
 
             // DBにスレッドを登録
             let new_channel = ChannelActiveModel {
