@@ -72,10 +72,10 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
 
     // サーバーのDeepLキーを取得（サーバーが見つからない場合はエラー）
     let deepl_key = parent_group.find_related(GuildEntity)
-    .one(&data.db)
-    .await?
-    .ok_or(AppError::DatabaseModel(DatabaseModelError::GroupNotBelongToGuild(parent_group.group_name.clone())))?
-    .deepl_key;
+        .one(&data.db)
+        .await?
+        .ok_or(AppError::DatabaseModel(DatabaseModelError::GroupNotBelongToGuild(parent_group.group_name.clone())))?
+        .deepl_key;
 
     // DBに新しいグループを登録
     let new_group = GroupActiveModel {
@@ -151,15 +151,15 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
     } else {
         let starter_message = original_parent_id.message(ctx, u64::from(thread.id)).await?;
 
-            for siblings_channel in siblings_channels {
-                let target_lang = Lang::try_from(&siblings_channel.lang)?;
+        for siblings_channel in siblings_channels {
+            let target_lang = Lang::try_from(&siblings_channel.lang)?;
 
-                // スレッド名を翻訳
-                let translated_name = translate_text(thread.name.clone(), &source_lang, &target_lang, &deepl_key).await?;
-                let thread_builder = CreateThread::new(translated_name)
-                    .kind(thread.kind)
-                    .auto_archive_duration(original_thread_metadata.auto_archive_duration)
-                    .invitable(original_thread_metadata.invitable);
+            // スレッド名を翻訳
+            let translated_name = translate_text(thread.name.clone(), &source_lang, &target_lang, &deepl_key).await?;
+            let thread_builder = CreateThread::new(translated_name)
+                .kind(thread.kind)
+                .auto_archive_duration(original_thread_metadata.auto_archive_duration)
+                .invitable(original_thread_metadata.invitable);
             
             // スターターメッセージの翻訳先メッセージを取得
             let new_thread = if let Some(siblings_starter_message) = siblings_channel.find_related(MessageEntity)
@@ -173,16 +173,16 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
                         .create_thread(ctx, thread_builder).await?
                 };
 
-                // DBにスレッドを登録
-                let new_channel = ChannelActiveModel {
+            // DBにスレッドを登録
+            let new_channel = ChannelActiveModel {
                 channel_id: Set(new_thread.id.into()),
-                    parent_channel_id: Set(Some(siblings_channel.channel_id.into())),
-                    group_name: Set(thread.id.to_string()),
-                    lang: Set(target_lang.to_string()),
-                    webhook_id: Set(siblings_channel.webhook_id),
-                    webhook_token: Set(siblings_channel.webhook_token),
-                };
-                new_channel.insert(&data.db).await?;
+                parent_channel_id: Set(Some(siblings_channel.channel_id.into())),
+                group_name: Set(thread.id.to_string()),
+                lang: Set(target_lang.to_string()),
+                webhook_id: Set(siblings_channel.webhook_id),
+                webhook_token: Set(siblings_channel.webhook_token),
+            };
+            new_channel.insert(&data.db).await?;
         }
     }
     Ok(())
