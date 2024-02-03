@@ -151,30 +151,31 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
     } else {
         let starter_message = original_parent_id.message(ctx, u64::from(thread.id)).await?;
 
-        if starter_message.kind == MessageType::Regular {
             for siblings_channel in siblings_channels {
                 let target_lang = Lang::try_from(&siblings_channel.lang)?;
 
-                // スターターメッセージの翻訳メッセージを取得
-                let siblings_starter_message = siblings_channel.find_related(MessageEntity)
-                    .filter(MessageColumn::OriginalMessageId.eq(i64::from(starter_message.id)))
-                    .one(&data.db)
-                    .await?
-                    .ok_or(AppError::DatabaseModel(DatabaseModelError::MessageNotBelongToChannel(starter_message.id.into())))?;
-
                 // スレッド名を翻訳
                 let translated_name = translate_text(thread.name.clone(), &source_lang, &target_lang, &deepl_key).await?;
-                // スレッドを作成
                 let thread_builder = CreateThread::new(translated_name)
                     .kind(thread.kind)
                     .auto_archive_duration(original_thread_metadata.auto_archive_duration)
                     .invitable(original_thread_metadata.invitable);
-                let thread = ChannelId::from(siblings_channel.channel_id as u64)
-                    .create_thread_from_message(ctx, siblings_starter_message.message_id as u64, thread_builder).await?;
+            
+            // スターターメッセージの翻訳先メッセージを取得
+            let new_thread = if let Some(siblings_starter_message) = siblings_channel.find_related(MessageEntity)
+                .filter(MessageColumn::OriginalMessageId.eq(i64::from(starter_message.id)))
+                .one(&data.db)
+                .await? {
+                    ChannelId::from(siblings_channel.channel_id as u64)
+                        .create_thread_from_message(ctx, siblings_starter_message.message_id as u64, thread_builder).await?
+                } else {
+                    ChannelId::from(siblings_channel.channel_id as u64)
+                        .create_thread(ctx, thread_builder).await?
+                };
 
                 // DBにスレッドを登録
                 let new_channel = ChannelActiveModel {
-                    channel_id: Set(thread.id.into()),
+                channel_id: Set(new_thread.id.into()),
                     parent_channel_id: Set(Some(siblings_channel.channel_id.into())),
                     group_name: Set(thread.id.to_string()),
                     lang: Set(target_lang.to_string()),
@@ -182,32 +183,6 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
                     webhook_token: Set(siblings_channel.webhook_token),
                 };
                 new_channel.insert(&data.db).await?;
-            }
-        } else {
-            for siblings_channel in siblings_channels {
-                let target_lang = Lang::try_from(&siblings_channel.lang)?;
-
-                // スレッド名を翻訳
-                let translated_name = translate_text(thread.name.clone(), &source_lang, &target_lang, &deepl_key).await?;
-                // スレッドを作成
-                let thread_builder = CreateThread::new(translated_name)
-                    .kind(thread.kind)
-                    .auto_archive_duration(original_thread_metadata.auto_archive_duration)
-                    .invitable(original_thread_metadata.invitable);
-                let thread = ChannelId::from(siblings_channel.channel_id as u64)
-                    .create_thread(ctx, thread_builder).await?;
-
-                // DBにスレッドを登録
-                let new_channel = ChannelActiveModel {
-                    channel_id: Set(thread.id.into()),
-                    parent_channel_id: Set(Some(siblings_channel.channel_id.into())),
-                    group_name: Set(thread.id.to_string()),
-                    lang: Set(target_lang.to_string()),
-                    webhook_id: Set(siblings_channel.webhook_id),
-                    webhook_token: Set(siblings_channel.webhook_token),
-                };
-                new_channel.insert(&data.db).await?;
-            }
         }
     }
     Ok(())
