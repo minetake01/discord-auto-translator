@@ -1,5 +1,5 @@
 use deepl::Lang;
-use poise::serenity_prelude::{ChannelId, ChannelType, Context, CreateThread, Error, GuildChannel, MessageType};
+use poise::serenity_prelude::{ChannelId, ChannelType, Context, CreateThread, Error, GuildChannel};
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, ModelTrait, QueryFilter, Set};
 use secrecy::ExposeSecret;
 
@@ -104,7 +104,9 @@ pub async fn thread_create(ctx: &Context, data: &Data, thread: &GuildChannel) ->
         .all(&data.db)
         .await?;
 
-    if thread.kind == ChannelType::Forum {
+    let Some(original_parent_channel) = original_parent_id.to_channel(ctx).await?.guild() else { return Ok(()) };
+
+    if original_parent_channel.kind == ChannelType::Forum {
         // スレッドの最初のメッセージを取得
         let starter_message = thread.message(ctx, u64::from(thread.id)).await?;
 
