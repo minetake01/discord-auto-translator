@@ -39,3 +39,19 @@ go test ./...
 ```sh
 go build ./cmd/discord-auto-translator
 ```
+
+## Deploy
+
+Deploy to the existing Google Compute Engine VM:
+
+```powershell
+.\deploy\deploy-gce.ps1
+```
+
+For first-time VM setup, run:
+
+```powershell
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+```
+
+`-UploadDb` is available for initial migration, but it is intentionally off by default so production data is not overwritten during normal deploys.
