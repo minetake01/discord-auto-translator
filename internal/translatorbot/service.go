@@ -19,7 +19,7 @@ func NewService(store *Store, discord DiscordAPI, translator Translator) *Servic
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" || strings.TrimSpace(m.Content) == "" {
+	if m.Bot || m.WebhookID != "" || m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
 		return nil
 	}
 	if err := s.handleThreadMessageCreate(ctx, m); err != nil {
@@ -252,7 +252,11 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 			if target.ChannelID == sourceChannelID {
 				continue
 			}
-			threadID, err := s.discord.CreateThread(target.ChannelID, name)
+			translatedName, err := s.translator.Translate(ctx, target.Language, name, nil)
+			if err != nil {
+				return err
+			}
+			threadID, err := s.createTargetThread(ctx, source.GroupID, sourceChannelID, sourceThreadID, target.ChannelID, translatedName)
 			if err != nil {
 				return err
 			}
@@ -266,6 +270,19 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 		}
 	}
 	return nil
+}
+
+func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannelID, sourceThreadID, targetChannelID, name string) (string, error) {
+	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceThreadID)
+	if err != nil {
+		return "", err
+	}
+	for _, link := range links {
+		if link.GroupID == groupID && link.TargetChannelID == targetChannelID {
+			return s.discord.CreateThreadFromMessage(targetChannelID, link.TargetMessageID, name)
+		}
+	}
+	return s.discord.CreateThread(targetChannelID, name)
 }
 
 func findChannel(channels []GroupChannel, id string) *GroupChannel {

@@ -53,4 +53,5 @@ type DiscordMessage struct {
 	WebhookID           string
 	Bot                 bool
 	Edited              bool
+	ThreadSystemMessage bool
 }

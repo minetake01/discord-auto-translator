@@ -21,6 +21,7 @@ type reactionCall struct {
 
 type threadCall struct {
 	channelID string
+	messageID string
 	name      string
 }
 
@@ -52,6 +53,12 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error { retur
 func (f *fakeDiscordAPI) CreateThread(channelID, name string) (threadID string, err error) {
 	f.nextID++
 	f.threads = append(f.threads, threadCall{channelID: channelID, name: name})
+	return fmt.Sprintf("thread-%d", f.nextID), nil
+}
+
+func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
+	f.nextID++
+	f.threads = append(f.threads, threadCall{channelID: channelID, messageID: messageID, name: name})
 	return fmt.Sprintf("thread-%d", f.nextID), nil
 }
 
@@ -124,7 +131,7 @@ func TestReplyQuoteIncludesMentionAndTruncatedFirstLine(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "<@source-user>\n> [en] こんにちは\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] はじめまして！"
+	want := "<@source-user>\n> [en] こんにちは、はじめまして\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] はじめまして！"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -140,7 +147,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
 		t.Fatal(err)
 	}
-	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "topic" {
+	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "[en] topic" {
 		t.Fatalf("unexpected thread sync: %#v", discord.threads)
 	}
 
@@ -156,5 +163,50 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] スレッド本文" {
 		t.Fatalf("unexpected thread message: %#v", got)
+	}
+}
+
+func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "source-msg", "議題"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.name != "[en] 議題" {
+		t.Fatalf("unexpected thread sync: %#v", got)
+	}
+}
+
+func TestHandleMessageCreateSkipsThreadSystemMessage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "thread-system", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "議題", ThreadSystemMessage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("thread system message was translated: %#v", discord.sent)
 	}
 }

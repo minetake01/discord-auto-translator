@@ -47,7 +47,7 @@ func main() {
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			AuthorDisplayName: name, AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
-			WebhookID: m.WebhookID, Bot: m.Author.Bot,
+			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type),
 		})
 		if err != nil {
 			log.Printf("message create sync: %v", err)
@@ -123,4 +123,8 @@ func mentionsReferencedAuthor(m *discordgo.Message, referenced *discordgo.Messag
 		}
 	}
 	return false
+}
+
+func isThreadSystemMessage(t discordgo.MessageType) bool {
+	return t == discordgo.MessageTypeThreadCreated || t == discordgo.MessageTypeThreadStarterMessage
 }

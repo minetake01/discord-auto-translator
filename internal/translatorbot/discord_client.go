@@ -23,6 +23,7 @@ type DiscordAPI interface {
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
 	CreateThread(channelID, name string) (threadID string, err error)
+	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
 }
 
 type WebhookSend struct {
@@ -129,6 +130,14 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 
 func (d DiscordGoAPI) CreateThread(channelID, name string) (string, error) {
 	t, err := d.session.ThreadStart(channelID, name, discordgo.ChannelTypeGuildPublicThread, 1440)
+	if err != nil {
+		return "", err
+	}
+	return t.ID, nil
+}
+
+func (d DiscordGoAPI) CreateThreadFromMessage(channelID, messageID, name string) (string, error) {
+	t, err := d.session.MessageThreadStart(channelID, messageID, name, 1440)
 	if err != nil {
 		return "", err
 	}
