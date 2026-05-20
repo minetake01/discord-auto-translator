@@ -19,7 +19,7 @@ func NewService(store *Store, discord DiscordAPI, translator Translator) *Servic
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" || m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
+	if m.Bot || m.WebhookID != "" || (m.ThreadSystemMessage && !m.ThreadStarterMessage) || strings.TrimSpace(m.Content) == "" {
 		return nil
 	}
 	if err := s.handleThreadMessageCreate(ctx, m); err != nil {
@@ -270,6 +270,44 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 		}
 	}
 	return nil
+}
+
+func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {
+	threads, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
+	if err != nil {
+		return err
+	}
+	for _, thread := range threads {
+		targets, err := s.store.ChannelsInGroup(ctx, guildID, thread.GroupID)
+		if err != nil {
+			return err
+		}
+		target := findChannel(targets, thread.TargetChannelID)
+		if target == nil {
+			continue
+		}
+		translatedName, err := s.translator.Translate(ctx, target.Language, name, nil)
+		if err != nil {
+			return err
+		}
+		if err := s.discord.EditThread(thread.TargetThreadID, translatedName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) error {
+	threads, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
+	if err != nil {
+		return err
+	}
+	for _, thread := range threads {
+		if err := s.discord.DeleteThread(thread.TargetThreadID); err != nil {
+			return err
+		}
+	}
+	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
 }
 
 func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannelID, sourceThreadID, targetChannelID, name string) (string, error) {

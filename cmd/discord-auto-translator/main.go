@@ -47,14 +47,14 @@ func main() {
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			AuthorDisplayName: name, AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
-			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type),
+			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
 		if err != nil {
 			log.Printf("message create sync: %v", err)
 		}
 	})
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageUpdate) {
-		if m.Author == nil || m.Content == "" {
+		if m.Author == nil || m.Content == "" || isThreadSystemMessage(m.Type) {
 			return
 		}
 		err := service.HandleMessageUpdate(context.Background(), translatorbot.DiscordMessage{
@@ -95,6 +95,25 @@ func main() {
 			log.Printf("thread create sync: %v", err)
 		}
 	})
+	dg.AddHandler(func(s *discordgo.Session, t *discordgo.ThreadUpdate) {
+		if t.Channel == nil || t.Name == "" {
+			return
+		}
+		if t.BeforeUpdate != nil && t.BeforeUpdate.Name == t.Name {
+			return
+		}
+		if err := service.SyncThreadUpdate(context.Background(), t.GuildID, t.ID, t.Name); err != nil {
+			log.Printf("thread update sync: %v", err)
+		}
+	})
+	dg.AddHandler(func(s *discordgo.Session, t *discordgo.ThreadDelete) {
+		if t.Channel == nil {
+			return
+		}
+		if err := service.SyncThreadDelete(context.Background(), t.ID); err != nil {
+			log.Printf("thread delete sync: %v", err)
+		}
+	})
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
@@ -127,4 +146,8 @@ func mentionsReferencedAuthor(m *discordgo.Message, referenced *discordgo.Messag
 
 func isThreadSystemMessage(t discordgo.MessageType) bool {
 	return t == discordgo.MessageTypeThreadCreated || t == discordgo.MessageTypeThreadStarterMessage
+}
+
+func isThreadStarterMessage(t discordgo.MessageType) bool {
+	return t == discordgo.MessageTypeThreadStarterMessage
 }

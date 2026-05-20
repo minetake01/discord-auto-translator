@@ -24,6 +24,8 @@ type DiscordAPI interface {
 	UnpinMessage(channelID, messageID string) error
 	CreateThread(channelID, name string) (threadID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
+	EditThread(threadID, name string) error
+	DeleteThread(threadID string) error
 }
 
 type WebhookSend struct {
@@ -142,6 +144,16 @@ func (d DiscordGoAPI) CreateThreadFromMessage(channelID, messageID, name string)
 		return "", err
 	}
 	return t.ID, nil
+}
+
+func (d DiscordGoAPI) EditThread(threadID, name string) error {
+	_, err := d.session.ChannelEdit(threadID, &discordgo.ChannelEdit{Name: name})
+	return err
+}
+
+func (d DiscordGoAPI) DeleteThread(threadID string) error {
+	_, err := d.session.ChannelDelete(threadID)
+	return err
 }
 
 func AvatarWithLanguageBadge(ctx context.Context, avatarURL, language string) string {

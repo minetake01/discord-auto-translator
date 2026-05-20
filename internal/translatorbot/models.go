@@ -41,17 +41,18 @@ type ThreadLink struct {
 }
 
 type DiscordMessage struct {
-	ID                  string
-	ChannelID           string
-	GuildID             string
-	AuthorID            string
-	AuthorDisplayName   string
-	AuthorAvatarURL     string
-	Content             string
-	ReferencedMessageID string
-	MentionAuthor       bool
-	WebhookID           string
-	Bot                 bool
-	Edited              bool
-	ThreadSystemMessage bool
+	ID                   string
+	ChannelID            string
+	GuildID              string
+	AuthorID             string
+	AuthorDisplayName    string
+	AuthorAvatarURL      string
+	Content              string
+	ReferencedMessageID  string
+	MentionAuthor        bool
+	WebhookID            string
+	Bot                  bool
+	Edited               bool
+	ThreadSystemMessage  bool
+	ThreadStarterMessage bool
 }

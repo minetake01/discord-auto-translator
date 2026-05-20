@@ -341,15 +341,11 @@ func (s *Store) SaveThreadLink(ctx context.Context, l ThreadLink) error {
 }
 
 func (s *Store) ThreadTargets(ctx context.Context, threadID string) ([]ThreadLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT group_id,source_thread_id,source_channel_id,target_thread_id,target_channel_id,target_language FROM thread_links WHERE source_thread_id=?`, threadID)
+	peers, err := s.SourceThreadTargets(ctx, threadID)
 	if err != nil {
 		return nil, err
 	}
-	peers, err := scanThreadLinks(rows)
-	if err != nil {
-		return nil, err
-	}
-	rows, err = s.db.QueryContext(ctx, `SELECT group_id,source_thread_id,source_channel_id,target_thread_id,target_channel_id,target_language FROM thread_links WHERE target_thread_id=?`, threadID)
+	rows, err := s.db.QueryContext(ctx, `SELECT group_id,source_thread_id,source_channel_id,target_thread_id,target_channel_id,target_language FROM thread_links WHERE target_thread_id=?`, threadID)
 	if err != nil {
 		return nil, err
 	}
@@ -386,6 +382,14 @@ func (s *Store) ThreadTargets(ctx context.Context, threadID string) ([]ThreadLin
 	return peers, nil
 }
 
+func (s *Store) SourceThreadTargets(ctx context.Context, threadID string) ([]ThreadLink, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT group_id,source_thread_id,source_channel_id,target_thread_id,target_channel_id,target_language FROM thread_links WHERE source_thread_id=?`, threadID)
+	if err != nil {
+		return nil, err
+	}
+	return scanThreadLinks(rows)
+}
+
 func (s *Store) ThreadParentChannel(ctx context.Context, groupID, threadID string) (string, bool, error) {
 	row := s.db.QueryRowContext(ctx, `SELECT target_channel_id FROM thread_links WHERE group_id=? AND target_thread_id=? LIMIT 1`, groupID, threadID)
 	var channelID string
@@ -405,6 +409,11 @@ func (s *Store) ThreadParentChannel(ctx context.Context, groupID, threadID strin
 		return "", false, err
 	}
 	return channelID, true, nil
+}
+
+func (s *Store) DeleteThreadLinks(ctx context.Context, threadID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM thread_links WHERE source_thread_id=? OR target_thread_id=?`, threadID, threadID)
+	return err
 }
 
 func scanThreadLinks(rows *sql.Rows) ([]ThreadLink, error) {
