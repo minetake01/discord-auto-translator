@@ -16,7 +16,11 @@ Discord channels in the same translation group are mirrored through webhooks and
 DISCORD_TOKEN=your-discord-bot-token
 GEMINI_API_KEY=your-gemini-api-key
 DB_PATH=./translator.db
+HTTP_ADDR=:8080
+PUBLIC_BASE_URL=https://your-public-domain.example
 ```
+
+`PUBLIC_BASE_URL` must be reachable from Discord. The bot uses it to expose `/avatar`, which returns a PNG avatar with an orange circular border for webhook messages.
 
 ## Run
 

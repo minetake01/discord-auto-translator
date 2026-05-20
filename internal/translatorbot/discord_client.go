@@ -1,7 +1,6 @@
 package translatorbot
 
 import (
-	"context"
 	"net/url"
 	"regexp"
 	"strings"
@@ -154,10 +153,4 @@ func (d DiscordGoAPI) EditThread(threadID, name string) error {
 func (d DiscordGoAPI) DeleteThread(threadID string) error {
 	_, err := d.session.ChannelDelete(threadID)
 	return err
-}
-
-func AvatarWithLanguageBadge(ctx context.Context, avatarURL, language string) string {
-	_ = ctx
-	_ = language
-	return avatarURL
 }

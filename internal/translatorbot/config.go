@@ -8,20 +8,27 @@ import (
 )
 
 type Config struct {
-	DiscordToken string
-	GeminiAPIKey string
-	DBPath       string
+	DiscordToken  string
+	GeminiAPIKey  string
+	DBPath        string
+	HTTPAddr      string
+	PublicBaseURL string
 }
 
 func LoadConfig(path string) (Config, error) {
 	_ = loadDotEnv(path)
 	cfg := Config{
-		DiscordToken: os.Getenv("DISCORD_TOKEN"),
-		GeminiAPIKey: os.Getenv("GEMINI_API_KEY"),
-		DBPath:       os.Getenv("DB_PATH"),
+		DiscordToken:  os.Getenv("DISCORD_TOKEN"),
+		GeminiAPIKey:  os.Getenv("GEMINI_API_KEY"),
+		DBPath:        os.Getenv("DB_PATH"),
+		HTTPAddr:      os.Getenv("HTTP_ADDR"),
+		PublicBaseURL: strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./translator.db"
+	}
+	if cfg.HTTPAddr == "" {
+		cfg.HTTPAddr = ":8080"
 	}
 	if cfg.DiscordToken == "" {
 		return cfg, errors.New("DISCORD_TOKEN is required")

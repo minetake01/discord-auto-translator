@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -34,7 +35,16 @@ func main() {
 		log.Fatal(err)
 	}
 	service := translatorbot.NewService(store, api, translator)
+	service.SetPublicBaseURL(cfg.PublicBaseURL)
 	commands := translatorbot.NewCommandHandler(store, api)
+	httpMux := http.NewServeMux()
+	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient))
+	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("avatar http server: %v", err)
+		}
+	}()
 	dg.AddHandler(commands.Handle)
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil {
@@ -120,6 +130,9 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+	if err := httpServer.Shutdown(context.Background()); err != nil {
+		log.Printf("avatar http server shutdown: %v", err)
+	}
 }
 
 func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {

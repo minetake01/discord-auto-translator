@@ -8,14 +8,19 @@ import (
 )
 
 type Service struct {
-	store      *Store
-	discord    DiscordAPI
-	translator Translator
-	httpClient *http.Client
+	store         *Store
+	discord       DiscordAPI
+	translator    Translator
+	httpClient    *http.Client
+	publicBaseURL string
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
 	return &Service{store: store, discord: discord, translator: translator, httpClient: http.DefaultClient}
+}
+
+func (s *Service) SetPublicBaseURL(publicBaseURL string) {
+	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
@@ -50,7 +55,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 			if quote != "" {
 				content = quote + "\n" + content
 			}
-			avatar := AvatarWithLanguageBadge(ctx, m.AuthorAvatarURL, target.Language)
+			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 			msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
 				Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar,
 			})
@@ -96,7 +101,7 @@ func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessag
 		if quote != "" {
 			content = quote + "\n" + content
 		}
-		avatar := AvatarWithLanguageBadge(ctx, m.AuthorAvatarURL, target.Language)
+		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
 			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, ThreadID: thread.TargetThreadID,
 		})

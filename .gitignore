@@ -3,3 +3,6 @@
 *.db-shm
 *.db-wal
 translator.db
+.gocache/
+discord-auto-translator.exe
+discord-auto-translator-linux-amd64
