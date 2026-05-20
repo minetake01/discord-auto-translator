@@ -34,6 +34,21 @@ func Commands() []*discordgo.ApplicationCommand {
 				{Name: "channel", Description: "Channel or forum to join", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
 			},
 		},
+		{
+			Name:        "leave-channel",
+			Description: "Remove this channel or another channel from a translation group",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
+				{Name: "channel", Description: "Channel or forum to remove", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
+			},
+		},
+		{
+			Name:        "delete-group",
+			Description: "Delete a translation group",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
+			},
+		},
 	}
 }
 
@@ -60,6 +75,10 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleNewChannel(s, i, data)
 	case "join-channel":
 		h.handleJoinChannel(s, i, data)
+	case "leave-channel":
+		h.handleLeaveChannel(s, i, data)
+	case "delete-group":
+		h.handleDeleteGroup(s, i, data)
 	}
 }
 
@@ -149,6 +168,27 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 	respond(s, i, fmt.Sprintf("翻訳グループ `%s` に <#%s> (%s) を参加させました。", groupID, channelID, language), true)
 }
 
+func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	groupID := optionString(data.Options, "group")
+	channelID := optionChannel(data.Options, "channel", i.ChannelID)
+	if err := h.store.LeaveChannel(ctx, i.GuildID, groupID, channelID); err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	respond(s, i, fmt.Sprintf("翻訳グループ `%s` から <#%s> を退出させました。", groupID, channelID), true)
+}
+
+func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	groupID := optionString(data.Options, "group")
+	if err := h.store.DeleteGroup(ctx, i.GuildID, groupID); err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	respond(s, i, fmt.Sprintf("翻訳グループ `%s` を削除しました。", groupID), true)
+}
+
 func RegisterGuildCommands(s *discordgo.Session, appID string) {
 	for _, g := range s.State.Guilds {
 		for _, cmd := range Commands() {
@@ -180,6 +220,9 @@ func optionString(options []*discordgo.ApplicationCommandInteractionDataOption, 
 func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption, name, fallback string) string {
 	for _, o := range options {
 		if o.Name == name {
+			if channelID, ok := o.Value.(string); ok && channelID != "" {
+				return channelID
+			}
 			return o.ChannelValue(nil).ID
 		}
 	}

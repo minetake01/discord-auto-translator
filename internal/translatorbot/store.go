@@ -15,6 +15,8 @@ var (
 	ErrDuplicateGroup    = errors.New("translation group already exists in this guild")
 	ErrDuplicateChannel  = errors.New("channel already exists in this group")
 	ErrDuplicateLanguage = errors.New("language already exists in this group")
+	ErrGroupNotFound     = errors.New("translation group not found in this guild")
+	ErrChannelNotFound   = errors.New("channel is not joined to this group")
 )
 
 type Store struct {
@@ -124,6 +126,62 @@ func (s *Store) CreateGroupWithChannel(ctx context.Context, g TranslationGroup, 
 
 func (s *Store) JoinChannel(ctx context.Context, ch GroupChannel) error {
 	return insertGroupChannel(ctx, s.db, ch)
+}
+
+func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links
+		WHERE group_id=?
+		AND (
+			source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
+			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
+		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links
+		WHERE group_id=?
+		AND (
+			source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
+			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
+		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM translation_groups WHERE guild_id=? AND id=?`, guildID, groupID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrGroupNotFound
+	}
+	return tx.Commit()
+}
+
+func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `DELETE FROM group_channels WHERE guild_id=? AND group_id=? AND channel_id=?`, guildID, groupID, channelID)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrChannelNotFound
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type execer interface {

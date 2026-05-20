@@ -69,3 +69,90 @@ func TestGroupAutocompleteQuery(t *testing.T) {
 		t.Fatalf("unexpected groups: %#v", got)
 	}
 }
+
+func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "c1", Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: "c2", Language: "en", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "m1", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.LeaveChannel(ctx, "g1", "team", "c2"); err != nil {
+		t.Fatal(err)
+	}
+
+	channels, err := s.ChannelsInGroup(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 1 || channels[0].ChannelID != "c1" {
+		t.Fatalf("unexpected channels: %#v", channels)
+	}
+	links, err := s.MessageTargets(ctx, "c1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("message links were not removed: %#v", links)
+	}
+	threads, err := s.SourceThreadTargets(ctx, "th1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(threads) != 0 {
+		t.Fatalf("thread links were not removed: %#v", threads)
+	}
+}
+
+func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "c1", Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "m1", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteGroup(ctx, "g1", "team"); err != nil {
+		t.Fatal(err)
+	}
+
+	groups, err := s.Groups(ctx, "g1", "team", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) != 0 {
+		t.Fatalf("group was not deleted: %#v", groups)
+	}
+	channels, err := s.ChannelsInGroup(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 0 {
+		t.Fatalf("channels were not deleted: %#v", channels)
+	}
+	links, err := s.MessageTargets(ctx, "c1", "m1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("message links were not removed: %#v", links)
+	}
+}
