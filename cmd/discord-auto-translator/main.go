@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"discord-auto-translator/internal/translatorbot"
@@ -39,13 +40,9 @@ func main() {
 		if m.Author == nil {
 			return
 		}
-		name := m.Author.Username
-		if m.Member != nil && m.Member.Nick != "" {
-			name = m.Member.Nick
-		}
 		err := service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
-			AuthorDisplayName: name, AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
+			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
@@ -59,7 +56,7 @@ func main() {
 		}
 		err := service.HandleMessageUpdate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
-			AuthorDisplayName: m.Author.Username, AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
+			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
 		})
 		if err != nil {
@@ -123,6 +120,25 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+}
+
+func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {
+	if member != nil {
+		if member.User != nil {
+			if name := strings.TrimSpace(member.DisplayName()); name != "" {
+				return name
+			}
+		}
+		if name := strings.TrimSpace(member.Nick); name != "" {
+			return name
+		}
+	}
+	if author != nil {
+		if name := strings.TrimSpace(author.DisplayName()); name != "" {
+			return name
+		}
+	}
+	return ""
 }
 
 func referencedMessageID(ref *discordgo.MessageReference) string {
