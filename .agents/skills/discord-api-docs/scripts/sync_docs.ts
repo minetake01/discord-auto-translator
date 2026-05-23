@@ -15,20 +15,44 @@ const statePath = `${refsDir}/state.json`;
 const upstream = "https://github.com/discord/discord-api-docs.git";
 const branch = "main";
 
+async function executableExists(path: string) {
+  try {
+    const stat = await Deno.stat(path);
+    return stat.isFile;
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return false;
+    throw error;
+  }
+}
+
+async function resolveGit() {
+  const configured = Deno.env.get("GIT");
+  if (configured) return configured;
+
+  if (Deno.build.os === "windows") {
+    const candidates = [
+      "C:\\Program Files\\Git\\bin\\git.exe",
+      "C:\\Program Files (x86)\\Git\\bin\\git.exe",
+    ];
+    for (const candidate of candidates) {
+      if (await executableExists(candidate)) return candidate;
+    }
+  }
+
+  return "git";
+}
+
 async function run(cmd: string[], cwd?: string) {
   const child = new Deno.Command(cmd[0], {
     args: cmd.slice(1),
     cwd,
-    stdout: "piped",
-    stderr: "piped",
+    stdout: "inherit",
+    stderr: "inherit",
   });
   const output = await child.output();
-  const stdout = new TextDecoder().decode(output.stdout).trim();
-  const stderr = new TextDecoder().decode(output.stderr).trim();
   if (!output.success) {
-    throw new Error(`${cmd.join(" ")} failed\n${stderr || stdout}`);
+    throw new Error(`${cmd.join(" ")} failed`);
   }
-  return stdout;
 }
 
 async function exists(path: string) {
@@ -109,12 +133,14 @@ function routeFor(relativePath: string) {
 }
 
 async function syncRepo() {
+  const git = await resolveGit();
+  const gitWithConfig = [git, "-c", "core.longpaths=true"];
   await Deno.mkdir(refsDir, { recursive: true });
   if (!(await exists(`${repoDir}/.git`))) {
     const parent = repoDir.replace(/[\\/][^\\/]+$/, "");
     await Deno.mkdir(parent, { recursive: true });
     await run([
-      "git",
+      ...gitWithConfig,
       "clone",
       "--depth",
       "1",
@@ -124,13 +150,44 @@ async function syncRepo() {
       repoDir,
     ]);
   } else {
-    await run(["git", "fetch", "--depth", "1", "origin", branch], repoDir);
-    await run(["git", "reset", "--hard", `origin/${branch}`], repoDir);
+    await run(
+      [...gitWithConfig, "fetch", "--depth", "1", "origin", branch],
+      repoDir,
+    );
+    await run(
+      [...gitWithConfig, "reset", "--hard", `origin/${branch}`],
+      repoDir,
+    );
   }
 }
 
+async function readHeadCommit() {
+  const head = (await Deno.readTextFile(`${repoDir}/.git/HEAD`)).trim();
+  if (/^[0-9a-f]{40}$/i.test(head)) return head;
+
+  const refMatch = head.match(/^ref:\s+(.+)$/);
+  if (!refMatch) throw new Error(`Cannot parse Git HEAD: ${head}`);
+
+  const ref = refMatch[1].replaceAll("\\", "/");
+  const refPath = `${repoDir}/.git/${ref}`;
+  if (await exists(refPath)) {
+    return (await Deno.readTextFile(refPath)).trim();
+  }
+
+  const packedRefsPath = `${repoDir}/.git/packed-refs`;
+  if (await exists(packedRefsPath)) {
+    const packedRefs = await Deno.readTextFile(packedRefsPath);
+    for (const line of packedRefs.split(/\r?\n/)) {
+      const [sha, packedRef] = line.trim().split(/\s+/);
+      if (packedRef === ref && /^[0-9a-f]{40}$/i.test(sha)) return sha;
+    }
+  }
+
+  throw new Error(`Cannot resolve Git ref: ${ref}`);
+}
+
 async function buildIndex() {
-  const commit = await run(["git", "rev-parse", "HEAD"], repoDir);
+  const commit = await readHeadCommit();
   const files = await walkDocs(repoDir);
   const lines: string[] = [];
   for (const file of files) {
