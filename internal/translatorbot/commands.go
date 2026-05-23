@@ -107,7 +107,11 @@ func (h *CommandHandler) handleAutocomplete(s *discordgo.Session, i *discordgo.I
 
 func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
-	language := optionString(data.Options, "language")
+	language := normalizeLanguage(optionString(data.Options, "language"))
+	if !IsValidLanguageCode(language) {
+		respond(s, i, "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。", true)
+		return
+	}
 	channelID := optionChannel(data.Options, "channel", i.ChannelID)
 	groupID := optionString(data.Options, "group")
 	ch, err := s.Channel(channelID)
@@ -143,7 +147,11 @@ func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.Int
 func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groupID := optionString(data.Options, "group")
-	language := optionString(data.Options, "language")
+	language := normalizeLanguage(optionString(data.Options, "language"))
+	if !IsValidLanguageCode(language) {
+		respond(s, i, "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。", true)
+		return
+	}
 	channelID := optionChannel(data.Options, "channel", i.ChannelID)
 	ch, err := s.Channel(channelID)
 	if err != nil {

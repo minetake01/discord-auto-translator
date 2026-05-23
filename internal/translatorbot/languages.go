@@ -1,6 +1,9 @@
 package translatorbot
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 var languageChoices = []struct {
 	Code string
@@ -10,6 +13,21 @@ var languageChoices = []struct {
 	{"zh-TW", "Chinese Traditional"}, {"ko", "Korean"}, {"fr", "French"},
 	{"de", "German"}, {"es", "Spanish"}, {"pt-BR", "Portuguese Brazil"},
 	{"it", "Italian"}, {"id", "Indonesian"}, {"th", "Thai"}, {"vi", "Vietnamese"},
+}
+
+var languageCodePattern = regexp.MustCompile(`^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$`)
+
+func IsValidLanguageCode(language string) bool {
+	language = normalizeLanguage(language)
+	if language == "" || len(language) > 35 {
+		return false
+	}
+	for _, l := range languageChoices {
+		if strings.EqualFold(language, l.Code) {
+			return true
+		}
+	}
+	return languageCodePattern.MatchString(language)
 }
 
 func LanguageSuggestions(query string, limit int) []string {
