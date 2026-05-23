@@ -24,8 +24,11 @@ func (s *Service) SetPublicBaseURL(publicBaseURL string) {
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" || (m.ThreadSystemMessage && !m.ThreadStarterMessage) || strings.TrimSpace(m.Content) == "" {
+	if m.Bot || m.WebhookID != "" || m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
 		return nil
+	}
+	if err := s.ensureThreadSynced(ctx, m); err != nil {
+		return err
 	}
 	if err := s.handleThreadMessageCreate(ctx, m); err != nil {
 		return err
@@ -151,6 +154,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if err != nil {
 			return err
 		}
+		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
 			return err
 		}
@@ -251,6 +255,10 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 	if err != nil {
 		return err
 	}
+	existing, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
+	if err != nil {
+		return err
+	}
 	for _, source := range groups {
 		channels, err := s.store.ChannelsInGroup(ctx, guildID, source.GroupID)
 		if err != nil {
@@ -258,6 +266,9 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 		}
 		for _, target := range channels {
 			if target.ChannelID == sourceChannelID {
+				continue
+			}
+			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
 				continue
 			}
 			translationContext := s.translationContext(guildID, sourceChannelID)
@@ -279,6 +290,27 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 		}
 	}
 	return nil
+}
+
+func existingThreadTarget(links []ThreadLink, groupID, targetChannelID string) bool {
+	for _, link := range links {
+		if link.GroupID == groupID && link.TargetChannelID == targetChannelID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) error {
+	if m.ParentChannelID == "" || m.ThreadName == "" {
+		return nil
+	}
+	if existing, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err != nil {
+		return err
+	} else if len(existing) > 0 {
+		return nil
+	}
+	return s.SyncThreadCreate(ctx, m.GuildID, m.ParentChannelID, m.ChannelID, m.ThreadName)
 }
 
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {

@@ -3,6 +3,8 @@ package translatorbot
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -275,6 +277,40 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	}
 }
 
+func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
+	}))
+	t.Cleanup(page.Close)
+	service.httpClient = page.Client()
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "source-msg", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "see " + page.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.webhookEdits) != 1 {
+		t.Fatalf("webhook edits: %#v", discord.webhookEdits)
+	}
+	if got := discord.webhookEdits[0].content; got != "[en] see https://example.com/en" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -304,7 +340,7 @@ func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) 
 	}
 }
 
-func TestThreadStarterMessageIsTranslatedIntoSyncedThread(t *testing.T) {
+func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -322,11 +358,53 @@ func TestThreadStarterMessageIsTranslatedIntoSyncedThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("thread starter message was translated: %#v", discord.sent)
+	}
+}
+
+func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "first", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "[en] topic" {
+		t.Fatalf("unexpected thread sync: %#v", discord.threads)
+	}
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent messages: %#v", discord.sent)
 	}
 	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] 最初の本文" {
-		t.Fatalf("unexpected starter message: %#v", got)
+		t.Fatalf("unexpected first thread message: %#v", got)
+	}
+}
+
+func TestSyncThreadCreateIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("duplicate target threads were created: %#v", discord.threads)
 	}
 }
 

@@ -44,6 +44,8 @@ type DiscordMessage struct {
 	ID                   string
 	ChannelID            string
 	GuildID              string
+	ParentChannelID      string
+	ThreadName           string
 	AuthorID             string
 	AuthorDisplayName    string
 	AuthorAvatarURL      string

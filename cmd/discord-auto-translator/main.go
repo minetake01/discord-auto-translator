@@ -50,8 +50,10 @@ func main() {
 		if m.Author == nil {
 			return
 		}
+		parentChannelID, threadName := threadContext(s, m.ChannelID)
 		err := service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
+			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
@@ -171,6 +173,20 @@ func mentionsReferencedAuthor(m *discordgo.Message, referenced *discordgo.Messag
 		}
 	}
 	return false
+}
+
+func threadContext(s *discordgo.Session, channelID string) (string, string) {
+	ch, err := s.State.Channel(channelID)
+	if err != nil || ch == nil {
+		ch, err = s.Channel(channelID)
+		if err != nil || ch == nil {
+			return "", ""
+		}
+	}
+	if !ch.IsThread() {
+		return "", ""
+	}
+	return ch.ParentID, ch.Name
 }
 
 func isThreadSystemMessage(t discordgo.MessageType) bool {
