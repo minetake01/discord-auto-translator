@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type Service struct {
@@ -13,6 +14,7 @@ type Service struct {
 	translator    Translator
 	httpClient    *http.Client
 	publicBaseURL string
+	threadMu      sync.Mutex
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
@@ -24,11 +26,22 @@ func (s *Service) SetPublicBaseURL(publicBaseURL string) {
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" || m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
+	if m.Bot || m.WebhookID != "" {
 		return nil
 	}
-	if err := s.ensureThreadSynced(ctx, m); err != nil {
+	if m.ThreadStarterMessage {
+		_, err := s.ensureThreadSynced(ctx, m)
 		return err
+	}
+	if m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
+		return nil
+	}
+	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
+	if err != nil {
+		return err
+	}
+	if threadCreatedWithInitialMessage {
+		return nil
 	}
 	if err := s.handleThreadMessageCreate(ctx, m); err != nil {
 		return err
@@ -251,45 +264,117 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
-	groups, err := s.store.ChannelsByChannel(ctx, guildID, sourceChannelID)
+	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
+		GuildID:         guildID,
+		SourceChannelID: sourceChannelID,
+		SourceThreadID:  sourceThreadID,
+		SourceMessageID: sourceThreadID,
+		Name:            name,
+	})
+	return err
+}
+
+func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
+	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
+		GuildID:               guildID,
+		SourceChannelID:       sourceChannelID,
+		SourceThreadID:        sourceThreadID,
+		SourceMessageID:       sourceThreadID,
+		Name:                  name,
+		DeferWithoutSourceMsg: true,
+	})
+	return err
+}
+
+type threadCreateRequest struct {
+	GuildID                string
+	SourceChannelID        string
+	SourceThreadID         string
+	SourceMessageID        string
+	Name                   string
+	InitialMessageID       string
+	InitialMessageAuthor   string
+	InitialMessageUsername string
+	InitialMessageAvatar   string
+	InitialMessageText     string
+	DeferWithoutSourceMsg  bool
+}
+
+func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest) (bool, error) {
+	s.threadMu.Lock()
+	defer s.threadMu.Unlock()
+
+	groups, err := s.store.ChannelsByChannel(ctx, req.GuildID, req.SourceChannelID)
 	if err != nil {
-		return err
+		return false, err
 	}
-	existing, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
+	existing, err := s.store.SourceThreadTargets(ctx, req.SourceThreadID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	createdWithInitialMessage := false
 	for _, source := range groups {
-		channels, err := s.store.ChannelsInGroup(ctx, guildID, source.GroupID)
+		channels, err := s.store.ChannelsInGroup(ctx, req.GuildID, source.GroupID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		for _, target := range channels {
-			if target.ChannelID == sourceChannelID {
+			if target.ChannelID == source.ChannelID {
 				continue
 			}
 			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
 				continue
 			}
-			translationContext := s.translationContext(guildID, sourceChannelID)
-			translatedName, err := s.translator.Translate(ctx, target.Language, name, translationContext)
+			translationContext := s.translationContext(req.GuildID, req.SourceChannelID)
+			translatedName, err := s.translator.Translate(ctx, target.Language, req.Name, translationContext)
 			if err != nil {
-				return err
+				return false, err
 			}
-			threadID, err := s.createTargetThread(ctx, source.GroupID, sourceChannelID, sourceThreadID, target, translatedName)
+			var translatedInitial string
+			if req.InitialMessageText != "" {
+				translatedInitial, err = s.translator.Translate(ctx, target.Language, req.InitialMessageText, translationContext)
+				if err != nil {
+					return false, err
+				}
+				translatedInitial = ReplaceAlternateURLs(ctx, translatedInitial, target.Language, s.httpClient)
+			}
+			threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
 			if err != nil {
-				return err
+				return false, err
+			}
+			if threadID == "" {
+				continue
 			}
 			err = s.store.SaveThreadLink(ctx, ThreadLink{
-				GroupID: source.GroupID, SourceThreadID: sourceThreadID, SourceChannelID: sourceChannelID,
+				GroupID: source.GroupID, SourceThreadID: req.SourceThreadID, SourceChannelID: req.SourceChannelID,
 				TargetThreadID: threadID, TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
 			})
 			if err != nil {
-				return err
+				return false, err
+			}
+			if req.InitialMessageID != "" && initialMessageID == "" && translatedInitial != "" {
+				avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
+				initialMessageID, err = s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
+					Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, ThreadID: threadID,
+				})
+				if err != nil {
+					return false, err
+				}
+			}
+			if req.InitialMessageID != "" && initialMessageID != "" {
+				err = s.store.SaveMessageLink(ctx, MessageLink{
+					SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
+					TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
+					SourceAuthorID: req.InitialMessageAuthor, SourceContentSnapshot: req.InitialMessageText,
+				})
+				if err != nil {
+					return false, err
+				}
+				createdWithInitialMessage = true
 			}
 		}
 	}
-	return nil
+	return createdWithInitialMessage, nil
 }
 
 func existingThreadTarget(links []ThreadLink, groupID, targetChannelID string) bool {
@@ -301,16 +386,34 @@ func existingThreadTarget(links []ThreadLink, groupID, targetChannelID string) b
 	return false
 }
 
-func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) error {
+func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (bool, error) {
 	if m.ParentChannelID == "" || m.ThreadName == "" {
-		return nil
+		return false, nil
 	}
 	if existing, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err != nil {
-		return err
+		return false, err
 	} else if len(existing) > 0 {
-		return nil
+		return false, nil
 	}
-	return s.SyncThreadCreate(ctx, m.GuildID, m.ParentChannelID, m.ChannelID, m.ThreadName)
+	req := threadCreateRequest{
+		GuildID:         m.GuildID,
+		SourceChannelID: m.ParentChannelID,
+		SourceThreadID:  m.ChannelID,
+		Name:            m.ThreadName,
+	}
+	if m.ThreadStarterMessage {
+		req.SourceMessageID = m.ReferencedMessageID
+		req.DeferWithoutSourceMsg = true
+	} else if isThreadOnlySourceMessage(ctx, s.store, m.GuildID, m.ParentChannelID, m.ID, m.ChannelID) {
+		req.InitialMessageID = m.ID
+		req.InitialMessageAuthor = m.AuthorID
+		req.InitialMessageUsername = m.AuthorDisplayName
+		req.InitialMessageAvatar = m.AuthorAvatarURL
+		req.InitialMessageText = m.Content
+	} else {
+		req.SourceMessageID = m.ChannelID
+	}
+	return s.syncThreadCreate(ctx, req)
 }
 
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {
@@ -351,17 +454,33 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
 }
 
-func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannelID, sourceThreadID string, target GroupChannel, name string) (string, error) {
-	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceThreadID)
-	if err != nil {
-		return "", err
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
+	if isThreadOnlyChannelType(target.ChannelType) {
+		if initialMessage == "" {
+			if req.DeferWithoutSourceMsg {
+				return "", "", nil
+			}
+			initialMessage = name
+		}
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, initialMessage)
 	}
-	for _, link := range links {
-		if link.GroupID == groupID && link.TargetChannelID == target.ChannelID && !isThreadOnlyChannelType(target.ChannelType) {
-			return s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
+	if req.SourceMessageID != "" {
+		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
+		if err != nil {
+			return "", "", err
+		}
+		for _, link := range links {
+			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
+				threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
+				return threadID, "", err
+			}
+		}
+		if req.DeferWithoutSourceMsg {
+			return "", "", nil
 		}
 	}
-	return s.discord.CreateThread(target.ChannelID, target.ChannelType, name)
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
+	return threadID, "", err
 }
 
 func (s *Service) translationContext(guildID, channelID string) TranslationContext {
@@ -402,4 +521,20 @@ func threadIDForWebhook(link MessageLink, target *GroupChannel) string {
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
 	return strings.TrimSpace(line)
+}
+
+func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {
+	if messageID == "" || messageID != threadID {
+		return false
+	}
+	groups, err := store.ChannelsByChannel(ctx, guildID, parentChannelID)
+	if err != nil {
+		return false
+	}
+	for _, group := range groups {
+		if isThreadOnlyChannelType(group.ChannelType) {
+			return true
+		}
+	}
+	return false
 }
