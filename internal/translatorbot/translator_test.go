@@ -6,10 +6,20 @@ import (
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	prompt := BuildTranslationPrompt("en", "こんにちは", []ChatContextMessage{
-		{Author: "a", Language: "ja", Content: "前の発言"},
+	prompt := BuildTranslationPrompt("en", "こんにちは", TranslationContext{
+		ServerDescription: "A community for release coordination",
+		ChannelTopic:      "Bug reports and triage",
+		History: []ChatContextMessage{
+			{Author: "a", Language: "ja", Content: "前の発言"},
+		},
 	})
 	if !strings.Contains(prompt, "Translate the final message into en") {
+		t.Fatal(prompt)
+	}
+	if !strings.Contains(prompt, "Server overview: A community for release coordination") {
+		t.Fatal(prompt)
+	}
+	if !strings.Contains(prompt, "Channel topic: Bug reports and triage") {
 		t.Fatal(prompt)
 	}
 	if !strings.Contains(prompt, "a [ja]: 前の発言") {

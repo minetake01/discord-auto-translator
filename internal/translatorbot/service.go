@@ -43,7 +43,8 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 			if target.ChannelID == m.ChannelID {
 				continue
 			}
-			content, err := s.translator.Translate(ctx, target.Language, m.Content, nil)
+			translationContext := s.translationContext(m.GuildID, m.ChannelID)
+			content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 			if err != nil {
 				return err
 			}
@@ -89,7 +90,8 @@ func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessag
 		if target == nil {
 			continue
 		}
-		content, err := s.translator.Translate(ctx, target.Language, m.Content, nil)
+		translationContext := s.translationContext(m.GuildID, thread.SourceChannelID)
+		content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 		if err != nil {
 			return err
 		}
@@ -144,7 +146,8 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if target == nil {
 			continue
 		}
-		content, err := s.translator.Translate(ctx, target.Language, m.Content, nil)
+		translationContext := s.translationContext(m.GuildID, m.ChannelID)
+		content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 		if err != nil {
 			return err
 		}
@@ -227,7 +230,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	if err != nil || !ok {
 		return "", err
 	}
-	snippet, err := s.translator.Translate(ctx, targetLanguage, firstLine(content), nil)
+	snippet, err := s.translator.Translate(ctx, targetLanguage, firstLine(content), TranslationContext{})
 	if err != nil {
 		return "", err
 	}
@@ -257,7 +260,8 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 			if target.ChannelID == sourceChannelID {
 				continue
 			}
-			translatedName, err := s.translator.Translate(ctx, target.Language, name, nil)
+			translationContext := s.translationContext(guildID, sourceChannelID)
+			translatedName, err := s.translator.Translate(ctx, target.Language, name, translationContext)
 			if err != nil {
 				return err
 			}
@@ -291,7 +295,7 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		if target == nil {
 			continue
 		}
-		translatedName, err := s.translator.Translate(ctx, target.Language, name, nil)
+		translatedName, err := s.translator.Translate(ctx, target.Language, name, TranslationContext{})
 		if err != nil {
 			return err
 		}
@@ -326,6 +330,25 @@ func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannel
 		}
 	}
 	return s.discord.CreateThread(targetChannelID, name)
+}
+
+func (s *Service) translationContext(guildID, channelID string) TranslationContext {
+	return TranslationContext{
+		ServerDescription: bestEffortString(func() (string, error) {
+			return s.discord.GuildDescription(guildID)
+		}),
+		ChannelTopic: bestEffortString(func() (string, error) {
+			return s.discord.ChannelTopic(channelID)
+		}),
+	}
+}
+
+func bestEffortString(fn func() (string, error)) string {
+	value, err := fn()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
 }
 
 func findChannel(channels []GroupChannel, id string) *GroupChannel {
