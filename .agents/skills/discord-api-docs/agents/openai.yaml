@@ -1,0 +1,4 @@
+interface:
+  display_name: "Discord API Docs"
+  short_description: "Find current Discord API docs with small context"
+  default_prompt: "Use $discord-api-docs to look up the current Discord API docs for my implementation question."
