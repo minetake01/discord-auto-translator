@@ -4,9 +4,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
+
+const translationHistoryLimit = 3
+const translationHistoryMaxAge = 24 * time.Hour
+const discordEpochMillis = 1420070400000
 
 type Service struct {
 	store         *Store
@@ -59,7 +65,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 			if target.ChannelID == m.ChannelID {
 				continue
 			}
-			translationContext := s.translationContext(m.GuildID, m.ChannelID)
+			translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
 			content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 			if err != nil {
 				return err
@@ -106,7 +112,7 @@ func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessag
 		if target == nil {
 			continue
 		}
-		translationContext := s.translationContext(m.GuildID, thread.SourceChannelID)
+		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
 		content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 		if err != nil {
 			return err
@@ -162,7 +168,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if target == nil {
 			continue
 		}
-		translationContext := s.translationContext(m.GuildID, m.ChannelID)
+		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
 		content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
 		if err != nil {
 			return err
@@ -325,7 +331,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
 				continue
 			}
-			translationContext := s.translationContext(req.GuildID, req.SourceChannelID)
+			translationContext := s.translationContext(ctx, req.GuildID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID)
 			translatedName, err := s.translator.Translate(ctx, target.Language, req.Name, translationContext)
 			if err != nil {
 				return false, err
@@ -483,8 +489,8 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 	return threadID, "", err
 }
 
-func (s *Service) translationContext(guildID, channelID string) TranslationContext {
-	return TranslationContext{
+func (s *Service) translationContext(ctx context.Context, guildID, channelID, historyChannelID, sourceLanguage, excludeMessageID string) TranslationContext {
+	translationContext := TranslationContext{
 		ServerName: bestEffortString(func() (string, error) {
 			return s.discord.GuildName(guildID)
 		}),
@@ -498,6 +504,40 @@ func (s *Service) translationContext(guildID, channelID string) TranslationConte
 			return s.discord.ChannelTopic(channelID)
 		}),
 	}
+	if historyChannelID == "" {
+		return translationContext
+	}
+	links, err := s.store.RecentMessageHistory(ctx, historyChannelID, excludeMessageID, translationHistoryLimit)
+	if err != nil {
+		return translationContext
+	}
+	cutoff := time.Now().UTC().Add(-translationHistoryMaxAge)
+	for _, link := range links {
+		if strings.TrimSpace(link.SourceContentSnapshot) == "" {
+			continue
+		}
+		if messageTime, ok := discordSnowflakeTime(link.SourceMessageID); ok && !messageTime.After(cutoff) {
+			continue
+		}
+		translationContext.History = append(translationContext.History, ChatContextMessage{
+			Author:   link.SourceAuthorID,
+			Language: sourceLanguage,
+			Content:  link.SourceContentSnapshot,
+		})
+	}
+	return translationContext
+}
+
+func discordSnowflakeTime(id string) (time.Time, bool) {
+	if len(id) < 17 {
+		return time.Time{}, false
+	}
+	snowflake, err := strconv.ParseUint(id, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	timestampMillis := int64(snowflake>>22) + discordEpochMillis
+	return time.UnixMilli(timestampMillis).UTC(), true
 }
 
 func bestEffortString(fn func() (string, error)) string {
@@ -515,6 +555,13 @@ func findChannel(channels []GroupChannel, id string) *GroupChannel {
 		}
 	}
 	return nil
+}
+
+func languageForChannel(channels []GroupChannel, id string) string {
+	if channel := findChannel(channels, id); channel != nil {
+		return channel.Language
+	}
+	return ""
 }
 
 func threadIDForWebhook(link MessageLink, target *GroupChannel) string {

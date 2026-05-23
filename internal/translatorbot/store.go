@@ -379,6 +379,29 @@ func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, ta
 	return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 }
 
+func (s *Store) RecentMessageHistory(ctx context.Context, channelID, excludeMessageID string, limit int) ([]MessageLink, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot
+		FROM message_links
+		WHERE source_channel_id=? AND source_message_id<>?
+		GROUP BY source_channel_id, source_message_id
+		ORDER BY source_message_id DESC
+		LIMIT ?`, channelID, excludeMessageID, limit)
+	if err != nil {
+		return nil, err
+	}
+	links, err := scanMessageLinks(rows)
+	if err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(links)-1; i < j; i, j = i+1, j-1 {
+		links[i], links[j] = links[j], links[i]
+	}
+	return links, nil
+}
+
 func scanMessageLinks(rows *sql.Rows) ([]MessageLink, error) {
 	defer rows.Close()
 	var out []MessageLink
