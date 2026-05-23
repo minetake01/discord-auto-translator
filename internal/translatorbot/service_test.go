@@ -18,7 +18,9 @@ type fakeDiscordAPI struct {
 	webhookDeletes    []webhookDeleteCall
 	edits             []threadEditCall
 	deletes           []string
+	guildNames        map[string]string
 	guildDescriptions map[string]string
+	channelNames      map[string]string
 	channelTopics     map[string]string
 	nextID            int
 }
@@ -53,8 +55,16 @@ type webhookDeleteCall struct {
 	threadID  string
 }
 
+func (f *fakeDiscordAPI) GuildName(guildID string) (string, error) {
+	return f.guildNames[guildID], nil
+}
+
 func (f *fakeDiscordAPI) GuildDescription(guildID string) (string, error) {
 	return f.guildDescriptions[guildID], nil
+}
+
+func (f *fakeDiscordAPI) ChannelName(channelID string) (string, error) {
+	return f.channelNames[channelID], nil
 }
 
 func (f *fakeDiscordAPI) ChannelTopic(channelID string) (string, error) {
@@ -201,7 +211,9 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{
+		guildNames:        map[string]string{"guild": "Ship Room"},
 		guildDescriptions: map[string]string{"guild": "Release coordination server"},
+		channelNames:      map[string]string{"ja": "announcements-ja"},
 		channelTopics:     map[string]string{"ja": "Japanese announcements"},
 	}
 	translator := &echoTranslator{}
@@ -219,7 +231,7 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	if len(translator.contexts) != 1 {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
-	if got := translator.contexts[0]; got.ServerDescription != "Release coordination server" || got.ChannelTopic != "Japanese announcements" {
+	if got := translator.contexts[0]; got.ServerName != "Ship Room" || got.ServerDescription != "Release coordination server" || got.ChannelName != "announcements-ja" || got.ChannelTopic != "Japanese announcements" {
 		t.Fatalf("unexpected translation context: %#v", got)
 	}
 }

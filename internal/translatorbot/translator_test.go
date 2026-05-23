@@ -7,7 +7,9 @@ import (
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	prompt := BuildTranslationPrompt("en", "こんにちは", TranslationContext{
+		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
+		ChannelName:       "bug-triage",
 		ChannelTopic:      "Bug reports and triage",
 		History: []ChatContextMessage{
 			{Author: "a", Language: "ja", Content: "前の発言"},
@@ -16,7 +18,13 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if !strings.Contains(prompt, "Translate the final message into en") {
 		t.Fatal(prompt)
 	}
+	if !strings.Contains(prompt, "Server name: Ship Room") {
+		t.Fatal(prompt)
+	}
 	if !strings.Contains(prompt, "Server overview: A community for release coordination") {
+		t.Fatal(prompt)
+	}
+	if !strings.Contains(prompt, "Channel name: bug-triage") {
 		t.Fatal(prompt)
 	}
 	if !strings.Contains(prompt, "Channel topic: Bug reports and triage") {

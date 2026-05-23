@@ -17,7 +17,9 @@ type ChatContextMessage struct {
 }
 
 type TranslationContext struct {
+	ServerName        string
 	ServerDescription string
+	ChannelName       string
 	ChannelTopic      string
 	History           []ChatContextMessage
 }
@@ -56,10 +58,16 @@ func BuildTranslationPrompt(targetLanguage, content string, translationContext T
 	var b strings.Builder
 	fmt.Fprintf(&b, "Translate the final message into %s for Discord chat.\n", targetLanguage)
 	b.WriteString("Preserve URLs, mentions, markdown, custom emoji, code blocks, placeholders, line breaks, and tone. Return only the translated final message.\n")
-	if translationContext.ServerDescription != "" || translationContext.ChannelTopic != "" {
+	if translationContext.ServerName != "" || translationContext.ServerDescription != "" || translationContext.ChannelName != "" || translationContext.ChannelTopic != "" {
 		b.WriteString("\nDiscord context:\n")
+		if translationContext.ServerName != "" {
+			fmt.Fprintf(&b, "- Server name: %s\n", translationContext.ServerName)
+		}
 		if translationContext.ServerDescription != "" {
 			fmt.Fprintf(&b, "- Server overview: %s\n", translationContext.ServerDescription)
+		}
+		if translationContext.ChannelName != "" {
+			fmt.Fprintf(&b, "- Channel name: %s\n", translationContext.ChannelName)
 		}
 		if translationContext.ChannelTopic != "" {
 			fmt.Fprintf(&b, "- Channel topic: %s\n", translationContext.ChannelTopic)

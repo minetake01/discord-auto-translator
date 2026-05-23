@@ -485,8 +485,14 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 
 func (s *Service) translationContext(guildID, channelID string) TranslationContext {
 	return TranslationContext{
+		ServerName: bestEffortString(func() (string, error) {
+			return s.discord.GuildName(guildID)
+		}),
 		ServerDescription: bestEffortString(func() (string, error) {
 			return s.discord.GuildDescription(guildID)
+		}),
+		ChannelName: bestEffortString(func() (string, error) {
+			return s.discord.ChannelName(channelID)
 		}),
 		ChannelTopic: bestEffortString(func() (string, error) {
 			return s.discord.ChannelTopic(channelID)
