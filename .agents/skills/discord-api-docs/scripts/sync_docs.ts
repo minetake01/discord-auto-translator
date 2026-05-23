@@ -80,13 +80,21 @@ function extractFrontmatter(text: string) {
 }
 
 function summarize(text: string) {
-  return text
-    .replace(/^---[\s\S]*?\n---\s*/m, "")
-    .replace(/<[^>\n]+>/g, " ")
-    .replace(/[{}[\]`*_#>|]/g, " ")
-    .replace(/\s+/g, " ")
+  return cleanSearchText(text)
     .trim()
     .slice(0, 500);
+}
+
+function cleanSearchText(text: string) {
+  return text
+    .replace(/^---[\s\S]*?\n---\s*/m, "")
+    .replace(/\[\\?(\{[^}\]]+\})\\?\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\\([{}[\]])/g, "$1")
+    .replace(/<[^>\n]+>/g, " ")
+    .replace(/[[\]`*_#>|]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function headings(text: string) {
@@ -136,6 +144,7 @@ async function buildIndex() {
       description: meta.description ?? "",
       headings: headings(text),
       summary: summarize(text),
+      searchText: cleanSearchText(text),
     }));
   }
   await Deno.writeTextFile(indexPath, `${lines.join("\n")}\n`);
