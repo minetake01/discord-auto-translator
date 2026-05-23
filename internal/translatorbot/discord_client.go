@@ -13,7 +13,9 @@ const defaultWebhookName = "Gemini Auto Translator"
 var reservedWebhookNamePattern = regexp.MustCompile(`(?i)discord`)
 
 type DiscordAPI interface {
+	GuildName(guildID string) (string, error)
 	GuildDescription(guildID string) (string, error)
+	ChannelName(channelID string) (string, error)
 	ChannelTopic(channelID string) (string, error)
 	CreateWebhook(channelID, name string) (id, token string, err error)
 	SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error)
@@ -44,12 +46,28 @@ func NewDiscordGoAPI(session *discordgo.Session) DiscordGoAPI {
 	return DiscordGoAPI{session: session}
 }
 
+func (d DiscordGoAPI) GuildName(guildID string) (string, error) {
+	g, err := d.session.Guild(guildID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(g.Name), nil
+}
+
 func (d DiscordGoAPI) GuildDescription(guildID string) (string, error) {
 	g, err := d.session.Guild(guildID)
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(g.Description), nil
+}
+
+func (d DiscordGoAPI) ChannelName(channelID string) (string, error) {
+	ch, err := d.session.Channel(channelID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(ch.Name), nil
 }
 
 func (d DiscordGoAPI) ChannelTopic(channelID string) (string, error) {
