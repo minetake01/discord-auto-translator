@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -234,6 +236,84 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	if got := translator.contexts[0]; got.ServerName != "Ship Room" || got.ServerDescription != "Release coordination server" || got.ChannelName != "announcements-ja" || got.ChannelTopic != "Japanese announcements" {
 		t.Fatalf("unexpected translation context: %#v", got)
 	}
+}
+
+func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en",
+		SourceAuthorID: "alice", SourceContentSnapshot: "前の発言",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "101", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "続きです",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	got := translator.contexts[0].History
+	if len(got) != 1 || got[0].Author != "alice" || got[0].Language != "ja" || got[0].Content != "前の発言" {
+		t.Fatalf("unexpected history: %#v", got)
+	}
+}
+
+func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	for _, link := range []MessageLink{
+		{
+			SourceMessageID: snowflakeForTime(now.Add(-25*time.Hour), 1), SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+			SourceAuthorID: "alice", SourceContentSnapshot: "昨日の発言",
+		},
+		{
+			SourceMessageID: snowflakeForTime(now.Add(-23*time.Hour), 2), SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "en", TargetMessageID: "recent-target", TargetLanguage: "en",
+			SourceAuthorID: "bob", SourceContentSnapshot: "今日の発言",
+		},
+	} {
+		if err := store.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: snowflakeForTime(now, 3), ChannelID: "ja", GuildID: "guild", AuthorID: "carol",
+		AuthorDisplayName: "carol", Content: "続きです",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	got := translator.contexts[0].History
+	if len(got) != 1 || got[0].Author != "bob" || got[0].Content != "今日の発言" {
+		t.Fatalf("unexpected history: %#v", got)
+	}
+}
+
+func snowflakeForTime(t time.Time, increment uint64) string {
+	return strconv.FormatUint((uint64(t.UnixMilli()-discordEpochMillis)<<22)|increment, 10)
 }
 
 func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
