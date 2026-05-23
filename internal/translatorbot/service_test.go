@@ -34,6 +34,7 @@ type threadCall struct {
 	channelType int
 	messageID   string
 	name        string
+	content     string
 }
 
 type threadEditCall struct {
@@ -92,10 +93,14 @@ func (f *fakeDiscordAPI) RemoveReaction(channelID, messageID, emoji, userID stri
 func (f *fakeDiscordAPI) PinMessage(channelID, messageID string) error   { return nil }
 func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error { return nil }
 
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name string) (threadID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error) {
 	f.nextID++
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name})
-	return fmt.Sprintf("thread-%d", f.nextID), nil
+	threadID = fmt.Sprintf("thread-%d", f.nextID)
+	if isThreadOnlyChannelType(channelType) {
+		initialMessageID = threadID
+	}
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage})
+	return threadID, initialMessageID, nil
 }
 
 func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
@@ -363,6 +368,46 @@ func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing
 	}
 }
 
+func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "source-msg", "topic"); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.threads) != 0 {
+		t.Fatalf("thread should wait for source message link: %#v", discord.threads)
+	}
+
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "starter", ChannelID: "source-msg", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ReferencedMessageID: "source-msg", ThreadSystemMessage: true, ThreadStarterMessage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.name != "[en] topic" {
+		t.Fatalf("unexpected thread sync: %#v", got)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("starter message should not be sent separately: %#v", discord.sent)
+	}
+}
+
 func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -386,6 +431,32 @@ func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *t
 	}
 	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] 最初の本文" {
 		t.Fatalf("unexpected first thread message: %#v", got)
+	}
+}
+
+func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+		t.Fatal(err)
+	}
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "first", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("duplicate target threads were created: %#v", discord.threads)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
+		t.Fatalf("sent messages: %#v", discord.sent)
 	}
 }
 
@@ -457,8 +528,89 @@ func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
 	if len(discord.threads) != 1 {
 		t.Fatalf("threads: %#v", discord.threads)
 	}
-	if got := discord.threads[0]; got.channelID != "en" || got.channelType != int(discordgo.ChannelTypeGuildForum) || got.name != "[en] 議題" {
+	if got := discord.threads[0]; got.channelID != "en" || got.channelType != int(discordgo.ChannelTypeGuildForum) || got.name != "[en] 議題" || got.content != "[en] 議題" {
 		t.Fatalf("unexpected forum thread sync: %#v", got)
+	}
+}
+
+func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0]; got.channelID != "en" || got.channelType != int(discordgo.ChannelTypeGuildForum) || got.name != "[en] 議題" || got.content != "[en] 最初の本文" {
+		t.Fatalf("unexpected forum thread sync: %#v", got)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("forum starter should not be sent as a second message: %#v", discord.sent)
+	}
+	links, err := store.MessageTargets(ctx, "forum-post-ja", "forum-post-ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].TargetChannelID != "thread-1" || links[0].TargetMessageID != "thread-1" {
+		t.Fatalf("unexpected forum starter message link: %#v", links)
+	}
+}
+
+func TestForumInitialMessageSendsFirstMessageToNonForumTargetThread(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].content != "" {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" || discord.sent[0].Content != "[en] 最初の本文" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	links, err := store.MessageTargets(ctx, "forum-post-ja", "forum-post-ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].TargetChannelID != "thread-1" || links[0].TargetMessageID != "sent-2" {
+		t.Fatalf("unexpected forum starter message link: %#v", links)
 	}
 }
 

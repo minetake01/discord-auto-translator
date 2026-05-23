@@ -23,7 +23,7 @@ type DiscordAPI interface {
 	RemoveReaction(channelID, messageID, emoji, userID string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
-	CreateThread(channelID string, channelType int, name string) (threadID string, err error)
+	CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
 	EditThread(threadID, name string) error
 	DeleteThread(threadID string) error
@@ -178,19 +178,26 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
-func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name string) (string, error) {
+func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
-		t, err := d.session.ForumThreadStart(channelID, name, 1440, name)
-		if err != nil {
-			return "", err
+		if strings.TrimSpace(initialMessage) == "" {
+			initialMessage = name
 		}
-		return t.ID, nil
+		t, err := d.session.ForumThreadStart(channelID, name, 1440, initialMessage)
+		if err != nil {
+			return "", "", err
+		}
+		messageID := t.ID
+		if t.LastMessageID != "" {
+			messageID = t.LastMessageID
+		}
+		return t.ID, messageID, nil
 	}
 	t, err := d.session.ThreadStart(channelID, name, discordgo.ChannelTypeGuildPublicThread, 1440)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return t.ID, nil
+	return t.ID, "", nil
 }
 
 func isThreadOnlyChannelType(channelType int) bool {

@@ -100,7 +100,7 @@ func main() {
 		if t.Channel == nil || !t.NewlyCreated || t.OwnerID == s.State.User.ID || t.ParentID == "" {
 			return
 		}
-		if err := service.SyncThreadCreate(context.Background(), t.GuildID, t.ParentID, t.ID, t.Name); err != nil {
+		if err := service.SyncThreadCreateFromGateway(context.Background(), t.GuildID, t.ParentID, t.ID, t.Name); err != nil {
 			log.Printf("thread create sync: %v", err)
 		}
 	})
