@@ -16,6 +16,7 @@ type Entry = {
   description: string;
   headings: string[];
   summary: string;
+  searchText?: string;
 };
 
 function usage() {
@@ -40,17 +41,39 @@ function score(entry: Entry, queryTerms: string[]) {
   const route = entry.route.toLowerCase();
   const headings = entry.headings.join(" ").toLowerCase();
   const body = `${entry.description} ${entry.summary}`.toLowerCase();
+  const searchText = (entry.searchText ?? "").toLowerCase();
   let total = 0;
   for (const term of queryTerms) {
     if (route.includes(term)) total += 8;
     if (path.includes(term)) total += 6;
     if (title.includes(term)) total += 5;
     if (headings.includes(term)) total += 3;
+    if (searchText.includes(term)) {
+      total += 2 + Math.min(occurrences(searchText, term), 5);
+    }
     if (body.includes(term)) total += 1;
   }
   const phrase = queryTerms.join(" ");
-  if (phrase && `${title} ${headings} ${body}`.includes(phrase)) total += 10;
+  if (phrase && `${title} ${headings} ${body} ${searchText}`.includes(phrase)) {
+    total += 10 + Math.min(occurrences(searchText, phrase), 5) * 2;
+  }
   return total;
+}
+
+function occurrences(haystack: string, needle: string) {
+  if (!needle) return 0;
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index !== -1) {
+    count++;
+    index = haystack.indexOf(needle, index + needle.length);
+  }
+  return count;
+}
+
+function publicEntry(entry: Entry) {
+  const { searchText: _searchText, ...rest } = entry;
+  return rest;
 }
 
 async function readState() {
@@ -77,7 +100,18 @@ try {
   const state = await readState();
 
   if (json) {
-    console.log(JSON.stringify({ query, state, results }, null, 2));
+    console.log(JSON.stringify(
+      {
+        query,
+        state,
+        results: results.map(({ entry, score }) => ({
+          entry: publicEntry(entry),
+          score,
+        })),
+      },
+      null,
+      2,
+    ));
   } else {
     if (state) {
       console.log(`Docs commit: ${state.commit} synced ${state.syncedAt}`);
