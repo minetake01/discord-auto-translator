@@ -14,6 +14,7 @@ func Commands() []*discordgo.ApplicationCommand {
 		discordgo.ChannelTypeGuildText,
 		discordgo.ChannelTypeGuildNews,
 		discordgo.ChannelTypeGuildForum,
+		discordgo.ChannelTypeGuildMedia,
 	}
 	return []*discordgo.ApplicationCommand{
 		{
@@ -230,7 +231,7 @@ func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption,
 }
 
 func allowedChannelType(t discordgo.ChannelType) bool {
-	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum
+	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum || t == discordgo.ChannelTypeGuildMedia
 }
 
 func respond(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
