@@ -151,7 +151,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if err != nil {
 			return err
 		}
-		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, content); err != nil {
+		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
 			return err
 		}
 	}
@@ -179,7 +179,7 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 		if target == nil {
 			continue
 		}
-		if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID); err != nil {
+		if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target)); err != nil {
 			return err
 		}
 	}
@@ -265,7 +265,7 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 			if err != nil {
 				return err
 			}
-			threadID, err := s.createTargetThread(ctx, source.GroupID, sourceChannelID, sourceThreadID, target.ChannelID, translatedName)
+			threadID, err := s.createTargetThread(ctx, source.GroupID, sourceChannelID, sourceThreadID, target, translatedName)
 			if err != nil {
 				return err
 			}
@@ -319,17 +319,17 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
 }
 
-func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannelID, sourceThreadID, targetChannelID, name string) (string, error) {
+func (s *Service) createTargetThread(ctx context.Context, groupID, sourceChannelID, sourceThreadID string, target GroupChannel, name string) (string, error) {
 	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceThreadID)
 	if err != nil {
 		return "", err
 	}
 	for _, link := range links {
-		if link.GroupID == groupID && link.TargetChannelID == targetChannelID {
-			return s.discord.CreateThreadFromMessage(targetChannelID, link.TargetMessageID, name)
+		if link.GroupID == groupID && link.TargetChannelID == target.ChannelID && !isThreadOnlyChannelType(target.ChannelType) {
+			return s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
 		}
 	}
-	return s.discord.CreateThread(targetChannelID, name)
+	return s.discord.CreateThread(target.ChannelID, target.ChannelType, name)
 }
 
 func (s *Service) translationContext(guildID, channelID string) TranslationContext {
@@ -358,6 +358,13 @@ func findChannel(channels []GroupChannel, id string) *GroupChannel {
 		}
 	}
 	return nil
+}
+
+func threadIDForWebhook(link MessageLink, target *GroupChannel) string {
+	if target == nil || link.TargetChannelID == target.ChannelID {
+		return ""
+	}
+	return link.TargetChannelID
 }
 
 func firstLine(s string) string {

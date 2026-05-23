@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type fakeDiscordAPI struct {
 	sent              []WebhookSend
 	reactions         []reactionCall
 	threads           []threadCall
+	webhookEdits      []webhookEditCall
+	webhookDeletes    []webhookDeleteCall
 	edits             []threadEditCall
 	deletes           []string
 	guildDescriptions map[string]string
@@ -24,14 +28,26 @@ type reactionCall struct {
 }
 
 type threadCall struct {
-	channelID string
-	messageID string
-	name      string
+	channelID   string
+	channelType int
+	messageID   string
+	name        string
 }
 
 type threadEditCall struct {
 	threadID string
 	name     string
+}
+
+type webhookEditCall struct {
+	messageID string
+	threadID  string
+	content   string
+}
+
+type webhookDeleteCall struct {
+	messageID string
+	threadID  string
 }
 
 func (f *fakeDiscordAPI) GuildDescription(guildID string) (string, error) {
@@ -52,8 +68,15 @@ func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (
 	return fmt.Sprintf("sent-%d", f.nextID), nil
 }
 
-func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, content string) error { return nil }
-func (f *fakeDiscordAPI) DeleteWebhook(webhookID, token, messageID string) error        { return nil }
+func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
+	f.webhookEdits = append(f.webhookEdits, webhookEditCall{messageID: messageID, threadID: threadID, content: content})
+	return nil
+}
+
+func (f *fakeDiscordAPI) DeleteWebhook(webhookID, token, messageID, threadID string) error {
+	f.webhookDeletes = append(f.webhookDeletes, webhookDeleteCall{messageID: messageID, threadID: threadID})
+	return nil
+}
 
 func (f *fakeDiscordAPI) AddReaction(channelID, messageID, emoji string) error {
 	f.reactions = append(f.reactions, reactionCall{channelID: channelID, messageID: messageID, emoji: emoji})
@@ -67,9 +90,9 @@ func (f *fakeDiscordAPI) RemoveReaction(channelID, messageID, emoji, userID stri
 func (f *fakeDiscordAPI) PinMessage(channelID, messageID string) error   { return nil }
 func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error { return nil }
 
-func (f *fakeDiscordAPI) CreateThread(channelID, name string) (threadID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name string) (threadID string, err error) {
 	f.nextID++
-	f.threads = append(f.threads, threadCall{channelID: channelID, name: name})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name})
 	return fmt.Sprintf("thread-%d", f.nextID), nil
 }
 
@@ -223,6 +246,64 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 }
 
+func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "thread-ja", GroupID: "g",
+		TargetChannelID: "thread-en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{ID: "source-msg", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", Content: "after"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.webhookEdits) != 1 {
+		t.Fatalf("webhook edits: %#v", discord.webhookEdits)
+	}
+	if got := discord.webhookEdits[0]; got.messageID != "translated-msg" || got.threadID != "thread-en" || got.content != "[en] after" {
+		t.Fatalf("unexpected webhook edit: %#v", got)
+	}
+}
+
+func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "thread-ja", GroupID: "g",
+		TargetChannelID: "thread-en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageDelete(ctx, "guild", "thread-ja", "source-msg"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.webhookDeletes) != 1 {
+		t.Fatalf("webhook deletes: %#v", discord.webhookDeletes)
+	}
+	if got := discord.webhookDeletes[0]; got.messageID != "translated-msg" || got.threadID != "thread-en" {
+		t.Fatalf("unexpected webhook delete: %#v", got)
+	}
+}
+
 func TestThreadStarterMessageIsTranslatedIntoSyncedThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -272,6 +353,34 @@ func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) 
 	}
 	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.name != "[en] 議題" {
 		t.Fatalf("unexpected thread sync: %#v", got)
+	}
+}
+
+func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "forum-post-ja", "議題"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0]; got.channelID != "en" || got.channelType != int(discordgo.ChannelTypeGuildForum) || got.name != "[en] 議題" {
+		t.Fatalf("unexpected forum thread sync: %#v", got)
 	}
 }
 
