@@ -34,6 +34,13 @@ go run ./cmd/discord-auto-translator
 go test ./...
 ```
 
+## Discord Thread/Message Sync
+
+Thread and message mirroring has Discord-specific edge cases around
+`THREAD_CREATE`, `THREAD_STARTER_MESSAGE`, webhooks with `thread_id`, and
+forum/media posts. See [docs/discord-thread-message-sync.md](docs/discord-thread-message-sync.md)
+before changing that behavior.
+
 ## Build
 
 ```sh
