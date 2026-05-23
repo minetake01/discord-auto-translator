@@ -7,12 +7,14 @@ import (
 )
 
 type fakeDiscordAPI struct {
-	sent      []WebhookSend
-	reactions []reactionCall
-	threads   []threadCall
-	edits     []threadEditCall
-	deletes   []string
-	nextID    int
+	sent              []WebhookSend
+	reactions         []reactionCall
+	threads           []threadCall
+	edits             []threadEditCall
+	deletes           []string
+	guildDescriptions map[string]string
+	channelTopics     map[string]string
+	nextID            int
 }
 
 type reactionCall struct {
@@ -30,6 +32,14 @@ type threadCall struct {
 type threadEditCall struct {
 	threadID string
 	name     string
+}
+
+func (f *fakeDiscordAPI) GuildDescription(guildID string) (string, error) {
+	return f.guildDescriptions[guildID], nil
+}
+
+func (f *fakeDiscordAPI) ChannelTopic(channelID string) (string, error) {
+	return f.channelTopics[channelID], nil
 }
 
 func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string, err error) {
@@ -79,9 +89,12 @@ func (f *fakeDiscordAPI) DeleteThread(threadID string) error {
 	return nil
 }
 
-type echoTranslator struct{}
+type echoTranslator struct {
+	contexts []TranslationContext
+}
 
-func (echoTranslator) Translate(ctx context.Context, targetLanguage, text string, history []ChatContextMessage) (string, error) {
+func (e *echoTranslator) Translate(ctx context.Context, targetLanguage, text string, translationContext TranslationContext) (string, error) {
+	e.contexts = append(e.contexts, translationContext)
 	return "[" + targetLanguage + "] " + text, nil
 }
 
@@ -111,7 +124,7 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 
 	if err := service.SyncReaction(ctx, "guild", "en", "translated-msg", "👍", "bot", true); err != nil {
 		t.Fatal(err)
@@ -129,7 +142,7 @@ func TestReplyQuoteIncludesMentionAndTruncatedFirstLine(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
@@ -154,11 +167,38 @@ func TestReplyQuoteIncludesMentionAndTruncatedFirstLine(t *testing.T) {
 	}
 }
 
+func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		guildDescriptions: map[string]string{"guild": "Release coordination server"},
+		channelTopics:     map[string]string{"ja": "Japanese announcements"},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "出荷しました",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if got := translator.contexts[0]; got.ServerDescription != "Release coordination server" || got.ChannelTopic != "Japanese announcements" {
+		t.Fatalf("unexpected translation context: %#v", got)
+	}
+}
+
 func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
@@ -187,7 +227,7 @@ func TestThreadStarterMessageIsTranslatedIntoSyncedThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
@@ -213,7 +253,7 @@ func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) 
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
@@ -239,7 +279,7 @@ func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
 		t.Fatal(err)
@@ -261,7 +301,7 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
 		t.Fatal(err)
@@ -287,7 +327,7 @@ func TestHandleMessageCreateSkipsThreadSystemMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, echoTranslator{})
+	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
