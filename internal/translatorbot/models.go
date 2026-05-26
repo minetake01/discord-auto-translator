@@ -50,6 +50,7 @@ type DiscordMessage struct {
 	AuthorDisplayName    string
 	AuthorAvatarURL      string
 	Content              string
+	Attachments          []DiscordAttachment
 	ReferencedMessageID  string
 	MentionAuthor        bool
 	WebhookID            string
@@ -57,4 +58,10 @@ type DiscordMessage struct {
 	Edited               bool
 	ThreadSystemMessage  bool
 	ThreadStarterMessage bool
+}
+
+type DiscordAttachment struct {
+	URL         string
+	Filename    string
+	ContentType string
 }

@@ -1,9 +1,13 @@
 package translatorbot
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +43,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || strings.TrimSpace(m.Content) == "" {
+	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0) {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -65,12 +69,10 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 			if target.ChannelID == m.ChannelID {
 				continue
 			}
-			translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
-			content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
+			content, err := s.translateMessageContent(ctx, target.Language, m.Content, s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID))
 			if err != nil {
 				return err
 			}
-			content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 			quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
 			if err != nil {
 				return err
@@ -78,9 +80,13 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 			if quote != "" {
 				content = quote + "\n" + content
 			}
+			files, err := s.attachmentFiles(ctx, m.Attachments)
+			if err != nil {
+				return err
+			}
 			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 			msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
-				Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar,
+				Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, Files: files,
 			})
 			if err != nil {
 				return err
@@ -112,12 +118,10 @@ func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessag
 		if target == nil {
 			continue
 		}
-		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
-		content, err := s.translator.Translate(ctx, target.Language, m.Content, translationContext)
+		content, err := s.translateMessageContent(ctx, target.Language, m.Content, s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID))
 		if err != nil {
 			return err
 		}
-		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 		quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 		if err != nil {
 			return err
@@ -125,9 +129,13 @@ func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessag
 		if quote != "" {
 			content = quote + "\n" + content
 		}
+		files, err := s.attachmentFiles(ctx, m.Attachments)
+		if err != nil {
+			return err
+		}
 		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, ThreadID: thread.TargetThreadID,
+			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, ThreadID: thread.TargetThreadID, Files: files,
 		})
 		if err != nil {
 			return err
@@ -303,6 +311,7 @@ type threadCreateRequest struct {
 	InitialMessageUsername string
 	InitialMessageAvatar   string
 	InitialMessageText     string
+	InitialMessageFiles    []DiscordAttachment
 	DeferWithoutSourceMsg  bool
 }
 
@@ -336,13 +345,9 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if err != nil {
 				return false, err
 			}
-			var translatedInitial string
-			if req.InitialMessageText != "" {
-				translatedInitial, err = s.translator.Translate(ctx, target.Language, req.InitialMessageText, translationContext)
-				if err != nil {
-					return false, err
-				}
-				translatedInitial = ReplaceAlternateURLs(ctx, translatedInitial, target.Language, s.httpClient)
+			translatedInitial, err := s.translateMessageContent(ctx, target.Language, req.InitialMessageText, translationContext)
+			if err != nil {
+				return false, err
 			}
 			threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
 			if err != nil {
@@ -358,10 +363,14 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if err != nil {
 				return false, err
 			}
-			if req.InitialMessageID != "" && initialMessageID == "" && translatedInitial != "" {
+			if req.InitialMessageID != "" && initialMessageID == "" && (translatedInitial != "" || len(req.InitialMessageFiles) > 0) {
+				files, err := s.attachmentFiles(ctx, req.InitialMessageFiles)
+				if err != nil {
+					return false, err
+				}
 				avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
 				initialMessageID, err = s.discord.SendWebhook(target.WebhookID, target.WebhookToken, WebhookSend{
-					Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, ThreadID: threadID,
+					Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, ThreadID: threadID, Files: files,
 				})
 				if err != nil {
 					return false, err
@@ -416,10 +425,69 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageUsername = m.AuthorDisplayName
 		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageText = m.Content
+		req.InitialMessageFiles = m.Attachments
 	} else {
 		req.SourceMessageID = m.ChannelID
 	}
 	return s.syncThreadCreate(ctx, req)
+}
+
+func (s *Service) translateMessageContent(ctx context.Context, targetLanguage, content string, translationContext TranslationContext) (string, error) {
+	if strings.TrimSpace(content) == "" {
+		return "", nil
+	}
+	translated, err := s.translator.Translate(ctx, targetLanguage, content, translationContext)
+	if err != nil {
+		return "", err
+	}
+	return ReplaceAlternateURLs(ctx, translated, targetLanguage, s.httpClient), nil
+}
+
+func (s *Service) attachmentFiles(ctx context.Context, attachments []DiscordAttachment) ([]WebhookFile, error) {
+	files := make([]WebhookFile, 0, len(attachments))
+	for _, attachment := range attachments {
+		url := strings.TrimSpace(attachment.URL)
+		if url == "" {
+			continue
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			return nil, readErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("download attachment %s: %s", url, resp.Status)
+		}
+		files = append(files, WebhookFile{
+			Name:        attachmentFileName(attachment),
+			ContentType: attachment.ContentType,
+			Reader:      bytes.NewReader(body),
+		})
+	}
+	return files, nil
+}
+
+func attachmentFileName(attachment DiscordAttachment) string {
+	if name := filepath.Base(strings.TrimSpace(attachment.Filename)); name != "." && name != "/" && name != "\\" {
+		return name
+	}
+	if u, err := url.Parse(strings.TrimSpace(attachment.URL)); err == nil {
+		if name := filepath.Base(u.Path); name != "." && name != "/" && name != "\\" {
+			return name
+		}
+	}
+	return "attachment"
 }
 
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {
@@ -462,13 +530,17 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 
 func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
 	if isThreadOnlyChannelType(target.ChannelType) {
-		if initialMessage == "" {
+		files, err := s.attachmentFiles(ctx, req.InitialMessageFiles)
+		if err != nil {
+			return "", "", err
+		}
+		if initialMessage == "" && len(files) == 0 {
 			if req.DeferWithoutSourceMsg {
 				return "", "", nil
 			}
 			initialMessage = name
 		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, initialMessage)
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, initialMessage, files)
 	}
 	if req.SourceMessageID != "" {
 		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
@@ -485,7 +557,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", nil
 		}
 	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil)
 	return threadID, "", err
 }
 

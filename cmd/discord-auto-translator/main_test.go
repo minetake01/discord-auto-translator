@@ -60,3 +60,17 @@ func TestAuthorDisplayNameUsesMemberDisplayNameFallbacks(t *testing.T) {
 		})
 	}
 }
+
+func TestAttachmentsFromDiscordMapsWebhookFileFields(t *testing.T) {
+	got := attachmentsFromDiscord([]*discordgo.MessageAttachment{
+		nil,
+		{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("got %#v", got)
+	}
+	if got[0].URL != "https://cdn.discordapp.com/a.png" || got[0].Filename != "a.png" || got[0].ContentType != "image/png" {
+		t.Fatalf("unexpected attachment mapping: %#v", got[0])
+	}
+}

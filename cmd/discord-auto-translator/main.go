@@ -55,6 +55,7 @@ func main() {
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
+			Attachments:         attachmentsFromDiscord(m.Attachments),
 			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
@@ -135,6 +136,21 @@ func main() {
 	if err := httpServer.Shutdown(context.Background()); err != nil {
 		log.Printf("avatar http server shutdown: %v", err)
 	}
+}
+
+func attachmentsFromDiscord(attachments []*discordgo.MessageAttachment) []translatorbot.DiscordAttachment {
+	out := make([]translatorbot.DiscordAttachment, 0, len(attachments))
+	for _, attachment := range attachments {
+		if attachment == nil {
+			continue
+		}
+		out = append(out, translatorbot.DiscordAttachment{
+			URL:         attachment.URL,
+			Filename:    attachment.Filename,
+			ContentType: attachment.ContentType,
+		})
+	}
+	return out
 }
 
 func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {

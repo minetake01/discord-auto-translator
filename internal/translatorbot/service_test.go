@@ -3,9 +3,11 @@ package translatorbot
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +40,13 @@ type threadCall struct {
 	channelType int
 	messageID   string
 	name        string
+	content     string
+	files       []sentFile
+}
+
+type sentFile struct {
+	name        string
+	contentType string
 	content     string
 }
 
@@ -78,6 +87,15 @@ func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string
 }
 
 func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error) {
+	var files []WebhookFile
+	for _, file := range msg.Files {
+		content, err := io.ReadAll(file.Reader)
+		if err != nil {
+			return "", err
+		}
+		files = append(files, WebhookFile{Name: file.Name, ContentType: file.ContentType, Reader: strings.NewReader(string(content))})
+	}
+	msg.Files = files
 	f.nextID++
 	f.sent = append(f.sent, msg)
 	return fmt.Sprintf("sent-%d", f.nextID), nil
@@ -105,13 +123,13 @@ func (f *fakeDiscordAPI) RemoveReaction(channelID, messageID, emoji, userID stri
 func (f *fakeDiscordAPI) PinMessage(channelID, messageID string) error   { return nil }
 func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error { return nil }
 
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (threadID, initialMessageID string, err error) {
 	f.nextID++
 	threadID = fmt.Sprintf("thread-%d", f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, files: readSentFiles(files)})
 	return threadID, initialMessageID, nil
 }
 
@@ -129,6 +147,15 @@ func (f *fakeDiscordAPI) EditThread(threadID, name string) error {
 func (f *fakeDiscordAPI) DeleteThread(threadID string) error {
 	f.deletes = append(f.deletes, threadID)
 	return nil
+}
+
+func readSentFiles(files []WebhookFile) []sentFile {
+	out := make([]sentFile, 0, len(files))
+	for _, file := range files {
+		content, _ := io.ReadAll(file.Reader)
+		out = append(out, sentFile{name: file.Name, contentType: file.ContentType, content: string(content)})
+	}
+	return out
 }
 
 type echoTranslator struct {
@@ -235,6 +262,72 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	}
 	if got := translator.contexts[0]; got.ServerName != "Ship Room" || got.ServerDescription != "Release coordination server" || got.ChannelName != "announcements-ja" || got.ChannelTopic != "Japanese announcements" {
 		t.Fatalf("unexpected translation context: %#v", got)
+	}
+}
+
+func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		fmt.Fprint(w, "png-bytes")
+	}))
+	t.Cleanup(fileServer.Close)
+	service.httpClient = fileServer.Client()
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "画像です",
+		Attachments: []DiscordAttachment{{URL: fileServer.URL + "/image.png", Filename: "image.png", ContentType: "image/png"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if got := discord.sent[0]; len(got.Files) != 1 || got.Files[0].Name != "image.png" || got.Files[0].ContentType != "image/png" {
+		t.Fatalf("unexpected files: %#v", got.Files)
+	}
+	content, err := io.ReadAll(discord.sent[0].Files[0].Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "png-bytes" {
+		t.Fatalf("file content = %q", content)
+	}
+}
+
+func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "file-only")
+	}))
+	t.Cleanup(fileServer.Close)
+	service.httpClient = fileServer.Client()
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Attachments: []DiscordAttachment{{URL: fileServer.URL + "/photo.jpg", Filename: "photo.jpg", ContentType: "image/jpeg"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 0 {
+		t.Fatalf("blank content should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "" || len(discord.sent[0].Files) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
 	}
 }
 

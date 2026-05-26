@@ -1,6 +1,7 @@
 package translatorbot
 
 import (
+	"io"
 	"net/url"
 	"regexp"
 	"strings"
@@ -25,7 +26,7 @@ type DiscordAPI interface {
 	RemoveReaction(channelID, messageID, emoji, userID string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
-	CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error)
+	CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (threadID, initialMessageID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
 	EditThread(threadID, name string) error
 	DeleteThread(threadID string) error
@@ -36,6 +37,13 @@ type WebhookSend struct {
 	Username  string
 	AvatarURL string
 	ThreadID  string
+	Files     []WebhookFile
+}
+
+type WebhookFile struct {
+	Name        string
+	ContentType string
+	Reader      io.Reader
 }
 
 type DiscordGoAPI struct {
@@ -92,6 +100,13 @@ func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (str
 		Content:   msg.Content,
 		Username:  sanitizeWebhookName(msg.Username),
 		AvatarURL: sanitizeWebhookAvatarURL(msg.AvatarURL),
+	}
+	for _, file := range msg.Files {
+		params.Files = append(params.Files, &discordgo.File{
+			Name:        file.Name,
+			ContentType: file.ContentType,
+			Reader:      file.Reader,
+		})
 	}
 	var (
 		m   *discordgo.Message
@@ -196,12 +211,23 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
-func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (string, string, error) {
+func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
-		if strings.TrimSpace(initialMessage) == "" {
+		if strings.TrimSpace(initialMessage) == "" && len(files) == 0 {
 			initialMessage = name
 		}
-		t, err := d.session.ForumThreadStart(channelID, name, 1440, initialMessage)
+		message := &discordgo.MessageSend{Content: initialMessage}
+		for _, file := range files {
+			message.Files = append(message.Files, &discordgo.File{
+				Name:        file.Name,
+				ContentType: file.ContentType,
+				Reader:      file.Reader,
+			})
+		}
+		t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
+			Name:                name,
+			AutoArchiveDuration: 1440,
+		}, message)
 		if err != nil {
 			return "", "", err
 		}
