@@ -1,16 +1,48 @@
 # Discord Auto Translator
 
-Discord channels in the same translation group are mirrored through webhooks and translated with Gemini.
+Discord のチャンネル間でメッセージを自動翻訳・ミラーリングするボットです。  
+Google Gemini を使って、異なる言語を話すユーザーが同じサーバー内でシームレスに会話できるようにします。
 
-## Directory Layout
+## 特徴
 
-- `cmd/discord-auto-translator`: application entry point.
-- `internal/translatorbot`: bot configuration, Discord integration, translation service, persistence, and tests.
+- **リアルタイム翻訳**: メッセージが投稿された瞬間に翻訳して別チャンネルへ転送
+- **送信者の偽装**: ウェブフックを使い、投稿者の名前とアバターをそのまま表示
+- **編集・削除の同期**: 元メッセージを編集・削除すると翻訳版も更新・削除
+- **リプライの同期**: 返信引用も翻訳されてリンク付きで表示
+- **リアクションの同期**: 絵文字リアクションが全言語チャンネルに反映
+- **スレッドの同期**: スレッド作成・名前変更・削除も対応（テキスト・フォーラム・メディア）
+- **翻訳文脈の考慮**: チャンネル名・トピック・直近の会話履歴を踏まえて自然な翻訳
+- **プロンプトインジェクション対策**: URL・メンション・コードブロック等を保護
 
-## Setup
+## 必要なもの
 
-1. Copy `.env.example` to `.env`.
-2. Fill in the required values:
+- Go 1.24 以上
+- Discord ボットアカウント（`MESSAGE CONTENT` 特権インテントを有効化済み）
+- Google Gemini API キー
+
+## セットアップ
+
+### 1. Discord ボットの準備
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリケーションを作成
+2. **Bot** ページで:
+   - `MESSAGE CONTENT INTENT` を有効化（必須）
+   - ボットトークンをコピー
+3. **OAuth2 → URL Generator** でボットをサーバーに招待:
+   - Scopes: `bot`, `applications.commands`
+   - Permissions: `Send Messages`, `Manage Webhooks`, `Read Message History`, `Add Reactions`, `Manage Messages`
+
+### 2. Gemini API キーの取得
+
+[Google AI Studio](https://aistudio.google.com/) で API キーを取得してください。
+
+### 3. 環境変数の設定
+
+```sh
+cp .env.example .env
+```
+
+`.env` を編集して以下を設定します：
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -20,45 +52,88 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 ```
 
-`PUBLIC_BASE_URL` must be reachable from Discord. The bot uses it to expose `/avatar`, which returns a PNG avatar with an orange circular border for webhook messages.
+| 変数 | 必須 | 説明 |
+|---|---|---|
+| `DISCORD_TOKEN` | 必須 | Discord ボットトークン |
+| `GEMINI_API_KEY` | 必須 | Gemini API キー |
+| `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
+| `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
+| `PUBLIC_BASE_URL` | 任意 | アバターにオレンジリングバッジを付ける場合のベース URL |
 
-## Run
+### 4. 起動
 
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-## Test
+または、ビルドして実行：
+
+```sh
+go build -o discord-auto-translator ./cmd/discord-auto-translator
+./discord-auto-translator
+```
+
+## 使い方
+
+ボットを起動するとスラッシュコマンドが各サーバーに登録されます。
+
+### チャンネルの設定
+
+#### 翻訳グループを作成する
+
+日本語チャンネルで `/new-channel` を実行して翻訳グループを作成します：
+
+```
+/new-channel language:ja
+```
+
+#### 他の言語チャンネルを追加する
+
+英語チャンネルで `/join-channel` を実行してグループに参加させます：
+
+```
+/join-channel group:general language:en
+```
+
+中国語チャンネルも追加する場合：
+
+```
+/join-channel group:general language:zh-CN
+```
+
+これで `#general-ja`, `#general-en`, `#general-zh` が連携されます。
+
+### コマンド一覧
+
+| コマンド | 説明 |
+|---|---|
+| `/new-channel language:[言語]` | 翻訳グループを新規作成 |
+| `/join-channel group:[グループ] language:[言語]` | グループにチャンネルを追加 |
+| `/leave-channel group:[グループ]` | グループからチャンネルを離脱 |
+| `/delete-group group:[グループ]` | グループ全体を削除 |
+
+- `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
+- `channel` オプションを省略すると、コマンドを実行したチャンネルが対象
+- 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア
+
+## テスト
 
 ```sh
 go test ./...
 ```
 
-## Discord Thread/Message Sync
+## GCE へのデプロイ
 
-Thread and message mirroring has Discord-specific edge cases around
-`THREAD_CREATE`, `THREAD_STARTER_MESSAGE`, webhooks with `thread_id`, and
-forum/media posts. See [docs/discord-thread-message-sync.md](docs/discord-thread-message-sync.md)
-before changing that behavior.
-
-## Build
-
-```sh
-go build ./cmd/discord-auto-translator
-```
-
-## Deploy
-
-Deploy to the existing Google Compute Engine VM:
+Google Compute Engine へのデプロイスクリプトが `deploy/deploy-gce.ps1` に含まれています（Windows PowerShell 用）。
 
 ```powershell
+# 初回セットアップ（Caddy + systemd のインストール）
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+
+# コード更新時
 .\deploy\deploy-gce.ps1
 ```
 
-For first-time VM setup, run:
+## ライセンス
 
-```powershell
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
-```
-
-`-UploadDb` is available for initial migration, but it is intentionally off by default so production data is not overwritten during normal deploys.
+このプロジェクトのライセンスについては [LICENSE](LICENSE) ファイルを参照してください。
