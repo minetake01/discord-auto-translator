@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"discord-auto-translator/internal/translatorbot"
 	"github.com/bwmarrin/discordgo"
@@ -23,7 +24,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer store.Close()
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
 		log.Fatal(err)
@@ -46,6 +46,19 @@ func main() {
 			log.Printf("avatar http server: %v", err)
 		}
 	}()
+	dg.AddHandler(func(s *discordgo.Session, g *discordgo.GuildCreate) {
+		if g == nil || g.Unavailable || g.ID == "" {
+			return
+		}
+		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID)
+		if err != nil {
+			log.Printf("register commands in new guild %s: %v", g.ID, err)
+			return
+		}
+		if cmdID != "" {
+			service.SetAddGlossaryCommandID(g.ID, cmdID)
+		}
+	})
 	dg.AddHandler(commands.Handle)
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m.Author == nil {
@@ -140,15 +153,22 @@ func main() {
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
-	defer dg.Close()
 	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 	service.SetAddGlossaryCommandIDs(addGlossaryCommandIDs)
 	log.Println("Discord Gemini Auto Translator is running")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
-	if err := httpServer.Shutdown(context.Background()); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		log.Printf("avatar http server shutdown: %v", err)
+	}
+	if err := dg.Close(); err != nil {
+		log.Printf("discord session close: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		log.Printf("store close: %v", err)
 	}
 }
 
