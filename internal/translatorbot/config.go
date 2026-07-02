@@ -3,6 +3,9 @@ package translatorbot
 import (
 	"bufio"
 	"errors"
+	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -47,7 +50,38 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.GeminiAPIKey == "" {
 		return cfg, errors.New("GEMINI_API_KEY is required")
 	}
+	if err := validateHTTPAddr(cfg.HTTPAddr); err != nil {
+		return cfg, err
+	}
+	if err := validatePublicBaseURL(cfg.PublicBaseURL); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
+}
+
+func validateHTTPAddr(addr string) error {
+	if _, err := net.ResolveTCPAddr("tcp", addr); err != nil {
+		return fmt.Errorf("HTTP_ADDR is invalid: %w", err)
+	}
+	return nil
+}
+
+func validatePublicBaseURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("PUBLIC_BASE_URL is invalid: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("PUBLIC_BASE_URL must use http or https")
+	}
+	if u.Host == "" {
+		return errors.New("PUBLIC_BASE_URL must include a host")
+	}
+	return nil
 }
 
 func loadDotEnv(path string) error {
