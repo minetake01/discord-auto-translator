@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ type fakeDiscordAPI struct {
 	threads           []threadCall
 	webhookEdits      []webhookEditCall
 	webhookDeletes    []webhookDeleteCall
+	pinCalls          []pinCall
 	edits             []threadEditCall
 	deletes           []string
 	guildNames        map[string]string
@@ -66,6 +68,12 @@ type webhookDeleteCall struct {
 	threadID  string
 }
 
+type pinCall struct {
+	channelID string
+	messageID string
+	pinned    bool
+}
+
 func (f *fakeDiscordAPI) GuildName(guildID string) (string, error) {
 	return f.guildNames[guildID], nil
 }
@@ -84,6 +92,12 @@ func (f *fakeDiscordAPI) ChannelTopic(channelID string) (string, error) {
 
 func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string, err error) {
 	return "webhook-" + channelID, "token-" + channelID, nil
+}
+
+func (f *fakeDiscordAPI) SendChannelMessage(channelID, content string) error {
+	f.nextID++
+	f.sent = append(f.sent, WebhookSend{Content: content})
+	return nil
 }
 
 func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error) {
@@ -120,8 +134,15 @@ func (f *fakeDiscordAPI) RemoveReaction(channelID, messageID, emoji, userID stri
 	return nil
 }
 
-func (f *fakeDiscordAPI) PinMessage(channelID, messageID string) error   { return nil }
-func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error { return nil }
+func (f *fakeDiscordAPI) PinMessage(channelID, messageID string) error {
+	f.pinCalls = append(f.pinCalls, pinCall{channelID: channelID, messageID: messageID, pinned: true})
+	return nil
+}
+
+func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
+	f.pinCalls = append(f.pinCalls, pinCall{channelID: channelID, messageID: messageID, pinned: false})
+	return nil
+}
 
 func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (threadID, initialMessageID string, err error) {
 	f.nextID++
@@ -162,9 +183,13 @@ type echoTranslator struct {
 	contexts []TranslationContext
 }
 
-func (e *echoTranslator) Translate(ctx context.Context, targetLanguage, text string, translationContext TranslationContext) (string, error) {
+func (e *echoTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
 	e.contexts = append(e.contexts, translationContext)
-	return "[" + targetLanguage + "] " + text, nil
+	out := make(map[string]string, len(targetLanguages))
+	for _, lang := range targetLanguages {
+		out[lang] = "[" + lang + "] " + text
+	}
+	return MultiTranslationResult{Translations: out}, nil
 }
 
 func seedGroup(t *testing.T, s *Store) {
@@ -863,5 +888,225 @@ func TestHandleMessageCreateSkipsThreadSystemMessage(t *testing.T) {
 	}
 	if len(discord.sent) != 0 {
 		t.Fatalf("thread system message was translated: %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "existing", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "hello",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "hello",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("expected no webhook send when link exists, got %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateDuplicateDelivery(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	msg := DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "hello",
+	}
+	if err := service.HandleMessageCreate(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, msg); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("duplicate delivery sent %d messages, want 1: %#v", len(discord.sent), discord.sent)
+	}
+}
+
+func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	store.saveMessageLinkErr = errors.New("db unavailable")
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.sendAndSaveLink(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}, "", WebhookSend{Content: "[en] hello", Username: "u"}, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "hello",
+	})
+	if err == nil {
+		t.Fatal("expected save error")
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if len(discord.webhookDeletes) != 1 {
+		t.Fatalf("expected compensating delete, got %#v", discord.webhookDeletes)
+	}
+	if discord.webhookDeletes[0].messageID != "sent-1" {
+		t.Fatalf("unexpected delete target: %#v", discord.webhookDeletes[0])
+	}
+}
+
+type selectiveFailTranslator struct {
+	failLanguage string
+}
+
+func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
+	for _, lang := range targetLanguages {
+		if lang == s.failLanguage {
+			return MultiTranslationResult{}, errors.New("translation failed")
+		}
+	}
+	out := make(map[string]string, len(targetLanguages))
+	for _, lang := range targetLanguages {
+		out[lang] = "[" + lang + "] " + text
+	}
+	return MultiTranslationResult{Translations: out}, nil
+}
+
+func seedThreeChannelGroup(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range []GroupChannel{
+		{GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en"},
+		{GroupID: "g", GuildID: "guild", ChannelID: "fr", Language: "fr", WebhookID: "w-fr", WebhookToken: "t-fr"},
+	} {
+		if err := s.JoinChannel(ctx, ch); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+type feedbackTranslator struct{}
+
+func (f *feedbackTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
+	out := make(map[string]string, len(targetLanguages))
+	for _, lang := range targetLanguages {
+		out[lang] = "[" + lang + "] " + text
+	}
+	return MultiTranslationResult{Translations: out, ContainsTranslationFeedback: true}, nil
+}
+
+func TestHandleMessageCreateAppendsFeedbackHint(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &feedbackTranslator{})
+	service.SetAddGlossaryCommandIDs(map[string]string{"guild": "cmd-1"})
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "翻訳が違う",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if !strings.Contains(discord.sent[0].Content, "</add-glossary:cmd-1>") {
+		t.Fatalf("missing glossary hint: %#v", discord.sent[0])
+	}
+}
+
+func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	service.SetRateLimiter(NewTokenRateLimiter(10))
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "this message should exceed the tiny rate limit",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if !strings.Contains(discord.sent[0].Content, "レート制限") {
+		t.Fatalf("unexpected notification: %#v", discord.sent[0])
+	}
+}
+
+func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &selectiveFailTranslator{failLanguage: "en"})
+	seedThreeChannelGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "hello",
+	})
+	if err == nil {
+		t.Fatal("expected aggregated error")
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("want failure notification only, got %#v", discord.sent)
+	}
+	if !strings.Contains(discord.sent[0].Content, "翻訳に失敗") {
+		t.Fatalf("unexpected notification: %#v", discord.sent[0])
+	}
+	links, err := store.MessageTargets(ctx, "ja", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("unexpected links: %#v", links)
+	}
+}
+
+func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{pinCalls: []pinCall{}}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncPin(ctx, "ja", "source", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SyncPin(ctx, "ja", "source", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.pinCalls) != 2 {
+		t.Fatalf("pin calls: %#v", discord.pinCalls)
+	}
+	if discord.pinCalls[0].pinned != true || discord.pinCalls[1].pinned != false {
+		t.Fatalf("unexpected pin sequence: %#v", discord.pinCalls)
 	}
 }
