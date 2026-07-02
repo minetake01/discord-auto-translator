@@ -209,20 +209,6 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 	return b.String()
 }
 
-// Deprecated: use BuildMultiTranslationSystemInstruction.
-func BuildTranslationSystemInstruction(targetLanguage string) string {
-	return BuildMultiTranslationSystemInstruction()
-}
-
-// Deprecated: use BuildMultiTranslationUserPrompt.
-func BuildTranslationUserPrompt(targetLanguage, content string, translationContext TranslationContext) string {
-	return BuildMultiTranslationUserPrompt([]string{targetLanguage}, content, translationContext, nil)
-}
-
-func BuildTranslationPrompt(targetLanguage, content string, translationContext TranslationContext) string {
-	return BuildMultiTranslationUserPrompt([]string{targetLanguage}, content, translationContext, nil)
-}
-
 func EstimateTranslationTokens(prompt, response string) int {
 	total := len(prompt) + len(response)
 	if total == 0 {
