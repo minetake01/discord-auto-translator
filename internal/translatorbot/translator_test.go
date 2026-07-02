@@ -108,13 +108,22 @@ func TestBuildTranslationUserPromptEscapesAdversarialContent(t *testing.T) {
 
 func TestProtectorRestoresURLsAndMarkdown(t *testing.T) {
 	p := NewProtector()
-	in := "see https://example.com/a?x=1 and `code` ||secret||"
+	in := "see https://example.com/a?x=1 and `code`"
 	protected := p.Protect(in)
 	if strings.Contains(protected, "https://example.com") || strings.Contains(protected, "`code`") {
 		t.Fatalf("not protected: %s", protected)
 	}
 	if got := p.Restore(protected); got != in {
 		t.Fatalf("got %q want %q", got, in)
+	}
+}
+
+func TestProtectorDoesNotMaskSpoilers(t *testing.T) {
+	p := NewProtector()
+	in := "||secret||"
+	protected := p.Protect(in)
+	if protected != in {
+		t.Fatalf("spoilers should not be masked, got %q", protected)
 	}
 }
 

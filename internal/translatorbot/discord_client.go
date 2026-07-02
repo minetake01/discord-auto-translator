@@ -38,6 +38,7 @@ type WebhookSend struct {
 	Username  string
 	AvatarURL string
 	ThreadID  string
+	TTS       bool
 	Files     []WebhookFile
 }
 
@@ -106,6 +107,7 @@ func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (str
 		Content:   msg.Content,
 		Username:  sanitizeWebhookName(msg.Username),
 		AvatarURL: sanitizeWebhookAvatarURL(msg.AvatarURL),
+		TTS:       msg.TTS,
 	}
 	for _, file := range msg.Files {
 		params.Files = append(params.Files, &discordgo.File{

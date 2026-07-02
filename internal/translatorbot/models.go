@@ -41,27 +41,38 @@ type ThreadLink struct {
 }
 
 type DiscordMessage struct {
-	ID                   string
-	ChannelID            string
-	GuildID              string
-	ParentChannelID      string
-	ThreadName           string
-	AuthorID             string
-	AuthorDisplayName    string
-	AuthorAvatarURL      string
-	Content              string
-	Attachments          []DiscordAttachment
-	ReferencedMessageID  string
-	MentionAuthor        bool
-	WebhookID            string
-	Bot                  bool
-	Edited               bool
-	ThreadSystemMessage  bool
-	ThreadStarterMessage bool
+	ID                         string
+	ChannelID                  string
+	GuildID                    string
+	ParentChannelID            string
+	ThreadName                 string
+	AuthorID                   string
+	AuthorDisplayName          string
+	AuthorAvatarURL            string
+	Content                    string
+	Attachments                []DiscordAttachment
+	Stickers                   []DiscordSticker
+	ReferencedMessageID        string
+	ReferencedMessageChannelID string
+	ReferencedMessageAuthorID  string
+	ReferencedMessageContent   string
+	MentionAuthor              bool
+	TTS                        bool
+	WebhookID                  string
+	Bot                        bool
+	Edited                     bool
+	ThreadSystemMessage        bool
+	ThreadStarterMessage       bool
 }
 
 type DiscordAttachment struct {
 	URL         string
 	Filename    string
 	ContentType string
+}
+
+type DiscordSticker struct {
+	ID         string
+	Name       string
+	FormatType int
 }

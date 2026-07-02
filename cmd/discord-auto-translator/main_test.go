@@ -75,20 +75,28 @@ func TestAttachmentsFromDiscordMapsWebhookFileFields(t *testing.T) {
 	}
 }
 
-func TestPinStateChanged(t *testing.T) {
-	if pinStateChanged(&discordgo.MessageUpdate{
-		Message:      &discordgo.Message{Pinned: true},
-		BeforeUpdate: &discordgo.Message{Pinned: false},
-	}) != true {
-		t.Fatal("expected pin change")
+func TestReferencedMessageFields(t *testing.T) {
+	id, channelID, authorID, content := referencedMessageFields(
+		&discordgo.MessageReference{MessageID: "ref", ChannelID: "ch"},
+		&discordgo.Message{
+			ID: "ref", ChannelID: "ch", Content: "quoted",
+			Author: &discordgo.User{ID: "author"},
+		},
+	)
+	if id != "ref" || channelID != "ch" || authorID != "author" || content != "quoted" {
+		t.Fatalf("got %q %q %q %q", id, channelID, authorID, content)
 	}
-	if pinStateChanged(&discordgo.MessageUpdate{
-		Message:      &discordgo.Message{Pinned: true},
-		BeforeUpdate: &discordgo.Message{Pinned: true},
-	}) != false {
-		t.Fatal("expected no pin change")
+}
+
+func TestStickersFromDiscordMapsStickerFields(t *testing.T) {
+	got := stickersFromDiscord([]*discordgo.StickerItem{
+		nil,
+		{ID: "1", Name: "wave", FormatType: discordgo.StickerFormatTypePNG},
+	})
+	if len(got) != 1 {
+		t.Fatalf("got %#v", got)
 	}
-	if pinStateChanged(&discordgo.MessageUpdate{Message: &discordgo.Message{Pinned: true}}) != false {
-		t.Fatal("expected false without before update")
+	if got[0].ID != "1" || got[0].Name != "wave" || got[0].FormatType != 1 {
+		t.Fatalf("unexpected sticker mapping: %#v", got[0])
 	}
 }

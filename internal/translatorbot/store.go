@@ -85,6 +85,12 @@ func (s *Store) Init(ctx context.Context) error {
 			target_language TEXT NOT NULL,
 			PRIMARY KEY (group_id, source_thread_id, target_channel_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS pin_states (
+			channel_id TEXT NOT NULL,
+			message_id TEXT NOT NULL,
+			pinned INTEGER NOT NULL,
+			PRIMARY KEY (channel_id, message_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS processed_events (
 			event_id TEXT PRIMARY KEY,
 			created_at TEXT NOT NULL
@@ -274,6 +280,34 @@ func scanChannels(rows *sql.Rows) ([]GroupChannel, error) {
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) GetPinState(ctx context.Context, channelID, messageID string) (pinned bool, known bool, err error) {
+	row := s.db.QueryRowContext(ctx, `SELECT pinned FROM pin_states WHERE channel_id=? AND message_id=?`, channelID, messageID)
+	var value int
+	err = row.Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return value != 0, true, nil
+}
+
+func (s *Store) SavePinState(ctx context.Context, channelID, messageID string, pinned bool) error {
+	value := 0
+	if pinned {
+		value = 1
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO pin_states(channel_id,message_id,pinned) VALUES(?,?,?)`, channelID, messageID, value)
+	return err
+}
+
+func (s *Store) UpdateMessageLinkSnapshot(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID, snapshot string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE message_links SET source_content_snapshot=? WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=?`,
+		snapshot, sourceChannelID, sourceMessageID, targetChannelID)
+	return err
 }
 
 func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {

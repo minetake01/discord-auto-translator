@@ -119,7 +119,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0) {
+	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "") {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -213,14 +213,14 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		if quote != "" {
 			content = quote + "\n" + content
 		}
-		files, err := s.attachmentFiles(ctx, m.Attachments)
+		files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
 		}
 		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, Files: files,
+			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, Files: files,
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
@@ -236,14 +236,23 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, source GroupChannel, targets []GroupChannel) error {
 	var errs []error
 	for _, target := range targets {
-		files, err := s.attachmentFiles(ctx, m.Attachments)
+		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
+			continue
+		}
+		content := ""
+		if quote != "" {
+			content = quote
+		}
+		files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
 		}
 		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: "", Username: m.AuthorDisplayName, AvatarURL: avatar, Files: files,
+			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, Files: files,
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
@@ -348,13 +357,13 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	if quote != "" {
 		content = quote + "\n" + content
 	}
-	files, err := s.attachmentFiles(ctx, m.Attachments)
+	files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 	err = s.sendAndSaveLink(ctx, *target, thread.TargetThreadID, WebhookSend{
-		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, ThreadID: thread.TargetThreadID, Files: files,
+		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID, Files: files,
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
 		TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
@@ -375,6 +384,9 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		return err
 	}
 	for _, link := range links {
+		if link.SourceContentSnapshot == m.Content {
+			continue
+		}
 		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, link.GroupID)
 		if err != nil {
 			return err
@@ -412,6 +424,45 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		}
 		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
+			return err
+		}
+		if err := s.store.UpdateMessageLinkSnapshot(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, m.Content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) HandleMessagePinUpdate(ctx context.Context, channelID, messageID string, pinned bool) error {
+	prevPinned, known, err := s.store.GetPinState(ctx, channelID, messageID)
+	if err != nil {
+		return err
+	}
+	if known && prevPinned == pinned {
+		return nil
+	}
+	if err := s.SyncPin(ctx, channelID, messageID, pinned); err != nil {
+		return err
+	}
+	return s.savePinStatesForPeers(ctx, channelID, messageID, pinned)
+}
+
+func (s *Service) savePinStatesForPeers(ctx context.Context, channelID, messageID string, pinned bool) error {
+	if err := s.store.SavePinState(ctx, channelID, messageID, pinned); err != nil {
+		return err
+	}
+	peers, err := s.store.MessagePeers(ctx, channelID, messageID)
+	if err != nil {
+		return err
+	}
+	for _, link := range peers {
+		if link.TargetChannelID == channelID && link.TargetMessageID == messageID {
+			if err := s.store.SavePinState(ctx, link.SourceChannelID, link.SourceMessageID, pinned); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := s.store.SavePinState(ctx, link.TargetChannelID, link.TargetMessageID, pinned); err != nil {
 			return err
 		}
 	}
@@ -487,9 +538,32 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
-	authorID, content, quoteChannelID, quoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
-	if err != nil || !ok {
+	authorID := m.ReferencedMessageAuthorID
+	content := m.ReferencedMessageContent
+	quoteChannelID := m.ReferencedMessageChannelID
+	quoteMessageID := m.ReferencedMessageID
+	if quoteChannelID == "" {
+		quoteChannelID = m.ChannelID
+	}
+
+	dbAuthorID, dbContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
+	if err != nil {
 		return "", err
+	}
+	if ok {
+		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
+			quoteChannelID = dbQuoteChannelID
+			quoteMessageID = dbQuoteMessageID
+		}
+		if authorID == "" {
+			authorID = dbAuthorID
+		}
+		if strings.TrimSpace(content) == "" {
+			content = dbContent
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		return "", nil
 	}
 	snippet, err := s.translateSnippet(ctx, m.GuildID, targetLanguage, firstLine(content))
 	if err != nil {
@@ -501,7 +575,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	}
 	link := fmt.Sprintf("https://discord.com/channels/%s/%s/%s", m.GuildID, quoteChannelID, quoteMessageID)
 	prefix := fmt.Sprintf("> %s\n-# [original message](%s)", snippet, link)
-	if m.MentionAuthor {
+	if m.MentionAuthor && authorID != "" {
 		prefix = fmt.Sprintf("<@%s>\n%s", authorID, prefix)
 	}
 	return prefix, nil
@@ -746,6 +820,98 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 		return "", fmt.Errorf("missing translation for %q", targetLanguage)
 	}
 	return translated, nil
+}
+
+func (s *Service) messageFiles(ctx context.Context, attachments []DiscordAttachment, stickers []DiscordSticker) ([]WebhookFile, error) {
+	files, err := s.attachmentFiles(ctx, attachments)
+	if err != nil {
+		return nil, err
+	}
+	stickerFiles, err := s.stickerFiles(ctx, stickers)
+	if err != nil {
+		return nil, err
+	}
+	return append(files, stickerFiles...), nil
+}
+
+const (
+	stickerFormatPNG   = 1
+	stickerFormatAPNG = 2
+	stickerFormatLottie = 3
+	stickerFormatGIF  = 4
+)
+
+func stickerAssetURL(sticker DiscordSticker) (url, contentType string, skipOnFailure bool) {
+	switch sticker.FormatType {
+	case stickerFormatGIF:
+		return fmt.Sprintf("https://media.discordapp.net/stickers/%s.gif", sticker.ID), "image/gif", false
+	case stickerFormatLottie:
+		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID), "image/png", true
+	default:
+		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID), "image/png", false
+	}
+}
+
+func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) ([]WebhookFile, error) {
+	files := make([]WebhookFile, 0, len(stickers))
+	for _, sticker := range stickers {
+		if strings.TrimSpace(sticker.ID) == "" {
+			continue
+		}
+		url, contentType, skipOnFailure := stickerAssetURL(sticker)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			if skipOnFailure {
+				continue
+			}
+			return nil, err
+		}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			if skipOnFailure {
+				continue
+			}
+			return nil, err
+		}
+		body, readErr := io.ReadAll(resp.Body)
+		closeErr := resp.Body.Close()
+		if readErr != nil {
+			if skipOnFailure {
+				continue
+			}
+			return nil, readErr
+		}
+		if closeErr != nil {
+			if skipOnFailure {
+				continue
+			}
+			return nil, closeErr
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			if skipOnFailure {
+				continue
+			}
+			return nil, fmt.Errorf("download sticker %s: %s", url, resp.Status)
+		}
+		name := strings.TrimSpace(sticker.Name)
+		if name == "" {
+			name = "sticker-" + sticker.ID
+		}
+		if !strings.Contains(name, ".") {
+			switch sticker.FormatType {
+			case stickerFormatGIF:
+				name += ".gif"
+			default:
+				name += ".png"
+			}
+		}
+		files = append(files, WebhookFile{
+			Name:        name,
+			ContentType: contentType,
+			Reader:      bytes.NewReader(body),
+		})
+	}
+	return files, nil
 }
 
 func (s *Service) attachmentFiles(ctx context.Context, attachments []DiscordAttachment) ([]WebhookFile, error) {
