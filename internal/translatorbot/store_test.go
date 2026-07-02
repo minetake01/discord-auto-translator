@@ -288,3 +288,38 @@ func TestPinStateAndSnapshotUpdates(t *testing.T) {
 		t.Fatalf("snapshot not updated: %#v", links)
 	}
 }
+
+func TestMessageOriginal(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	link := MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "team",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceAuthorID: "a", SourceContentSnapshot: "hello",
+	}
+	if err := s.SaveMessageLink(ctx, link); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := s.MessageOriginal(ctx, "en", "translated")
+	if err != nil || !ok {
+		t.Fatalf("reverse lookup failed: %#v ok=%v err=%v", got, ok, err)
+	}
+	if got.SourceChannelID != "ja" || got.SourceMessageID != "orig" || got.Snapshot != "hello" || got.TargetLanguage != "en" || got.IsSource {
+		t.Fatalf("unexpected reverse result: %#v", got)
+	}
+
+	got, ok, err = s.MessageOriginal(ctx, "ja", "orig")
+	if err != nil || !ok {
+		t.Fatalf("source lookup failed: %#v ok=%v err=%v", got, ok, err)
+	}
+	if !got.IsSource || got.SourceChannelID != "ja" || got.SourceMessageID != "orig" || got.Snapshot != "hello" {
+		t.Fatalf("unexpected source result: %#v", got)
+	}
+
+	_, ok, err = s.MessageOriginal(ctx, "ja", "unknown")
+	if err != nil || ok {
+		t.Fatalf("want not found, got ok=%v err=%v", ok, err)
+	}
+}

@@ -12,6 +12,8 @@ import (
 
 var defaultAdminCommandPermissions int64 = discordgo.PermissionAdministrator
 
+const viewOriginalCommandName = "View Original"
+
 func Commands() []*discordgo.ApplicationCommand {
 	channelTypes := []discordgo.ChannelType{
 		discordgo.ChannelTypeGuildText,
@@ -80,6 +82,10 @@ func Commands() []*discordgo.ApplicationCommand {
 	for _, cmd := range cmds {
 		cmd.DefaultMemberPermissions = &defaultAdminCommandPermissions
 	}
+	cmds = append(cmds, &discordgo.ApplicationCommand{
+		Name: viewOriginalCommandName,
+		Type: discordgo.MessageApplicationCommand,
+	})
 	return cmds
 }
 
@@ -116,6 +122,13 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 	if i.Type != discordgo.InteractionApplicationCommand && i.Type != discordgo.InteractionApplicationCommandAutocomplete {
 		return
 	}
+	data := i.ApplicationCommandData()
+	if i.Type == discordgo.InteractionApplicationCommand && data.CommandType == discordgo.MessageApplicationCommand {
+		if data.Name == viewOriginalCommandName {
+			h.handleViewOriginal(s, i, data)
+		}
+		return
+	}
 	if !h.memberCanUseCommands(i.Member) {
 		if i.Type == discordgo.InteractionApplicationCommand {
 			respond(s, i, "このコマンドはサーバー管理者または許可されたロールのみ実行できます。", true)
@@ -127,7 +140,6 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		}
 		return
 	}
-	data := i.ApplicationCommandData()
 	if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
 		h.handleAutocomplete(s, i, data)
 		return
@@ -382,6 +394,79 @@ func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo
 	respond(s, i, fmt.Sprintf("用語 `%s` を削除しました。", strings.TrimSpace(term)), true)
 }
 
+func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	channelID := i.ChannelID
+	messageID := data.TargetID
+	guildID := i.GuildID
+
+	result, ok, err := h.store.MessageOriginal(ctx, channelID, messageID)
+	if err != nil {
+		log.Printf("view-original lookup: %v", err)
+		respond(s, i, localizedUIString("en", uiKeyNotManaged), true)
+		return
+	}
+	lang := h.uiLanguageForChannel(ctx, guildID, channelID, result)
+	if !ok {
+		respond(s, i, localizedUIString(lang, uiKeyNotManaged), true)
+		return
+	}
+	if result.IsSource {
+		respond(s, i, localizedUIString(lang, uiKeyAlreadyOriginal), true)
+		return
+	}
+
+	url := messageJumpURL(guildID, result.SourceChannelID, result.SourceMessageID)
+	linkLabel := localizedUIString(lang, uiKeyViewOriginalLink)
+	msg := fmt.Sprintf("[%s](%s)", linkLabel, url)
+	if snippet := truncateSnapshot(result.Snapshot, 100); snippet != "" {
+		msg += "\n\n> " + snippet
+	}
+	respond(s, i, msg, true)
+}
+
+func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, channelID string, result MessageOriginalResult) string {
+	if result.TargetLanguage != "" {
+		return resolveUILanguage(result.TargetLanguage)
+	}
+	channels, err := h.store.ChannelsByChannel(ctx, guildID, channelID)
+	if err == nil && len(channels) > 0 {
+		return resolveUILanguage(channels[0].Language)
+	}
+	threads, err := h.store.ThreadTargets(ctx, channelID)
+	if err == nil && len(threads) > 0 {
+		if threads[0].TargetLanguage != "" {
+			return resolveUILanguage(threads[0].TargetLanguage)
+		}
+		for _, parentID := range []string{threads[0].TargetChannelID, threads[0].SourceChannelID} {
+			if parentID == "" {
+				continue
+			}
+			channels, err = h.store.ChannelsByChannel(ctx, guildID, parentID)
+			if err == nil && len(channels) > 0 {
+				return resolveUILanguage(channels[0].Language)
+			}
+		}
+	}
+	return "en"
+}
+
+func messageJumpURL(guildID, channelID, messageID string) string {
+	return fmt.Sprintf("https://discord.com/channels/%s/%s/%s", guildID, channelID, messageID)
+}
+
+func truncateSnapshot(text string, maxRunes int) string {
+	text = strings.TrimSpace(text)
+	if text == "" || maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	return string(runes[:maxRunes]) + "…"
+}
+
 func RegisterGuildCommands(s *discordgo.Session, appID string, adminRoleIDs []string) map[string]string {
 	addGlossaryCommandIDs := make(map[string]string)
 	for _, g := range s.State.Guilds {
@@ -404,7 +489,7 @@ func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string, 
 		if cmd.Name == "add-glossary" {
 			addGlossaryCommandID = cmd.ID
 		}
-		if len(adminRoleIDs) > 0 {
+		if len(adminRoleIDs) > 0 && cmd.Name != viewOriginalCommandName {
 			if permErr := grantRoleCommandPermissions(s, appID, guildID, cmd.ID, adminRoleIDs); permErr != nil {
 				log.Printf("grant command permissions for %s in guild %s: %v", cmd.Name, guildID, permErr)
 			}
