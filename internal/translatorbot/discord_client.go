@@ -19,6 +19,7 @@ type DiscordAPI interface {
 	ChannelName(channelID string) (string, error)
 	ChannelTopic(channelID string) (string, error)
 	CreateWebhook(channelID, name string) (id, token string, err error)
+	SendChannelMessage(channelID, content string) error
 	SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error)
 	EditWebhook(webhookID, token, messageID, threadID, content string) error
 	DeleteWebhook(webhookID, token, messageID, threadID string) error
@@ -93,6 +94,11 @@ func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, err
 		return "", "", err
 	}
 	return w.ID, w.Token, nil
+}
+
+func (d DiscordGoAPI) SendChannelMessage(channelID, content string) error {
+	_, err := d.session.ChannelMessageSend(channelID, content)
+	return err
 }
 
 func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (string, error) {
