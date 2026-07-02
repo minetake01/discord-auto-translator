@@ -107,3 +107,65 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 		t.Fatalf("entries = %#v, want empty", entries)
 	}
 }
+
+func TestHandleListGroups(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	ctx := context.Background()
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	member := &discordgo.Member{User: &discordgo.User{ID: "u1"}}
+	invoke := func() {
+		handler.Handle(nil, &discordgo.InteractionCreate{
+			Interaction: &discordgo.Interaction{
+				Type:    discordgo.InteractionApplicationCommand,
+				GuildID: "g1",
+				Member:  member,
+				Data: discordgo.ApplicationCommandInteractionData{
+					Name: "list-groups",
+				},
+			},
+		})
+	}
+
+	invoke()
+	if len(responses) != 1 || !strings.Contains(responses[0], "翻訳グループが登録されていません") {
+		t.Fatalf("empty response = %#v", responses)
+	}
+
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-ja", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-en", ChannelType: 0, Language: "en", WebhookID: "w2", WebhookToken: "t2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "support", GuildID: "g1", DisplayName: "support", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "support", GuildID: "g1", ChannelID: "ch-support", ChannelType: 0, Language: "ja", WebhookID: "w3", WebhookToken: "t3",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	responses = nil
+	invoke()
+	if len(responses) != 1 {
+		t.Fatalf("list response count = %d, want 1", len(responses))
+	}
+	msg := responses[0]
+	for _, want := range []string{"翻訳グループ (2)", "**general**", "<#ch-ja>", "(ja)", "<#ch-en>", "(en)", "**support**", "<#ch-support>"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("response missing %q: %s", want, msg)
+		}
+	}
+}

@@ -60,6 +60,10 @@ func Commands() []*discordgo.ApplicationCommand {
 			},
 		},
 		{
+			Name:        "list-groups",
+			Description: "List translation groups and channels for this server",
+		},
+		{
 			Name:        "list-glossary",
 			Description: "List glossary entries for this server",
 		},
@@ -102,6 +106,8 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleDeleteGroup(s, i, data)
 	case "add-glossary":
 		h.handleAddGlossary(s, i, data)
+	case "list-groups":
+		h.handleListGroups(s, i, data)
 	case "list-glossary":
 		h.handleListGlossary(s, i, data)
 	case "remove-glossary":
@@ -248,6 +254,66 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 		return
 	}
 	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました。", strings.TrimSpace(term), strings.TrimSpace(translation)), true)
+}
+
+const (
+	discordMessageMaxLen      = 2000
+	listGroupsTruncatedSuffix = "\n（表示を省略しました）"
+)
+
+func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	groups, err := h.store.Groups(ctx, i.GuildID, "", 100)
+	if err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	if len(groups) == 0 {
+		respond(s, i, "このサーバーには翻訳グループが登録されていません。", true)
+		return
+	}
+	msg, err := formatListGroupsMessage(ctx, h.store, i.GuildID, groups)
+	if err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	respond(s, i, msg, true)
+}
+
+func formatListGroupsMessage(ctx context.Context, store *Store, guildID string, groups []TranslationGroup) (string, error) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "翻訳グループ (%d):\n", len(groups))
+	truncated := false
+	for _, g := range groups {
+		channels, err := store.ChannelsInGroup(ctx, guildID, g.ID)
+		if err != nil {
+			return "", err
+		}
+		groupBlock := formatGroupBlock(g, channels)
+		if b.Len()+len(groupBlock)+len(listGroupsTruncatedSuffix) > discordMessageMaxLen {
+			truncated = true
+			break
+		}
+		b.WriteString(groupBlock)
+	}
+	result := strings.TrimSpace(b.String())
+	if truncated {
+		result += listGroupsTruncatedSuffix
+	}
+	return result, nil
+}
+
+func formatGroupBlock(g TranslationGroup, channels []GroupChannel) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n**%s**\n", g.DisplayName)
+	if len(channels) == 0 {
+		b.WriteString("  （チャンネルなし）\n")
+		return b.String()
+	}
+	for _, ch := range channels {
+		fmt.Fprintf(&b, "  - <#%s> (%s)\n", ch.ChannelID, ch.Language)
+	}
+	return b.String()
 }
 
 func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
