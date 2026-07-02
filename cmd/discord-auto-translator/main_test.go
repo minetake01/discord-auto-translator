@@ -74,3 +74,21 @@ func TestAttachmentsFromDiscordMapsWebhookFileFields(t *testing.T) {
 		t.Fatalf("unexpected attachment mapping: %#v", got[0])
 	}
 }
+
+func TestPinStateChanged(t *testing.T) {
+	if pinStateChanged(&discordgo.MessageUpdate{
+		Message:      &discordgo.Message{Pinned: true},
+		BeforeUpdate: &discordgo.Message{Pinned: false},
+	}) != true {
+		t.Fatal("expected pin change")
+	}
+	if pinStateChanged(&discordgo.MessageUpdate{
+		Message:      &discordgo.Message{Pinned: true},
+		BeforeUpdate: &discordgo.Message{Pinned: true},
+	}) != false {
+		t.Fatal("expected no pin change")
+	}
+	if pinStateChanged(&discordgo.MessageUpdate{Message: &discordgo.Message{Pinned: true}}) != false {
+		t.Fatal("expected false without before update")
+	}
+}

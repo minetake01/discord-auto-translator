@@ -36,6 +36,7 @@ func main() {
 	}
 	service := translatorbot.NewService(store, api, translator)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
+	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient))
@@ -64,10 +65,22 @@ func main() {
 		}
 	})
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageUpdate) {
-		if m.Author == nil || m.Content == "" || isThreadSystemMessage(m.Type) {
+		if m.Author == nil || isThreadSystemMessage(m.Type) {
 			return
 		}
-		err := service.HandleMessageUpdate(context.Background(), translatorbot.DiscordMessage{
+		if m.Author.Bot || m.WebhookID != "" {
+			return
+		}
+		ctx := context.Background()
+		if pinStateChanged(m) {
+			if err := service.SyncPin(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
+				log.Printf("pin sync: %v", err)
+			}
+		}
+		if strings.TrimSpace(m.Content) == "" {
+			return
+		}
+		err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
@@ -128,7 +141,8 @@ func main() {
 		log.Fatal(err)
 	}
 	defer dg.Close()
-	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
+	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
+	service.SetAddGlossaryCommandIDs(addGlossaryCommandIDs)
 	log.Println("Discord Gemini Auto Translator is running")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
@@ -211,4 +225,11 @@ func isThreadSystemMessage(t discordgo.MessageType) bool {
 
 func isThreadStarterMessage(t discordgo.MessageType) bool {
 	return t == discordgo.MessageTypeThreadStarterMessage
+}
+
+func pinStateChanged(m *discordgo.MessageUpdate) bool {
+	if m == nil || m.BeforeUpdate == nil {
+		return false
+	}
+	return m.Pinned != m.BeforeUpdate.Pinned
 }
