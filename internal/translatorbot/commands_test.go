@@ -8,6 +8,58 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+func adminCommandMember() *discordgo.Member {
+	return &discordgo.Member{
+		User:        &discordgo.User{ID: "u1"},
+		Permissions: discordgo.PermissionAdministrator,
+	}
+}
+
+func TestMemberCanUseCommands(t *testing.T) {
+	handler := NewCommandHandler(nil, nil, []string{"123456789012345678"})
+
+	if !handler.memberCanUseCommands(&discordgo.Member{Permissions: discordgo.PermissionAdministrator}) {
+		t.Fatal("admin should be allowed")
+	}
+	if !handler.memberCanUseCommands(&discordgo.Member{Roles: []string{"123456789012345678"}}) {
+		t.Fatal("allowed role should be permitted")
+	}
+	if handler.memberCanUseCommands(&discordgo.Member{Roles: []string{"999999999999999999"}}) {
+		t.Fatal("unauthorized member should be denied")
+	}
+	if handler.memberCanUseCommands(nil) {
+		t.Fatal("nil member should be denied")
+	}
+}
+
+func TestHandleRejectsUnauthorizedMember(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	handler.Handle(nil, &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			Type:    discordgo.InteractionApplicationCommand,
+			GuildID: "g1",
+			Member:  &discordgo.Member{User: &discordgo.User{ID: "u1"}},
+			Data: discordgo.ApplicationCommandInteractionData{
+				Name: "list-groups",
+			},
+		},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "許可されたロールのみ") {
+		t.Fatalf("response = %#v", responses)
+	}
+}
+
 func TestOptionChannelUsesSelectedChannelID(t *testing.T) {
 	options := []*discordgo.ApplicationCommandInteractionDataOption{
 		{
@@ -30,7 +82,7 @@ func TestOptionChannelFallsBackToCurrentChannel(t *testing.T) {
 
 func TestHandleAddListRemoveGlossary(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
 	ctx := context.Background()
 
 	var responses []string
@@ -42,7 +94,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 		interactionResponseHook = oldHook
 	})
 
-	member := &discordgo.Member{User: &discordgo.User{ID: "u1"}}
+	member := adminCommandMember()
 	handler.Handle(nil, &discordgo.InteractionCreate{
 		Interaction: &discordgo.Interaction{
 			Type:    discordgo.InteractionApplicationCommand,
@@ -110,7 +162,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 
 func TestHandleListGroups(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
 	ctx := context.Background()
 
 	var responses []string
@@ -122,7 +174,7 @@ func TestHandleListGroups(t *testing.T) {
 		interactionResponseHook = oldHook
 	})
 
-	member := &discordgo.Member{User: &discordgo.User{ID: "u1"}}
+	member := adminCommandMember()
 	invoke := func() {
 		handler.Handle(nil, &discordgo.InteractionCreate{
 			Interaction: &discordgo.Interaction{

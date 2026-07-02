@@ -37,7 +37,7 @@ func main() {
 	service := translatorbot.NewService(store, api, translator)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
 	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
-	commands := translatorbot.NewCommandHandler(store, api)
+	commands := translatorbot.NewCommandHandler(store, api, cfg.AdminRoleIDs)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
@@ -50,7 +50,7 @@ func main() {
 		if g == nil || g.Unavailable || g.ID == "" {
 			return
 		}
-		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID)
+		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID, cfg.AdminRoleIDs)
 		if err != nil {
 			log.Printf("register commands in new guild %s: %v", g.ID, err)
 			return
@@ -153,7 +153,7 @@ func main() {
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
-	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
+	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID, cfg.AdminRoleIDs)
 	service.SetAddGlossaryCommandIDs(addGlossaryCommandIDs)
 	log.Println("Discord Gemini Auto Translator is running")
 	stop := make(chan os.Signal, 1)
