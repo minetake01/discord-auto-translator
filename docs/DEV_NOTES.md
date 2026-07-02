@@ -48,17 +48,18 @@ const geminiModel = "gemini-3.1-flash-lite"
 
 ## 3. 未実装・未接続の機能
 
-### ピン留め同期 (`SyncPin`)
-
-`service.go` に `SyncPin` メソッドが実装されていますが、`main.go` にイベントハンドラが登録されていないため動作しません。Discord の `CHANNEL_PINS_UPDATE` または `MESSAGE_UPDATE` イベントをハンドルすることで有効化できます。
-
-### `processed_events` テーブル / `MarkProcessed`
-
-重複イベント処理を防ぐためのテーブルが存在しますが、現在のハンドラではいずれも呼び出されていません。将来的に At-Most-Once 処理が必要になった場合に使用します。
-
 ### `FlagForLanguage`
 
 `languages.go` の `FlagForLanguage` 関数は定義されていますがプロダクションコードから参照されていません。
+
+### メッセージ同期の信頼性（形式検証後に実装済み）
+
+- **冪等性**: 各ターゲット送信前に `message_links` と `processed_events`（キー: `msglink:{sourceChannel}:{sourceMessage}:{targetChannel}`）を確認し、既に同期済みならスキップします。同一 `(channelID, messageID)` の並行処理は `messageLocks` で直列化します。
+- **補償トランザクション**: `SendWebhook` 成功後に `SaveMessageLink` が失敗した場合、`DeleteWebhook` で Discord 上の投稿を削除します（`sendAndSaveLink`）。
+- **best-effort fan-out**: 複数ターゲットへの転送中に一部が失敗しても残りは続行し、エラーは `errors.Join` で集約して返します。
+- **ピン留め同期**: `MESSAGE_UPDATE` で `Pinned` が変化したとき `SyncPin` を呼びます（Bot / Webhook メッセージは除外）。
+
+`pin_states` テーブルは将来の差分検知用に残置しています（現状未使用）。
 
 ---
 
@@ -99,10 +100,11 @@ translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 ```go
 type Service struct {
     threadMu sync.Mutex
+    messageLocks sync.Map // (channelID, messageID) 単位の直列化
 }
 ```
 
-`syncThreadCreate` は mutex でシリアライズされています。これは「`THREAD_CREATE` と最初の `MESSAGE_CREATE` がほぼ同時に届いて重複スレッドが作成される」バグを防ぎます。この mutex は goroutine を跨いで使用されないため、デッドロックは起きません。
+`syncThreadCreate` は `threadMu` でシリアライズされています。`HandleMessageCreate` は `messageLocks` で同一メッセージの並行処理を防ぎます。
 
 ### ウェブフックのスレッド内メッセージ操作
 
