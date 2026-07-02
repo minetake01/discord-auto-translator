@@ -114,15 +114,12 @@ func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (str
 			Reader:      file.Reader,
 		})
 	}
-	var (
-		m   *discordgo.Message
-		err error
-	)
-	if msg.ThreadID != "" {
-		m, err = d.session.WebhookThreadExecute(webhookID, token, true, msg.ThreadID, params)
-	} else {
-		m, err = d.session.WebhookExecute(webhookID, token, true, params)
-	}
+	m, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+		if msg.ThreadID != "" {
+			return d.session.WebhookThreadExecute(webhookID, token, true, msg.ThreadID, params)
+		}
+		return d.session.WebhookExecute(webhookID, token, true, params)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -164,19 +161,27 @@ func sanitizeWebhookName(name string) string {
 func (d DiscordGoAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
 	edit := &discordgo.WebhookEdit{Content: &content}
 	if threadID == "" {
-		_, err := d.session.WebhookMessageEdit(webhookID, token, messageID, edit)
+		_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+			return d.session.WebhookMessageEdit(webhookID, token, messageID, edit)
+		})
 		return err
 	}
-	_, err := d.webhookMessageEditInThread(webhookID, token, messageID, threadID, edit)
+	_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+		return d.webhookMessageEditInThread(webhookID, token, messageID, threadID, edit)
+	})
 	return err
 }
 
 func (d DiscordGoAPI) DeleteWebhook(webhookID, token, messageID, threadID string) error {
 	if threadID == "" {
-		return d.session.WebhookMessageDelete(webhookID, token, messageID)
+		return withDiscordRetry(func() error {
+			return d.session.WebhookMessageDelete(webhookID, token, messageID)
+		})
 	}
-	_, err := d.session.RequestWithBucketID("DELETE", webhookMessageURL(webhookID, token, messageID, threadID), nil, discordgo.EndpointWebhookToken("", ""))
-	return err
+	return withDiscordRetry(func() error {
+		_, err := d.session.RequestWithBucketID("DELETE", webhookMessageURL(webhookID, token, messageID, threadID), nil, discordgo.EndpointWebhookToken("", ""))
+		return err
+	})
 }
 
 func (d DiscordGoAPI) webhookMessageEditInThread(webhookID, token, messageID, threadID string, edit *discordgo.WebhookEdit) (*discordgo.Message, error) {

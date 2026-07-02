@@ -3,6 +3,8 @@ package translatorbot
 import (
 	"strings"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
@@ -46,5 +48,20 @@ func TestSanitizeWebhookAvatarURLRejectsLongURL(t *testing.T) {
 	got := sanitizeWebhookAvatarURL("https://example.com/" + strings.Repeat("a", 2048))
 	if got != "" {
 		t.Fatalf("got %q, want blank avatar URL", got)
+	}
+}
+
+func TestWebhookMessageURLIncludesThreadID(t *testing.T) {
+	got := webhookMessageURL("wh1", "token1", "msg1", "thread1")
+	if !strings.Contains(got, "thread_id=thread1") {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestWebhookMessageURLOmitsQueryWithoutThreadID(t *testing.T) {
+	got := webhookMessageURL("wh1", "token1", "msg1", "")
+	want := discordgo.EndpointWebhookMessage("wh1", "token1", "msg1")
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
