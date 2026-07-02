@@ -19,6 +19,8 @@ const translationHistoryLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
 const discordEpochMillis = 1420070400000
 
+var errTranslationRateLimited = errors.New("translation rate limit exceeded")
+
 type Service struct {
 	store                  *Store
 	discord                DiscordAPI
@@ -47,6 +49,13 @@ func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
 
 func (s *Service) SetAddGlossaryCommandIDs(ids map[string]string) {
 	s.addGlossaryCommandIDs = ids
+}
+
+func (s *Service) SetAddGlossaryCommandID(guildID, commandID string) {
+	if s.addGlossaryCommandIDs == nil {
+		s.addGlossaryCommandIDs = make(map[string]string)
+	}
+	s.addGlossaryCommandIDs[guildID] = commandID
 }
 
 func (s *Service) SetPublicBaseURL(publicBaseURL string) {
@@ -170,10 +179,12 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		return err
 	}
 	translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
-	estimate := EstimateTranslationTokens(BuildMultiTranslationUserPrompt(targetLanguages, m.Content, translationContext, glossary), "") + 200*len(targetLanguages)
-	if s.rateLimiter != nil && !s.rateLimiter.Allow(m.GuildID, estimate) {
-		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-		return nil
+	if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
+		if errors.Is(err, errTranslationRateLimited) {
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+			return nil
+		}
+		return err
 	}
 
 	result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
@@ -181,7 +192,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
 		return err
 	}
-	s.rateLimiter.Record(m.GuildID, result.InputTokens+result.OutputTokens)
+	s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
 
 	var errs []error
 	for _, target := range targets {
@@ -252,6 +263,23 @@ func (s *Service) addGlossaryCommandID(guildID string) string {
 	return s.addGlossaryCommandIDs[guildID]
 }
 
+func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) error {
+	if s.rateLimiter == nil {
+		return nil
+	}
+	estimate := EstimateTranslationTokens(BuildMultiTranslationUserPrompt(targetLanguages, content, translationContext, glossary), "") + 200*len(targetLanguages)
+	if !s.rateLimiter.Allow(guildID, estimate) {
+		return errTranslationRateLimited
+	}
+	return nil
+}
+
+func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputTokens int) {
+	if s.rateLimiter != nil {
+		s.rateLimiter.Record(guildID, inputTokens+outputTokens)
+	}
+}
+
 func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessage) error {
 	threads, err := s.store.ThreadTargets(ctx, m.ChannelID)
 	if err != nil {
@@ -289,10 +317,12 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	}
 	translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
 	targetLanguages := []string{target.Language}
-	estimate := EstimateTranslationTokens(BuildMultiTranslationUserPrompt(targetLanguages, m.Content, translationContext, glossary), "") + 200
-	if s.rateLimiter != nil && !s.rateLimiter.Allow(m.GuildID, estimate) {
-		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-		return nil
+	if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
+		if errors.Is(err, errTranslationRateLimited) {
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+			return nil
+		}
+		return err
 	}
 
 	result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
@@ -300,7 +330,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
 		return err
 	}
-	s.rateLimiter.Record(m.GuildID, result.InputTokens+result.OutputTokens)
+	s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
 
 	content, ok := result.Translations[target.Language]
 	if !ok {
@@ -365,10 +395,17 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if err != nil {
 			return err
 		}
+		if err := s.checkTranslationRateLimit(m.GuildID, []string{target.Language}, m.Content, translationContext, glossary); err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				continue
+			}
+			return err
+		}
 		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, m.Content, translationContext, glossary)
 		if err != nil {
 			return err
 		}
+		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
 		content, ok := result.Translations[target.Language]
 		if !ok {
 			return fmt.Errorf("missing translation for %q", target.Language)
@@ -539,20 +576,28 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 				return false, err
 			}
 			translationContext := s.translationContext(ctx, req.GuildID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID)
+			if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.Name, translationContext, glossary); err != nil {
+				return false, err
+			}
 			nameResult, err := s.translator.TranslateMulti(ctx, targetLanguages, req.Name, translationContext, glossary)
 			if err != nil {
 				return false, err
 			}
+			s.recordTranslationUsage(req.GuildID, nameResult.InputTokens, nameResult.OutputTokens)
 			translatedName, ok := nameResult.Translations[target.Language]
 			if !ok {
 				return false, fmt.Errorf("missing translation for %q", target.Language)
 			}
 			translatedInitial := ""
 			if strings.TrimSpace(req.InitialMessageText) != "" {
+				if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.InitialMessageText, translationContext, glossary); err != nil {
+					return false, err
+				}
 				initialResult, err := s.translator.TranslateMulti(ctx, targetLanguages, req.InitialMessageText, translationContext, glossary)
 				if err != nil {
 					return false, err
 				}
+				s.recordTranslationUsage(req.GuildID, initialResult.InputTokens, initialResult.OutputTokens)
 				translatedInitial, ok = initialResult.Translations[target.Language]
 				if !ok {
 					return false, fmt.Errorf("missing translation for %q", target.Language)
@@ -685,10 +730,17 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 	if err != nil {
 		return "", err
 	}
+	if err := s.checkTranslationRateLimit(guildID, []string{targetLanguage}, content, TranslationContext{}, glossary); err != nil {
+		if errors.Is(err, errTranslationRateLimited) {
+			return content, nil
+		}
+		return "", err
+	}
 	result, err := s.translator.TranslateMulti(ctx, []string{targetLanguage}, content, TranslationContext{}, glossary)
 	if err != nil {
 		return "", err
 	}
+	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	translated, ok := result.Translations[targetLanguage]
 	if !ok {
 		return "", fmt.Errorf("missing translation for %q", targetLanguage)
@@ -761,10 +813,17 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		if err != nil {
 			return err
 		}
+		if err := s.checkTranslationRateLimit(guildID, []string{target.Language}, name, TranslationContext{}, glossary); err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				continue
+			}
+			return err
+		}
 		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, name, TranslationContext{}, glossary)
 		if err != nil {
 			return err
 		}
+		s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 		translatedName, ok := result.Translations[target.Language]
 		if !ok {
 			return fmt.Errorf("missing translation for %q", target.Language)
