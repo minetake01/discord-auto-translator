@@ -65,12 +65,19 @@ func main() {
 			return
 		}
 		parentChannelID, threadName := threadContext(s, m.ChannelID)
+		refID, refChannelID, refAuthorID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
 		err := service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
-			Attachments:         attachmentsFromDiscord(m.Attachments),
-			ReferencedMessageID: referencedMessageID(m.MessageReference), MentionAuthor: mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
+			Attachments:                attachmentsFromDiscord(m.Attachments),
+			Stickers:                   stickersFromDiscord(m.StickerItems),
+			ReferencedMessageID:        refID,
+			ReferencedMessageChannelID: refChannelID,
+			ReferencedMessageAuthorID:  refAuthorID,
+			ReferencedMessageContent:   refContent,
+			MentionAuthor:              mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
+			TTS:                        m.TTS,
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
 		if err != nil {
@@ -81,14 +88,12 @@ func main() {
 		if m.Author == nil || isThreadSystemMessage(m.Type) {
 			return
 		}
+		ctx := context.Background()
+		if err := service.HandleMessagePinUpdate(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
+			log.Printf("pin sync: %v", err)
+		}
 		if m.Author.Bot || m.WebhookID != "" {
 			return
-		}
-		ctx := context.Background()
-		if pinStateChanged(m) {
-			if err := service.SyncPin(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
-				log.Printf("pin sync: %v", err)
-			}
 		}
 		if strings.TrimSpace(m.Content) == "" {
 			return
@@ -187,6 +192,21 @@ func attachmentsFromDiscord(attachments []*discordgo.MessageAttachment) []transl
 	return out
 }
 
+func stickersFromDiscord(stickers []*discordgo.StickerItem) []translatorbot.DiscordSticker {
+	out := make([]translatorbot.DiscordSticker, 0, len(stickers))
+	for _, sticker := range stickers {
+		if sticker == nil {
+			continue
+		}
+		out = append(out, translatorbot.DiscordSticker{
+			ID:         sticker.ID,
+			Name:       sticker.Name,
+			FormatType: int(sticker.FormatType),
+		})
+	}
+	return out
+}
+
 func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {
 	if member != nil {
 		if member.User != nil {
@@ -206,11 +226,24 @@ func authorDisplayName(author *discordgo.User, member *discordgo.Member) string 
 	return ""
 }
 
-func referencedMessageID(ref *discordgo.MessageReference) string {
-	if ref == nil {
-		return ""
+func referencedMessageFields(ref *discordgo.MessageReference, referenced *discordgo.Message) (id, channelID, authorID, content string) {
+	if ref != nil {
+		id = ref.MessageID
+		channelID = ref.ChannelID
 	}
-	return ref.MessageID
+	if referenced != nil {
+		if id == "" {
+			id = referenced.ID
+		}
+		if channelID == "" {
+			channelID = referenced.ChannelID
+		}
+		if referenced.Author != nil {
+			authorID = referenced.Author.ID
+		}
+		content = referenced.Content
+	}
+	return id, channelID, authorID, content
 }
 
 func mentionsReferencedAuthor(m *discordgo.Message, referenced *discordgo.Message) bool {
@@ -245,11 +278,4 @@ func isThreadSystemMessage(t discordgo.MessageType) bool {
 
 func isThreadStarterMessage(t discordgo.MessageType) bool {
 	return t == discordgo.MessageTypeThreadStarterMessage
-}
-
-func pinStateChanged(m *discordgo.MessageUpdate) bool {
-	if m == nil || m.BeforeUpdate == nil {
-		return false
-	}
-	return m.Pinned != m.BeforeUpdate.Pinned
 }

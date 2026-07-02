@@ -1110,3 +1110,192 @@ func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
 		t.Fatalf("unexpected pin sequence: %#v", discord.pinCalls)
 	}
 }
+
+func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
+		AuthorDisplayName: "reply-user", Content: "返信です",
+		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageAuthorID: "source-user", ReferencedMessageContent: "元メッセージ本文",
+		MentionAuthor: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "<@source-user>\n> [en] 元メッセージ本文\n-# [original message](https://discord.com/channels/guild/ja/orig)\n[en] 返信です"
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+}
+
+func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
+		AuthorDisplayName: "reply-user",
+		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "引用元",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wantPrefix := "> [en] 引用元\n-# [original message](https://discord.com/channels/guild/ja/orig)"
+	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix {
+		t.Fatalf("got %#v, want %q", discord.sent, wantPrefix)
+	}
+}
+
+func TestHandleMessagePinUpdateSyncsOnceAndSkipsEcho(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessagePinUpdate(ctx, "ja", "source", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.pinCalls) != 1 {
+		t.Fatalf("pin calls: %#v", discord.pinCalls)
+	}
+	if err := service.HandleMessagePinUpdate(ctx, "en", "translated", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.pinCalls) != 1 {
+		t.Fatalf("echo should be skipped, pin calls: %#v", discord.pinCalls)
+	}
+}
+
+func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceContentSnapshot: "same",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "same",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 0 || len(discord.webhookEdits) != 0 {
+		t.Fatalf("unexpected translation/edit: contexts=%#v edits=%#v", translator.contexts, discord.webhookEdits)
+	}
+}
+
+func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	links, err := store.MessageTargets(ctx, "ja", "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].SourceContentSnapshot != "after" {
+		t.Fatalf("snapshot not updated: %#v", links)
+	}
+}
+
+func TestHandleMessageCreateForwardsTTS(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "こんにちは", TTS: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || !discord.sent[0].TTS {
+		t.Fatalf("expected TTS webhook send, got %#v", discord.sent)
+	}
+}
+
+func TestStickerAssetURL(t *testing.T) {
+	url, contentType, skip := stickerAssetURL(DiscordSticker{ID: "1", FormatType: stickerFormatGIF})
+	if url != "https://media.discordapp.net/stickers/1.gif" || contentType != "image/gif" || skip {
+		t.Fatalf("gif: %q %q %v", url, contentType, skip)
+	}
+	url, contentType, skip = stickerAssetURL(DiscordSticker{ID: "2", FormatType: stickerFormatLottie})
+	if url != "https://cdn.discordapp.com/stickers/2.png" || contentType != "image/png" || !skip {
+		t.Fatalf("lottie: %q %q %v", url, contentType, skip)
+	}
+}
+
+func TestStickerFilesDownloadsSticker(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(http.StatusOK)
+		_, _ = rec.WriteString("sticker-bytes")
+		return rec.Result(), nil
+	})}
+
+	files, err := service.stickerFiles(ctx, []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Name != "wave.png" {
+		t.Fatalf("unexpected files: %#v", files)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}

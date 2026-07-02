@@ -53,7 +53,8 @@ const geminiModel = "gemini-3.1-flash-lite"
 - **冪等性**: 各ターゲット送信前に `message_links` と `processed_events`（キー: `msglink:{sourceChannel}:{sourceMessage}:{targetChannel}`）を確認し、既に同期済みならスキップします。同一 `(channelID, messageID)` の並行処理は `messageLocks` で直列化します。
 - **補償トランザクション**: `SendWebhook` 成功後に `SaveMessageLink` が失敗した場合、`DeleteWebhook` で Discord 上の投稿を削除します（`sendAndSaveLink`）。
 - **best-effort fan-out**: 複数ターゲットへの転送中に一部が失敗しても残りは続行し、エラーは `errors.Join` で集約して返します。
-- **ピン留め同期**: `MESSAGE_UPDATE` で `Pinned` が変化したとき `SyncPin` を呼びます（Bot / Webhook メッセージは除外）。
+- **ピン留め同期**: `MESSAGE_UPDATE` で `pin_states` テーブルに保存済みの状態と `Pinned` を比較し、変化時のみ `SyncPin` を実行します。Webhook ミラー側のピン留めも双方向に同期し、bot 自身のピン操作によるエコーは状態比較で抑止します。
+- **内容不変の編集スキップ**: ピン留めなど本文が変わらない `MESSAGE_UPDATE` では `source_content_snapshot` と比較して再翻訳をスキップします。
 
 ---
 

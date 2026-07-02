@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var protectedPattern = regexp.MustCompile("https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|```[\\s\\S]*?```|`[^`]*`|\\|\\|[\\s\\S]*?\\|\\|")
+var protectedPattern = regexp.MustCompile("https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|```[\\s\\S]*?```|`[^`]*`")
 
 type Protector struct {
 	items map[string]string

@@ -255,3 +255,36 @@ func TestGlossaryCRUDAndLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPinStateAndSnapshotUpdates(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	pinned, known, err := s.GetPinState(ctx, "ja", "msg")
+	if err != nil || known || pinned {
+		t.Fatalf("unexpected initial pin state: pinned=%v known=%v err=%v", pinned, known, err)
+	}
+	if err := s.SavePinState(ctx, "ja", "msg", true); err != nil {
+		t.Fatal(err)
+	}
+	pinned, known, err = s.GetPinState(ctx, "ja", "msg")
+	if err != nil || !known || !pinned {
+		t.Fatalf("expected pinned state, got pinned=%v known=%v err=%v", pinned, known, err)
+	}
+	if err := s.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "target", TargetLanguage: "en",
+		SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateMessageLinkSnapshot(ctx, "ja", "msg", "en", "after"); err != nil {
+		t.Fatal(err)
+	}
+	links, err := s.MessageTargets(ctx, "ja", "msg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].SourceContentSnapshot != "after" {
+		t.Fatalf("snapshot not updated: %#v", links)
+	}
+}
