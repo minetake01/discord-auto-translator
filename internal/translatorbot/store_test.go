@@ -33,6 +33,17 @@ func TestCreateGroupDefaultAndDuplicate(t *testing.T) {
 	}
 }
 
+func TestJoinChannelRejectsMissingGroup(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "missing", GuildID: "g1", ChannelID: "c1", Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	})
+	if !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("want ErrGroupNotFound, got %v", err)
+	}
+}
+
 func TestJoinChannelRejectsDuplicateLanguageAndChannel(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -180,5 +191,67 @@ func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing
 	}
 	if got[0].SourceMessageID != "100" || got[1].SourceMessageID != "101" {
 		t.Fatalf("unexpected order: %#v", got)
+	}
+}
+
+func TestMarkProcessedIdempotent(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	first, err := s.MarkProcessed(ctx, "event-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first {
+		t.Fatal("expected first mark to succeed")
+	}
+	second, err := s.MarkProcessed(ctx, "event-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second {
+		t.Fatal("expected second mark to be ignored")
+	}
+	processed, err := s.IsEventProcessed(ctx, "event-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !processed {
+		t.Fatal("expected event to be recorded")
+	}
+}
+
+func TestGlossaryCRUDAndLimit(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Non-Player Character", "u1"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.ListGlossaryEntries(ctx, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].SourceTerm != "NPC" {
+		t.Fatalf("got %#v", entries)
+	}
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "npc", "Updated", "u2"); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = s.ListGlossaryEntries(ctx, "g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" {
+		t.Fatalf("expected upsert overwrite, got %#v", entries)
+	}
+	for i := 0; i < glossaryMaxEntries-1; i++ {
+		if err := s.UpsertGlossaryEntry(ctx, "g1", "term"+string(rune('a'+i)), "value", "u"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "overflow", "value", "u"); !errors.Is(err, ErrGlossaryFull) {
+		t.Fatalf("want ErrGlossaryFull, got %v", err)
+	}
+	if err := s.RemoveGlossaryEntry(ctx, "g1", "terma"); err != nil {
+		t.Fatal(err)
 	}
 }

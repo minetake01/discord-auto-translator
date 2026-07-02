@@ -4,12 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+const glossaryMaxEntries = 10
 
 var (
 	ErrDuplicateGroup    = errors.New("translation group already exists in this guild")
@@ -17,10 +18,13 @@ var (
 	ErrDuplicateLanguage = errors.New("language already exists in this group")
 	ErrGroupNotFound     = errors.New("translation group not found in this guild")
 	ErrChannelNotFound   = errors.New("channel is not joined to this group")
+	ErrGlossaryFull      = errors.New("glossary is full for this server (max 10 entries)")
+	ErrGlossaryNotFound  = errors.New("glossary entry not found")
 )
 
 type Store struct {
-	db *sql.DB
+	db                  *sql.DB
+	saveMessageLinkErr  error // set only in tests to simulate persistence failure
 }
 
 func OpenStore(path string) (*Store, error) {
@@ -90,6 +94,15 @@ func (s *Store) Init(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS processed_events (
 			event_id TEXT PRIMARY KEY,
 			created_at TEXT NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS glossary_entries (
+			guild_id TEXT NOT NULL,
+			source_term TEXT NOT NULL,
+			source_term_key TEXT NOT NULL,
+			preferred_translation TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			PRIMARY KEY (guild_id, source_term_key)
 		)`,
 	}
 	for _, stmt := range stmts {
@@ -192,17 +205,30 @@ func insertGroupChannel(ctx context.Context, x execer, ch GroupChannel) error {
 	_, err := x.ExecContext(ctx, `INSERT INTO group_channels(group_id,guild_id,channel_id,channel_type,language,webhook_id,webhook_token) VALUES(?,?,?,?,?,?,?)`,
 		ch.GroupID, ch.GuildID, ch.ChannelID, ch.ChannelType, normalizeLanguage(ch.Language), ch.WebhookID, ch.WebhookToken)
 	if err != nil {
+		if strings.Contains(err.Error(), "FOREIGN KEY") {
+			return ErrGroupNotFound
+		}
 		if strings.Contains(err.Error(), "group_channels.group_id") || strings.Contains(err.Error(), "channel_id") {
 			return ErrDuplicateChannel
 		}
 		if strings.Contains(err.Error(), "language") {
 			return ErrDuplicateLanguage
 		}
-		if strings.Contains(err.Error(), "constraint") {
-			return fmt.Errorf("duplicate channel or language: %w", err)
-		}
 	}
 	return err
+}
+
+func (s *Store) GroupExists(ctx context.Context, guildID, groupID string) (bool, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT 1 FROM translation_groups WHERE guild_id=? AND id=? LIMIT 1`, guildID, groupID)
+	var one int
+	err := row.Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *Store) Groups(ctx context.Context, guildID, query string, limit int) ([]TranslationGroup, error) {
@@ -257,6 +283,9 @@ func scanChannels(rows *sql.Rows) ([]GroupChannel, error) {
 }
 
 func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
+	if s.saveMessageLinkErr != nil {
+		return s.saveMessageLinkErr
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?)`,
 		l.SourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceContentSnapshot)
 	return err
@@ -518,6 +547,86 @@ func (s *Store) MarkProcessed(ctx context.Context, id string) (bool, error) {
 	}
 	n, _ := res.RowsAffected()
 	return n == 1, nil
+}
+
+func (s *Store) IsEventProcessed(ctx context.Context, id string) (bool, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT 1 FROM processed_events WHERE event_id=? LIMIT 1`, id)
+	var one int
+	err := row.Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func glossaryTermKey(term string) string {
+	return strings.ToLower(strings.TrimSpace(term))
+}
+
+func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translation, createdBy string) error {
+	term = strings.TrimSpace(term)
+	translation = strings.TrimSpace(translation)
+	if term == "" || translation == "" {
+		return errors.New("term and translation are required")
+	}
+	key := glossaryTermKey(term)
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM glossary_entries WHERE guild_id=?`, guildID).Scan(&count); err != nil {
+		return err
+	}
+	var existing int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM glossary_entries WHERE guild_id=? AND source_term_key=?`, guildID, key).Scan(&existing)
+	if err != nil {
+		return err
+	}
+	if existing == 0 && count >= glossaryMaxEntries {
+		return ErrGlossaryFull
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT INTO glossary_entries(guild_id,source_term,source_term_key,preferred_translation,created_by,created_at)
+		VALUES(?,?,?,?,?,?)
+		ON CONFLICT(guild_id, source_term_key) DO UPDATE SET
+			source_term=excluded.source_term,
+			preferred_translation=excluded.preferred_translation,
+			created_by=excluded.created_by,
+			created_at=excluded.created_at`,
+		guildID, term, key, translation, createdBy, time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
+
+func (s *Store) RemoveGlossaryEntry(ctx context.Context, guildID, term string) error {
+	key := glossaryTermKey(term)
+	if key == "" {
+		return errors.New("term is required")
+	}
+	res, err := s.db.ExecContext(ctx, `DELETE FROM glossary_entries WHERE guild_id=? AND source_term_key=?`, guildID, key)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrGlossaryNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListGlossaryEntries(ctx context.Context, guildID string) ([]GlossaryEntry, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT source_term, preferred_translation FROM glossary_entries WHERE guild_id=? ORDER BY source_term COLLATE NOCASE`, guildID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []GlossaryEntry
+	for rows.Next() {
+		var entry GlossaryEntry
+		if err := rows.Scan(&entry.SourceTerm, &entry.PreferredTranslation); err != nil {
+			return nil, err
+		}
+		out = append(out, entry)
+	}
+	return out, rows.Err()
 }
 
 func normalizeLanguage(s string) string { return strings.TrimSpace(s) }
