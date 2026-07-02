@@ -12,12 +12,13 @@ import (
 )
 
 type Config struct {
-	DiscordToken               string
-	GeminiAPIKey               string
-	DBPath                     string
-	HTTPAddr                   string
-	PublicBaseURL              string
+	DiscordToken                string
+	GeminiAPIKey                string
+	DBPath                      string
+	HTTPAddr                    string
+	PublicBaseURL               string
 	GeminiRateLimitTokensPerMin int
+	AdminRoleIDs                []string
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -56,7 +57,42 @@ func LoadConfig(path string) (Config, error) {
 	if err := validatePublicBaseURL(cfg.PublicBaseURL); err != nil {
 		return cfg, err
 	}
+	adminRoleIDs, err := parseSnowflakeIDs("ADMIN_ROLE_IDS", os.Getenv("ADMIN_ROLE_IDS"))
+	if err != nil {
+		return cfg, err
+	}
+	cfg.AdminRoleIDs = adminRoleIDs
 	return cfg, nil
+}
+
+func parseSnowflakeIDs(envKey, raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	ids := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		id := strings.TrimSpace(part)
+		if id == "" {
+			continue
+		}
+		for _, c := range id {
+			if c < '0' || c > '9' {
+				return nil, fmt.Errorf("%s contains invalid role ID %q", envKey, id)
+			}
+		}
+		if len(id) < 17 || len(id) > 20 {
+			return nil, fmt.Errorf("%s contains invalid role ID %q", envKey, id)
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }
 
 func validateHTTPAddr(addr string) error {

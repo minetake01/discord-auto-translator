@@ -63,6 +63,7 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
 | `PUBLIC_BASE_URL` | 任意 | アバターにオレンジリングバッジを付ける場合のベース URL |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
+| `ADMIN_ROLE_IDS` | 任意 | コマンド実行を許可する追加ロール ID（カンマ区切り）。未設定時はサーバー管理者のみ |
 
 ### 4. 起動
 
@@ -108,6 +109,8 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 これで `#general-ja`, `#general-en`, `#general-zh` が連携されます。
 
 ### コマンド一覧
+
+すべてのコマンドは**サーバー管理者**のみが実行できます。環境変数 `ADMIN_ROLE_IDS` にロール ID を指定すると、そのロールを持つメンバーも実行できます。
 
 | コマンド | 説明 |
 |---|---|

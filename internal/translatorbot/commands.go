@@ -10,6 +10,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+var defaultAdminCommandPermissions int64 = discordgo.PermissionAdministrator
+
 func Commands() []*discordgo.ApplicationCommand {
 	channelTypes := []discordgo.ChannelType{
 		discordgo.ChannelTypeGuildText,
@@ -17,7 +19,7 @@ func Commands() []*discordgo.ApplicationCommand {
 		discordgo.ChannelTypeGuildForum,
 		discordgo.ChannelTypeGuildMedia,
 	}
-	return []*discordgo.ApplicationCommand{
+	cmds := []*discordgo.ApplicationCommand{
 		{
 			Name:        "new-channel",
 			Description: "Create a translation group from this channel or another channel",
@@ -75,19 +77,54 @@ func Commands() []*discordgo.ApplicationCommand {
 			},
 		},
 	}
+	for _, cmd := range cmds {
+		cmd.DefaultMemberPermissions = &defaultAdminCommandPermissions
+	}
+	return cmds
 }
 
 type CommandHandler struct {
-	store *Store
-	api   DiscordAPI
+	store         *Store
+	api           DiscordAPI
+	adminRoleIDs  map[string]struct{}
 }
 
-func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
-	return &CommandHandler{store: store, api: api}
+func NewCommandHandler(store *Store, api DiscordAPI, adminRoleIDs []string) *CommandHandler {
+	roleSet := make(map[string]struct{}, len(adminRoleIDs))
+	for _, id := range adminRoleIDs {
+		roleSet[id] = struct{}{}
+	}
+	return &CommandHandler{store: store, api: api, adminRoleIDs: roleSet}
+}
+
+func (h *CommandHandler) memberCanUseCommands(member *discordgo.Member) bool {
+	if member == nil {
+		return false
+	}
+	if member.Permissions&discordgo.PermissionAdministrator != 0 {
+		return true
+	}
+	for _, roleID := range member.Roles {
+		if _, ok := h.adminRoleIDs[roleID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Type != discordgo.InteractionApplicationCommand && i.Type != discordgo.InteractionApplicationCommandAutocomplete {
+		return
+	}
+	if !h.memberCanUseCommands(i.Member) {
+		if i.Type == discordgo.InteractionApplicationCommand {
+			respond(s, i, "このコマンドはサーバー管理者または許可されたロールのみ実行できます。", true)
+		} else {
+			_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
+				Data: &discordgo.InteractionResponseData{Choices: []*discordgo.ApplicationCommandOptionChoice{}},
+			})
+		}
 		return
 	}
 	data := i.ApplicationCommandData()
@@ -345,10 +382,10 @@ func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo
 	respond(s, i, fmt.Sprintf("用語 `%s` を削除しました。", strings.TrimSpace(term)), true)
 }
 
-func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string {
+func RegisterGuildCommands(s *discordgo.Session, appID string, adminRoleIDs []string) map[string]string {
 	addGlossaryCommandIDs := make(map[string]string)
 	for _, g := range s.State.Guilds {
-		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
+		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID, adminRoleIDs); err != nil {
 			log.Printf("register commands in guild %s: %v", g.ID, err)
 			continue
 		} else if cmdID != "" {
@@ -358,17 +395,36 @@ func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string
 	return addGlossaryCommandIDs
 }
 
-func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) (addGlossaryCommandID string, err error) {
-	for _, cmd := range Commands() {
-		created, createErr := s.ApplicationCommandCreate(appID, guildID, cmd)
-		if createErr != nil {
-			return "", createErr
+func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string, adminRoleIDs []string) (addGlossaryCommandID string, err error) {
+	created, err := s.ApplicationCommandBulkOverwrite(appID, guildID, Commands())
+	if err != nil {
+		return "", err
+	}
+	for _, cmd := range created {
+		if cmd.Name == "add-glossary" {
+			addGlossaryCommandID = cmd.ID
 		}
-		if cmd.Name == "add-glossary" && created != nil {
-			addGlossaryCommandID = created.ID
+		if len(adminRoleIDs) > 0 {
+			if permErr := grantRoleCommandPermissions(s, appID, guildID, cmd.ID, adminRoleIDs); permErr != nil {
+				log.Printf("grant command permissions for %s in guild %s: %v", cmd.Name, guildID, permErr)
+			}
 		}
 	}
 	return addGlossaryCommandID, nil
+}
+
+func grantRoleCommandPermissions(s *discordgo.Session, appID, guildID, cmdID string, roleIDs []string) error {
+	perms := make([]*discordgo.ApplicationCommandPermissions, 0, len(roleIDs))
+	for _, roleID := range roleIDs {
+		perms = append(perms, &discordgo.ApplicationCommandPermissions{
+			ID:         roleID,
+			Type:       discordgo.ApplicationCommandPermissionTypeRole,
+			Permission: true,
+		})
+	}
+	return s.ApplicationCommandPermissionsEdit(appID, guildID, cmdID, &discordgo.ApplicationCommandPermissionsList{
+		Permissions: perms,
+	})
 }
 
 func joinChannelErrorMessage(groupID string, err error) string {

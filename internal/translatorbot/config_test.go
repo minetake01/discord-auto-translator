@@ -81,3 +81,31 @@ func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 		t.Fatalf("got %v, want PUBLIC_BASE_URL error", err)
 	}
 }
+
+func TestLoadConfigParsesAdminRoleIDs(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "token")
+	t.Setenv("GEMINI_API_KEY", "key")
+	t.Setenv("ADMIN_ROLE_IDS", " 123456789012345678 , 987654321098765432 , 123456789012345678 ")
+
+	cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AdminRoleIDs) != 2 {
+		t.Fatalf("AdminRoleIDs = %#v, want 2 entries", cfg.AdminRoleIDs)
+	}
+	if cfg.AdminRoleIDs[0] != "123456789012345678" || cfg.AdminRoleIDs[1] != "987654321098765432" {
+		t.Fatalf("AdminRoleIDs = %#v", cfg.AdminRoleIDs)
+	}
+}
+
+func TestLoadConfigRejectsInvalidAdminRoleIDs(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "token")
+	t.Setenv("GEMINI_API_KEY", "key")
+	t.Setenv("ADMIN_ROLE_IDS", "not-a-snowflake")
+
+	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+	if err == nil || !strings.Contains(err.Error(), "ADMIN_ROLE_IDS") {
+		t.Fatalf("got %v, want ADMIN_ROLE_IDS error", err)
+	}
+}
