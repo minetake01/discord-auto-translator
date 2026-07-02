@@ -48,18 +48,12 @@ const geminiModel = "gemini-3.1-flash-lite"
 
 ## 3. 未実装・未接続の機能
 
-### `FlagForLanguage`
-
-`languages.go` の `FlagForLanguage` 関数は定義されていますがプロダクションコードから参照されていません。
-
 ### メッセージ同期の信頼性（形式検証後に実装済み）
 
 - **冪等性**: 各ターゲット送信前に `message_links` と `processed_events`（キー: `msglink:{sourceChannel}:{sourceMessage}:{targetChannel}`）を確認し、既に同期済みならスキップします。同一 `(channelID, messageID)` の並行処理は `messageLocks` で直列化します。
 - **補償トランザクション**: `SendWebhook` 成功後に `SaveMessageLink` が失敗した場合、`DeleteWebhook` で Discord 上の投稿を削除します（`sendAndSaveLink`）。
 - **best-effort fan-out**: 複数ターゲットへの転送中に一部が失敗しても残りは続行し、エラーは `errors.Join` で集約して返します。
 - **ピン留め同期**: `MESSAGE_UPDATE` で `Pinned` が変化したとき `SyncPin` を呼びます（Bot / Webhook メッセージは除外）。
-
-`pin_states` テーブルは将来の差分検知用に残置しています（現状未使用）。
 
 ---
 
@@ -68,12 +62,13 @@ const geminiModel = "gemini-3.1-flash-lite"
 ```go
 // main.go
 translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
+// GUILD_CREATE でも RegisterGuildCommandsForGuild を呼び出す
 ```
 
-コマンドは **起動時に bot が参加しているすべてのギルドへ再登録** されます。Discord のコマンド登録は `PUT` / `POST` でも既存コマンドを上書き可能なため、通常は問題ありませんが、以下の点に注意してください：
+コマンドは **起動時に bot が参加しているすべてのギルドへ再登録** されます。新しいギルドに参加した場合も `GUILD_CREATE` イベントで同じコマンドを登録します。Discord のコマンド登録は `PUT` / `POST` でも既存コマンドを上書き可能なため、通常は問題ありませんが、以下の点に注意してください：
 
 - **登録解除の仕組みがない**: コマンドを削除したい場合は Discord の Developer Portal から手動で削除するか、削除用のコードを一時的に追加する必要があります。
-- **グローバルコマンドは未使用**: すべてギルドコマンドとして登録されます。新しいギルドに参加した場合は再起動が必要です。
+- **グローバルコマンドは未使用**: すべてギルドコマンドとして登録されます。
 - **レート制限**: ギルド数が多い場合、起動時のコマンド登録でレート制限にかかる可能性があります。
 
 ---

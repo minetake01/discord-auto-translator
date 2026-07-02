@@ -55,10 +55,14 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 | `/join-channel group:[グループ] language:[言語] [channel:[チャンネル]]` | 既存グループに追加チャンネルを参加させる |
 | `/leave-channel group:[グループ] [channel:[チャンネル]]` | グループからチャンネルを退出させる |
 | `/delete-group group:[グループ]` | グループ全体を削除する |
+| `/add-glossary term:[用語] translation:[訳]` | サーバー用語集に優先訳を登録する |
+| `/list-glossary` | サーバーの用語集を一覧表示する |
+| `/remove-glossary term:[用語]` | 用語集エントリを削除する |
 
 - `language` と `group` オプションはオートコンプリートに対応しています。
 - `channel` を省略した場合、コマンドを実行したチャンネルが対象になります。
 - 対応チャンネルタイプ: テキスト・ニュース・フォーラム・メディア
+- 用語集はサーバーごとに最大 10 件まで登録可能
 
 #### 言語コード
 
@@ -147,6 +151,14 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 
 このエンドポイントが返す画像は元のアバターにオレンジ色の円形ボーダー（128×128 px PNG）を付加したものです。異なる言語のチャンネルで同じユーザーのメッセージを視覚的に区別する助けになります。
 
+### 3.9 用語集 (Glossary)
+
+サーバー単位でソース用語と優先訳を登録し、翻訳プロンプトの `<glossary>` セクションに渡します。
+
+- `/add-glossary` で登録、`/list-glossary` で一覧、`/remove-glossary` で削除
+- サーバーごとに最大 10 件
+- 翻訳結果に「訳語のフィードバック」が含まれる場合、対象言語向けの `/add-glossary` 案内をメッセージ末尾に付与
+
 ---
 
 ## 4. プロンプトインジェクション対策
@@ -228,8 +240,8 @@ thread_links (
 )
 
 -- 未使用（将来実装用）
-pin_states (message_id, channel_id, pinned)
 processed_events (event_id, created_at)
+glossary_entries (guild_id, source_term, source_term_key, preferred_translation, created_by, created_at)
 ```
 
 ---
@@ -244,7 +256,10 @@ Discordゲートウェイ
         │               ├── /new-channel  → Store.CreateGroupWithChannel
         │               ├── /join-channel → Store.JoinChannel
         │               ├── /leave-channel → Store.LeaveChannel
-        │               └── /delete-group → Store.DeleteGroup
+        │               ├── /delete-group → Store.DeleteGroup
+        │               ├── /add-glossary → Store.UpsertGlossaryEntry
+        │               ├── /list-glossary → Store.ListGlossaryEntries
+        │               └── /remove-glossary → Store.RemoveGlossaryEntry
         │
         ├── MessageCreate
         │       ├── ボット/ウェブフック → スキップ
