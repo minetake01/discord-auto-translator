@@ -1,10 +1,12 @@
 package translatorbot
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1291,6 +1293,74 @@ func TestStickerFilesDownloadsSticker(t *testing.T) {
 	}
 	if len(files) != 1 || files[0].Name != "wave.png" {
 		t.Fatalf("unexpected files: %#v", files)
+	}
+}
+
+func TestStickerFilesSkipsLottieAndLogs(t *testing.T) {
+	ctx := context.Background()
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(http.StatusNotFound)
+		return rec.Result(), nil
+	})}
+
+	var buf bytes.Buffer
+	original := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(original) })
+
+	files, err := service.stickerFiles(ctx, []DiscordSticker{{ID: "lottie-1", Name: "wave", FormatType: stickerFormatLottie}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("expected lottie sticker to be skipped, got %#v", files)
+	}
+	if !strings.Contains(buf.String(), "skip lottie sticker lottie-1 (wave)") {
+		t.Fatalf("expected skip log, got %q", buf.String())
+	}
+}
+
+func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		rec := httptest.NewRecorder()
+		rec.WriteHeader(http.StatusOK)
+		_, _ = rec.WriteString("sticker-bytes")
+		return rec.Result(), nil
+	})}
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文", TTS: true,
+		Stickers: []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if !discord.sent[0].TTS {
+		t.Fatalf("expected TTS on deferred initial message, got %#v", discord.sent[0])
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "wave.png" {
+		t.Fatalf("expected sticker file on deferred initial message, got %#v", discord.sent[0].Files)
 	}
 }
 
