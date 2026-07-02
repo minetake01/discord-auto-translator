@@ -282,18 +282,27 @@ func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo
 func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string {
 	addGlossaryCommandIDs := make(map[string]string)
 	for _, g := range s.State.Guilds {
-		for _, cmd := range Commands() {
-			created, err := s.ApplicationCommandCreate(appID, g.ID, cmd)
-			if err != nil {
-				log.Printf("register command %s in guild %s: %v", cmd.Name, g.ID, err)
-				continue
-			}
-			if cmd.Name == "add-glossary" && created != nil {
-				addGlossaryCommandIDs[g.ID] = created.ID
-			}
+		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
+			log.Printf("register commands in guild %s: %v", g.ID, err)
+			continue
+		} else if cmdID != "" {
+			addGlossaryCommandIDs[g.ID] = cmdID
 		}
 	}
 	return addGlossaryCommandIDs
+}
+
+func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) (addGlossaryCommandID string, err error) {
+	for _, cmd := range Commands() {
+		created, createErr := s.ApplicationCommandCreate(appID, guildID, cmd)
+		if createErr != nil {
+			return "", createErr
+		}
+		if cmd.Name == "add-glossary" && created != nil {
+			addGlossaryCommandID = created.ID
+		}
+	}
+	return addGlossaryCommandID, nil
 }
 
 func joinChannelErrorMessage(groupID string, err error) string {
@@ -343,7 +352,13 @@ func allowedChannelType(t discordgo.ChannelType) bool {
 	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum || t == discordgo.ChannelTypeGuildMedia
 }
 
+var interactionResponseHook func(msg string, ephemeral bool)
+
 func respond(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
+	if interactionResponseHook != nil {
+		interactionResponseHook(msg, ephemeral)
+		return
+	}
 	flags := discordgo.MessageFlags(0)
 	if ephemeral {
 		flags = discordgo.MessageFlagsEphemeral
