@@ -221,3 +221,160 @@ func TestHandleListGroups(t *testing.T) {
 		}
 	}
 }
+
+func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	ctx := context.Background()
+
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-ja", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-en", ChannelType: 0, Language: "en", WebhookID: "w2", WebhookToken: "t2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ch-ja", GroupID: "general",
+		TargetChannelID: "ch-en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceAuthorID: "a", SourceContentSnapshot: "Hello from the original message",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "translated", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	if len(responses) != 1 {
+		t.Fatalf("response count = %d, want 1", len(responses))
+	}
+	msg := responses[0]
+	for _, want := range []string{
+		"Go to original message",
+		"https://discord.com/channels/g1/ch-ja/orig",
+		"> Hello from the original message",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("response missing %q: %s", want, msg)
+		}
+	}
+}
+
+func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	ctx := context.Background()
+
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-ja", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-en", ChannelType: 0, Language: "en", WebhookID: "w2", WebhookToken: "t2",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ch-ja", GroupID: "general",
+		TargetChannelID: "ch-ja", TargetMessageID: "translated-ja", TargetLanguage: "ja",
+		SourceAuthorID: "a", SourceContentSnapshot: "original text",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-ja", "translated-ja", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	if len(responses) != 1 {
+		t.Fatalf("response count = %d, want 1", len(responses))
+	}
+	if !strings.Contains(responses[0], "原文メッセージへ移動") {
+		t.Fatalf("response = %q", responses[0])
+	}
+}
+
+func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	ctx := context.Background()
+
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-en", ChannelType: 0, Language: "en", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ch-en", GroupID: "general",
+		TargetChannelID: "ch-ja", TargetMessageID: "translated", TargetLanguage: "ja",
+		SourceAuthorID: "a", SourceContentSnapshot: "original",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "orig", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	if len(responses) != 1 || responses[0] != uiStrings["en"][uiKeyAlreadyOriginal] {
+		t.Fatalf("response = %#v", responses)
+	}
+}
+
+func TestHandleViewOriginalNotManaged(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "unknown", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	if len(responses) != 1 || responses[0] != uiStrings["en"][uiKeyNotManaged] {
+		t.Fatalf("response = %#v", responses)
+	}
+}
+
+func viewOriginalInteraction(guildID, channelID, messageID string, member *discordgo.Member) *discordgo.InteractionCreate {
+	return &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			Type:      discordgo.InteractionApplicationCommand,
+			GuildID:   guildID,
+			ChannelID: channelID,
+			Member:    member,
+			Data: discordgo.ApplicationCommandInteractionData{
+				Name:        viewOriginalCommandName,
+				CommandType: discordgo.MessageApplicationCommand,
+				TargetID:    messageID,
+			},
+		},
+	}
+}

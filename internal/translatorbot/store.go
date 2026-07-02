@@ -391,6 +391,47 @@ func (s *Store) MessageSnapshot(ctx context.Context, channelID, messageID string
 	return authorID, content, true, nil
 }
 
+type MessageOriginalResult struct {
+	SourceChannelID string
+	SourceMessageID string
+	Snapshot        string
+	TargetLanguage  string
+	IsSource        bool
+}
+
+func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string) (MessageOriginalResult, bool, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
+	var link MessageLink
+	err := row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceContentSnapshot)
+	if err == nil {
+		return MessageOriginalResult{
+			SourceChannelID: link.SourceChannelID,
+			SourceMessageID: link.SourceMessageID,
+			Snapshot:        link.SourceContentSnapshot,
+			TargetLanguage:  link.TargetLanguage,
+			IsSource:        false,
+		}, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return MessageOriginalResult{}, false, err
+	}
+
+	links, err := s.MessageTargets(ctx, channelID, messageID)
+	if err != nil {
+		return MessageOriginalResult{}, false, err
+	}
+	if len(links) == 0 {
+		return MessageOriginalResult{}, false, nil
+	}
+	link = links[0]
+	return MessageOriginalResult{
+		SourceChannelID: channelID,
+		SourceMessageID: messageID,
+		Snapshot:        link.SourceContentSnapshot,
+		IsSource:        true,
+	}, true, nil
+}
+
 func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (authorID, content, quoteChannelID, quoteMessageID string, ok bool, err error) {
 	links, err := s.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
