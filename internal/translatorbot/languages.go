@@ -44,28 +44,3 @@ func LanguageSuggestions(query string, limit int) []string {
 	}
 	return out
 }
-
-func FlagForLanguage(language string) string {
-	switch strings.ToLower(language) {
-	case "ja":
-		return "🇯🇵"
-	case "en":
-		return "🇺🇸"
-	case "zh-cn":
-		return "🇨🇳"
-	case "zh-tw":
-		return "🇹🇼"
-	case "ko":
-		return "🇰🇷"
-	case "fr":
-		return "🇫🇷"
-	case "de":
-		return "🇩🇪"
-	case "es":
-		return "🇪🇸"
-	case "pt-br":
-		return "🇧🇷"
-	default:
-		return ""
-	}
-}

@@ -85,12 +85,6 @@ func (s *Store) Init(ctx context.Context) error {
 			target_language TEXT NOT NULL,
 			PRIMARY KEY (group_id, source_thread_id, target_channel_id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS pin_states (
-			message_id TEXT NOT NULL,
-			channel_id TEXT NOT NULL,
-			pinned INTEGER NOT NULL,
-			PRIMARY KEY (message_id, channel_id)
-		)`,
 		`CREATE TABLE IF NOT EXISTS processed_events (
 			event_id TEXT PRIMARY KEY,
 			created_at TEXT NOT NULL
