@@ -4,15 +4,17 @@ import (
 	"bufio"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type Config struct {
-	DiscordToken  string
-	GeminiAPIKey  string
-	DBPath        string
-	HTTPAddr      string
-	PublicBaseURL string
+	DiscordToken               string
+	GeminiAPIKey               string
+	DBPath                     string
+	HTTPAddr                   string
+	PublicBaseURL              string
+	GeminiRateLimitTokensPerMin int
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -23,6 +25,15 @@ func LoadConfig(path string) (Config, error) {
 		DBPath:        os.Getenv("DB_PATH"),
 		HTTPAddr:      os.Getenv("HTTP_ADDR"),
 		PublicBaseURL: strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+	}
+	if raw := strings.TrimSpace(os.Getenv("GEMINI_RATE_LIMIT_TOKENS_PER_MIN")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil {
+			return cfg, errors.New("GEMINI_RATE_LIMIT_TOKENS_PER_MIN must be an integer")
+		}
+		cfg.GeminiRateLimitTokensPerMin = limit
+	} else {
+		cfg.GeminiRateLimitTokensPerMin = defaultRateLimitTokensPerMinute
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./translator.db"
