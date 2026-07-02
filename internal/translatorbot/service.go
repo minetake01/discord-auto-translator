@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -616,6 +617,8 @@ type threadCreateRequest struct {
 	InitialMessageAvatar   string
 	InitialMessageText     string
 	InitialMessageFiles    []DiscordAttachment
+	InitialMessageStickers []DiscordSticker
+	InitialMessageTTS      bool
 	DeferWithoutSourceMsg  bool
 }
 
@@ -692,19 +695,19 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if err != nil {
 				return false, err
 			}
-			if req.InitialMessageID != "" && initialMessageID == "" && (translatedInitial != "" || len(req.InitialMessageFiles) > 0) {
+			if req.InitialMessageID != "" && initialMessageID == "" && (translatedInitial != "" || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0) {
 				synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
 				if err != nil {
 					return false, err
 				}
 				if !synced {
-					files, err := s.attachmentFiles(ctx, req.InitialMessageFiles)
+					files, err := s.messageFiles(ctx, req.InitialMessageFiles, req.InitialMessageStickers)
 					if err != nil {
 						return false, err
 					}
 					avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
 					if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
-						Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, ThreadID: threadID, Files: files,
+						Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID, Files: files,
 					}, MessageLink{
 						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 						TargetChannelID: threadID, TargetLanguage: target.Language,
@@ -771,6 +774,8 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageText = m.Content
 		req.InitialMessageFiles = m.Attachments
+		req.InitialMessageStickers = m.Stickers
+		req.InitialMessageTTS = m.TTS
 	} else {
 		req.SourceMessageID = m.ChannelID
 	}
@@ -862,6 +867,7 @@ func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) (
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			if skipOnFailure {
+				logSkippedLottieSticker(sticker, "build request", err)
 				continue
 			}
 			return nil, err
@@ -869,6 +875,7 @@ func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) (
 		resp, err := s.httpClient.Do(req)
 		if err != nil {
 			if skipOnFailure {
+				logSkippedLottieSticker(sticker, "download", err)
 				continue
 			}
 			return nil, err
@@ -877,18 +884,21 @@ func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) (
 		closeErr := resp.Body.Close()
 		if readErr != nil {
 			if skipOnFailure {
+				logSkippedLottieSticker(sticker, "read body", readErr)
 				continue
 			}
 			return nil, readErr
 		}
 		if closeErr != nil {
 			if skipOnFailure {
+				logSkippedLottieSticker(sticker, "close body", closeErr)
 				continue
 			}
 			return nil, closeErr
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			if skipOnFailure {
+				logSkippedLottieSticker(sticker, fmt.Sprintf("status %s", resp.Status), nil)
 				continue
 			}
 			return nil, fmt.Errorf("download sticker %s: %s", url, resp.Status)
@@ -912,6 +922,21 @@ func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) (
 		})
 	}
 	return files, nil
+}
+
+func logSkippedLottieSticker(sticker DiscordSticker, reason string, err error) {
+	if sticker.FormatType != stickerFormatLottie {
+		return
+	}
+	name := strings.TrimSpace(sticker.Name)
+	if name == "" {
+		name = sticker.ID
+	}
+	if err != nil {
+		log.Printf("skip lottie sticker %s (%s): %s: %v", sticker.ID, name, reason, err)
+		return
+	}
+	log.Printf("skip lottie sticker %s (%s): %s", sticker.ID, name, reason)
 }
 
 func (s *Service) attachmentFiles(ctx context.Context, attachments []DiscordAttachment) ([]WebhookFile, error) {
@@ -1016,7 +1041,7 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 
 func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
 	if isThreadOnlyChannelType(target.ChannelType) {
-		files, err := s.attachmentFiles(ctx, req.InitialMessageFiles)
+		files, err := s.messageFiles(ctx, req.InitialMessageFiles, req.InitialMessageStickers)
 		if err != nil {
 			return "", "", err
 		}
