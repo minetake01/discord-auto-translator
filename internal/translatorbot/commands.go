@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -50,6 +51,25 @@ func Commands() []*discordgo.ApplicationCommand {
 				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
 			},
 		},
+		{
+			Name:        "add-glossary",
+			Description: "Register a preferred translation for a term in this server",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "term", Description: "Source term to match", Type: discordgo.ApplicationCommandOptionString, Required: true},
+				{Name: "translation", Description: "Preferred translation", Type: discordgo.ApplicationCommandOptionString, Required: true},
+			},
+		},
+		{
+			Name:        "list-glossary",
+			Description: "List glossary entries for this server",
+		},
+		{
+			Name:        "remove-glossary",
+			Description: "Remove a glossary entry from this server",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "term", Description: "Source term to remove", Type: discordgo.ApplicationCommandOptionString, Required: true},
+			},
+		},
 	}
 }
 
@@ -80,6 +100,12 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleLeaveChannel(s, i, data)
 	case "delete-group":
 		h.handleDeleteGroup(s, i, data)
+	case "add-glossary":
+		h.handleAddGlossary(s, i, data)
+	case "list-glossary":
+		h.handleListGlossary(s, i, data)
+	case "remove-glossary":
+		h.handleRemoveGlossary(s, i, data)
 	}
 }
 
@@ -146,10 +172,24 @@ func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.Int
 
 func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
-	groupID := optionString(data.Options, "group")
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
+	if groupID == "" {
+		respond(s, i, "グループ名を指定してください。", true)
+		return
+	}
 	language := normalizeLanguage(optionString(data.Options, "language"))
 	if !IsValidLanguageCode(language) {
 		respond(s, i, "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。", true)
+		return
+	}
+	exists, err := h.store.GroupExists(ctx, i.GuildID, groupID)
+	if err != nil {
+		log.Printf("join-channel group exists check: %v", err)
+		respond(s, i, "チャンネルを参加させられませんでした。", true)
+		return
+	}
+	if !exists {
+		respond(s, i, joinChannelErrorMessage(groupID, ErrGroupNotFound), true)
 		return
 	}
 	channelID := optionChannel(data.Options, "channel", i.ChannelID)
@@ -171,7 +211,8 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 		GroupID: groupID, GuildID: i.GuildID, ChannelID: channelID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
 	})
 	if err != nil {
-		respond(s, i, err.Error(), true)
+		log.Printf("join-channel store: %v", err)
+		respond(s, i, joinChannelErrorMessage(groupID, err), true)
 		return
 	}
 	respond(s, i, fmt.Sprintf("翻訳グループ `%s` に <#%s> (%s) を参加させました。", groupID, channelID, language), true)
@@ -179,7 +220,7 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 
 func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
-	groupID := optionString(data.Options, "group")
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	channelID := optionChannel(data.Options, "channel", i.ChannelID)
 	if err := h.store.LeaveChannel(ctx, i.GuildID, groupID, channelID); err != nil {
 		respond(s, i, err.Error(), true)
@@ -190,7 +231,7 @@ func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.I
 
 func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
-	groupID := optionString(data.Options, "group")
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	if err := h.store.DeleteGroup(ctx, i.GuildID, groupID); err != nil {
 		respond(s, i, err.Error(), true)
 		return
@@ -198,13 +239,73 @@ func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.In
 	respond(s, i, fmt.Sprintf("翻訳グループ `%s` を削除しました。", groupID), true)
 }
 
-func RegisterGuildCommands(s *discordgo.Session, appID string) {
+func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	term := optionString(data.Options, "term")
+	translation := optionString(data.Options, "translation")
+	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, i.Member.User.ID); err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました。", strings.TrimSpace(term), strings.TrimSpace(translation)), true)
+}
+
+func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	entries, err := h.store.ListGlossaryEntries(ctx, i.GuildID)
+	if err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	if len(entries) == 0 {
+		respond(s, i, "このサーバーにはグロッサリー登録がありません。", true)
+		return
+	}
+	var b strings.Builder
+	b.WriteString("グロッサリー:\n")
+	for _, entry := range entries {
+		fmt.Fprintf(&b, "- `%s` → `%s`\n", entry.SourceTerm, entry.PreferredTranslation)
+	}
+	respond(s, i, strings.TrimSpace(b.String()), true)
+}
+
+func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	term := optionString(data.Options, "term")
+	if err := h.store.RemoveGlossaryEntry(ctx, i.GuildID, term); err != nil {
+		respond(s, i, err.Error(), true)
+		return
+	}
+	respond(s, i, fmt.Sprintf("用語 `%s` を削除しました。", strings.TrimSpace(term)), true)
+}
+
+func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string {
+	addGlossaryCommandIDs := make(map[string]string)
 	for _, g := range s.State.Guilds {
 		for _, cmd := range Commands() {
-			if _, err := s.ApplicationCommandCreate(appID, g.ID, cmd); err != nil {
+			created, err := s.ApplicationCommandCreate(appID, g.ID, cmd)
+			if err != nil {
 				log.Printf("register command %s in guild %s: %v", cmd.Name, g.ID, err)
+				continue
+			}
+			if cmd.Name == "add-glossary" && created != nil {
+				addGlossaryCommandIDs[g.ID] = created.ID
 			}
 		}
+	}
+	return addGlossaryCommandIDs
+}
+
+func joinChannelErrorMessage(groupID string, err error) string {
+	switch {
+	case errors.Is(err, ErrGroupNotFound):
+		return fmt.Sprintf("翻訳グループ `%s` がこのサーバーに見つかりません。`/new-channel` で作成したグループ名と一致しているか確認してください。", groupID)
+	case errors.Is(err, ErrDuplicateChannel):
+		return fmt.Sprintf("このチャンネルは既にグループ `%s` に参加しています。", groupID)
+	case errors.Is(err, ErrDuplicateLanguage):
+		return fmt.Sprintf("グループ `%s` には既に同じ言語のチャンネルがあります。別の言語を指定してください。", groupID)
+	default:
+		return "チャンネルを参加させられませんでした。"
 	}
 }
 
