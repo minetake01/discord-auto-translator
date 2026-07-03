@@ -204,13 +204,13 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
 		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-		quote, err := s.replyQuote(ctx, m, target.ChannelID)
+		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
 		}
 		if quote != "" {
-			content = quote + "\n" + content
+			content = quote + "\n\n" + content
 		}
 		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
@@ -235,7 +235,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, source GroupChannel, targets []GroupChannel) error {
 	var errs []error
 	for _, target := range targets {
-		quote, err := s.replyQuote(ctx, m, target.ChannelID)
+		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
@@ -344,12 +344,12 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		content = m.Content
 	}
 	content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID)
+	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
 	if quote != "" {
-		content = quote + "\n" + content
+		content = quote + "\n\n" + content
 	}
 	content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 	if err != nil {
@@ -537,7 +537,7 @@ func (s *Service) SyncPin(ctx context.Context, sourceChannelID, sourceMessageID 
 	return errors.Join(errs...)
 }
 
-func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID string) (string, error) {
+func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
@@ -573,7 +573,8 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		snippet = string([]rune(snippet)[:40]) + "..."
 	}
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
-	return fmt.Sprintf("> %s\n-# [original message](%s)", snippet, link), nil
+	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
+	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
@@ -1053,8 +1054,8 @@ func firstLine(s string) string {
 func firstLineWithoutPseudoReply(content string) string {
 	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
 	start := 0
-	if len(lines) >= 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), ">") && isPseudoReplyLinkLine(lines[1]) {
-		start = 2
+	if len(lines) >= 1 && isPseudoReplyLine(lines[0]) {
+		start = 1
 	}
 	for _, line := range lines[start:] {
 		if line = strings.TrimSpace(line); line != "" {
@@ -1064,9 +1065,14 @@ func firstLineWithoutPseudoReply(content string) string {
 	return ""
 }
 
-func isPseudoReplyLinkLine(line string) bool {
+func isPseudoReplyLine(line string) bool {
 	line = strings.TrimSpace(line)
-	return strings.HasPrefix(line, "-# [original message](") && strings.HasSuffix(line, ")")
+	separator := strings.LastIndex(line, " · [")
+	if !strings.HasPrefix(line, "> ") || separator < 2 || !strings.HasSuffix(line, ")") {
+		return false
+	}
+	linkStart := strings.LastIndex(line[separator:], "](https://discord.com/channels/")
+	return linkStart > 0
 }
 
 func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {
