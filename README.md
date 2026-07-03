@@ -34,11 +34,13 @@ Google Gemini を使って、異なる言語を話すユーザーが同じサー
    - Scopes: `bot`, `applications.commands`
    - Permissions（Developer Portal の表示名）:
      - **基本**: `View Channel`, `Read Message History`
-     - **メッセージ**: `Send Messages`, `Send Messages in Threads`, `Send TTS Messages`, `Embed Links`, `Attach Files`, `Bypass Slowmode`
-     - **モデレーション**: `Manage Messages`, `Pin Messages`
+     - **メッセージ**: `Send Messages`, `Send Messages in Threads`, `Attach Files`
+     - **モデレーション**: `Pin Messages`
      - **ウェブフック**: `Manage Webhooks`
      - **スレッド**: `Create Public Threads`, `Manage Threads`
-     - **リアクション**: `Add Reactions`, `Use External Emojis`
+     - **リアクション**: `Add Reactions`
+   - 上記の permissions 整数は `2252126768172096` です
+   - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768434240` です
 
 ### 2. Gemini API キーの取得
 
