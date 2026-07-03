@@ -58,7 +58,7 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 | `/leave-channel group:[グループ] [channel:[チャンネル]]` | グループからチャンネルを退出させる |
 | `/delete-group group:[グループ]` | グループ全体を削除する |
 | `/set-style group:[グループ] [preset:[プリセット]] [custom:[カスタム指示]]` | 翻訳グループの翻訳スタイルを設定する（プリセットまたはカスタム指示は排他） |
-| `/add-glossary term:[用語] translation:[訳] always_include:[常時使用]` | サーバー用語集に優先訳を登録する（`always_include` は任意、既定値は `false`） |
+| `/add-glossary term:[用語] translation:[訳] attribute:[属性] always_include:[常時使用]` | サーバー用語集に優先訳を登録する（`attribute` は候補付き自由入力、`always_include` の既定値は `false`） |
 | `/list-glossary` | サーバーの用語集を一覧表示する |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除する |
 
@@ -206,6 +206,8 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 サーバー単位でソース用語と優先訳を登録し、条件を満たす用語を翻訳のシステム指示にある `<glossary>` セクションへ渡します。
 
 - `/add-glossary` で登録、`/list-glossary` で一覧、`/remove-glossary` で削除
+- `attribute` は任意の自由入力。Autocomplete候補として「人名」「地名」「スラング」「略語」「専門用語」を提示し、選択を強制しない
+- 属性は選別された用語の `<attribute>` としてシステム指示へ渡し、Geminiが用語の意味・役割を判断する文脈として使用する
 - `always_include:false`（既定値）の用語は、現在の翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけ追加
 - `always_include:true` の用語は本文にかかわらず常に追加
 - 一致判定の対象は現在の翻訳対象本文だけで、会話履歴やサーバー・チャンネル情報は対象外
@@ -302,7 +304,7 @@ pin_states (
 
 -- 未使用（将来実装用）
 processed_events (event_id, created_at)
-glossary_entries (guild_id, source_term, source_term_key, preferred_translation, always_include, created_by, created_at)
+glossary_entries (guild_id, source_term, source_term_key, preferred_translation, attribute, always_include, created_by, created_at)
 ```
 
 ---

@@ -225,35 +225,35 @@ func TestMarkProcessedIdempotent(t *testing.T) {
 func TestGlossaryCRUDAndLimit(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Non-Player Character", "u1", true); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Non-Player Character", "略語", "u1", true); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := s.ListGlossaryEntries(ctx, "g1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].SourceTerm != "NPC" || !entries[0].AlwaysInclude {
+	if len(entries) != 1 || entries[0].SourceTerm != "NPC" || entries[0].Attribute != "略語" || !entries[0].AlwaysInclude {
 		t.Fatalf("got %#v", entries)
 	}
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "npc", "Updated", "u2", false); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "npc", "Updated", "自由入力の属性", "u2", false); err != nil {
 		t.Fatal(err)
 	}
 	entries, err = s.ListGlossaryEntries(ctx, "g1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" || entries[0].AlwaysInclude {
+	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" || entries[0].Attribute != "自由入力の属性" || entries[0].AlwaysInclude {
 		t.Fatalf("expected upsert overwrite, got %#v", entries)
 	}
 	for i := 0; i < glossaryMaxEntries-1; i++ {
-		if err := s.UpsertGlossaryEntry(ctx, "g1", fmt.Sprintf("term%d", i), "value", "u", false); err != nil {
+		if err := s.UpsertGlossaryEntry(ctx, "g1", fmt.Sprintf("term%d", i), "value", "", "u", false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "overflow", "value", "u", false); !errors.Is(err, ErrGlossaryFull) {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "overflow", "value", "", "u", false); !errors.Is(err, ErrGlossaryFull) {
 		t.Fatalf("want ErrGlossaryFull, got %v", err)
 	}
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Updated at capacity", "u", true); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Updated at capacity", "人名", "u", true); err != nil {
 		t.Fatalf("update at capacity: %v", err)
 	}
 	if err := s.RemoveGlossaryEntry(ctx, "g1", "term0"); err != nil {
@@ -261,7 +261,7 @@ func TestGlossaryCRUDAndLimit(t *testing.T) {
 	}
 }
 
-func TestGlossaryMigrationDefaultsAlwaysIncludeToFalse(t *testing.T) {
+func TestGlossaryMigrationDefaultsNewFields(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -284,7 +284,7 @@ func TestGlossaryMigrationDefaultsAlwaysIncludeToFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 	entries, err := s.ListGlossaryEntries(ctx, "g1")
-	if err != nil || len(entries) != 1 || entries[0].AlwaysInclude {
+	if err != nil || len(entries) != 1 || entries[0].Attribute != "" || entries[0].AlwaysInclude {
 		t.Fatalf("entries = %#v, err = %v", entries, err)
 	}
 }

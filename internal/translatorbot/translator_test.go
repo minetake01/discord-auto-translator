@@ -65,12 +65,15 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 
 func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 	glossary := []GlossaryEntry{
-		{SourceTerm: "NPC", PreferredTranslation: "Non-Player Character"},
+		{SourceTerm: "NPC", PreferredTranslation: "Non-Player Character", Attribute: "略語"},
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
 	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary)
 	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
+		t.Fatal(systemInstruction)
+	}
+	if !strings.Contains(systemInstruction, "<attribute>略語</attribute>") {
 		t.Fatal(systemInstruction)
 	}
 	if !strings.Contains(systemInstruction, "<source_term>raid</source_term>") {

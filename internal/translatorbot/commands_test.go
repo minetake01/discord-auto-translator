@@ -51,6 +51,28 @@ func TestAddGlossaryAlwaysIncludeOption(t *testing.T) {
 	t.Fatal("add-glossary command not found")
 }
 
+func TestAddGlossaryAttributeOptionAndSuggestions(t *testing.T) {
+	for _, command := range Commands() {
+		if command.Name != "add-glossary" {
+			continue
+		}
+		for _, option := range command.Options {
+			if option.Name == "attribute" {
+				if option.Type != discordgo.ApplicationCommandOptionString || option.Required || !option.Autocomplete {
+					t.Fatalf("attribute = %#v", option)
+				}
+				got := glossaryAttributeSuggestions("略", 25)
+				if len(got) != 1 || got[0] != "略語" {
+					t.Fatalf("suggestions = %#v", got)
+				}
+				return
+			}
+		}
+		t.Fatal("add-glossary is missing attribute")
+	}
+	t.Fatal("add-glossary command not found")
+}
+
 func TestOptionChannelUsesSelectedChannelID(t *testing.T) {
 	options := []*discordgo.ApplicationCommandInteractionDataOption{
 		{
@@ -96,6 +118,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 				Options: []*discordgo.ApplicationCommandInteractionDataOption{
 					{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
 					{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
+					{Name: "attribute", Type: discordgo.ApplicationCommandOptionString, Value: "略語"},
 					{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
 				},
 			},
@@ -106,7 +129,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 	}
 
 	entries, err := store.ListGlossaryEntries(ctx, "g1")
-	if err != nil || len(entries) != 1 || !entries[0].AlwaysInclude {
+	if err != nil || len(entries) != 1 || entries[0].Attribute != "略語" || !entries[0].AlwaysInclude {
 		t.Fatalf("entries = %#v, err = %v", entries, err)
 	}
 
@@ -121,7 +144,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 			},
 		},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "Non-Player Character") || !strings.Contains(responses[0], "常時") {
+	if len(responses) != 1 || !strings.Contains(responses[0], "Non-Player Character") || !strings.Contains(responses[0], "略語") || !strings.Contains(responses[0], "常時") {
 		t.Fatalf("list response = %#v", responses)
 	}
 
@@ -158,7 +181,7 @@ func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
 	ctx := context.Background()
 	for n := 0; n < glossaryMaxEntries; n++ {
 		term := fmt.Sprintf("term-%02d", n)
-		if err := store.UpsertGlossaryEntry(ctx, "g1", term, strings.Repeat("訳", 100), "u1", false); err != nil {
+		if err := store.UpsertGlossaryEntry(ctx, "g1", term, strings.Repeat("訳", 100), "専門用語", "u1", false); err != nil {
 			t.Fatal(err)
 		}
 	}

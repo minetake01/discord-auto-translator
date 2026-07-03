@@ -127,12 +127,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `/join-channel group:[グループ] language:[言語]` | グループにチャンネルを追加 |
 | `/leave-channel group:[グループ]` | グループからチャンネルを離脱 |
 | `/delete-group group:[グループ]` | グループ全体を削除 |
-| `/add-glossary term:[用語] translation:[訳] always_include:[常時使用]` | サーバー用語集に優先訳を登録（`always_include` は任意、既定値は `false`） |
+| `/add-glossary term:[用語] translation:[訳] attribute:[属性] always_include:[常時使用]` | サーバー用語集に優先訳を登録（`attribute` は候補付き自由入力、`always_include` の既定値は `false`） |
 | `/list-glossary` | サーバーの用語集を一覧表示 |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除 |
 
 - `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
 - 用語集はサーバーごとに最大 50 件まで登録可能
+- `attribute` には「人名」「地名」「スラング」「略語」「専門用語」が候補表示され、任意の属性も自由入力できます。指定した属性はGeminiが用語の意味を判断する文脈として使われます
 - 通常の用語は翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけシステム指示に追加されます。`always_include:true` の用語は常に追加されます
 - `channel` オプションを省略すると、コマンドを実行したチャンネルが対象
 - 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア
