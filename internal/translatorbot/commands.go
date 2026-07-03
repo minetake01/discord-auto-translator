@@ -78,6 +78,15 @@ func Commands() []*discordgo.ApplicationCommand {
 				{Name: "term", Description: "Source term to remove", Type: discordgo.ApplicationCommandOptionString, Required: true},
 			},
 		},
+		{
+			Name:        "set-style",
+			Description: "Set translation style for a group (preset or custom instruction)",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
+				{Name: "preset", Description: "Style preset", Type: discordgo.ApplicationCommandOptionString, Required: false, Choices: StylePresetChoices()},
+				{Name: "custom", Description: "Custom style instruction in natural language", Type: discordgo.ApplicationCommandOptionString, Required: false},
+			},
+		},
 	}
 	for _, cmd := range cmds {
 		cmd.DefaultMemberPermissions = &defaultAdminCommandPermissions
@@ -130,6 +139,8 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleListGlossary(s, i, data)
 	case "remove-glossary":
 		h.handleRemoveGlossary(s, i, data)
+	case "set-style":
+		h.handleSetStyle(s, i, data)
 	}
 }
 
@@ -323,7 +334,7 @@ func formatListGroupsMessage(ctx context.Context, store *Store, guildID string, 
 
 func formatGroupBlock(g TranslationGroup, channels []GroupChannel) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n**%s**\n", g.DisplayName)
+	fmt.Fprintf(&b, "\n**%s** (style: %s)\n", g.DisplayName, FormatGroupStyle(g))
 	if len(channels) == 0 {
 		b.WriteString("  （チャンネルなし）\n")
 		return b.String()
@@ -361,6 +372,62 @@ func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo
 		return
 	}
 	respond(s, i, fmt.Sprintf("用語 `%s` を削除しました。", strings.TrimSpace(term)), true)
+}
+
+func (h *CommandHandler) handleSetStyle(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
+	if groupID == "" {
+		respond(s, i, "グループ名を指定してください。", true)
+		return
+	}
+	preset := strings.TrimSpace(optionString(data.Options, "preset"))
+	custom := strings.TrimSpace(optionString(data.Options, "custom"))
+
+	if preset != "" && custom != "" {
+		respond(s, i, "プリセットとカスタム指示は同時に指定できません。どちらか一方だけ指定してください。", true)
+		return
+	}
+	if preset == "" && custom == "" {
+		respond(s, i, "プリセットまたはカスタム指示のどちらかを指定してください。スタイルをリセットする場合は `preset:default` を指定してください。", true)
+		return
+	}
+
+	var storePreset, storeCustom string
+	switch {
+	case preset == StylePresetDefault:
+		storePreset, storeCustom = "", ""
+	case preset != "":
+		if !IsValidStylePreset(preset) {
+			respond(s, i, "不明なプリセットです。コマンドの選択肢から指定してください。", true)
+			return
+		}
+		storePreset, storeCustom = preset, ""
+	default:
+		if err := ValidateStyleCustom(custom); err != nil {
+			respond(s, i, err.Error(), true)
+			return
+		}
+		storePreset, storeCustom = "", custom
+	}
+
+	if err := h.store.SetGroupStyle(ctx, i.GuildID, groupID, storePreset, storeCustom); err != nil {
+		if errors.Is(err, ErrGroupNotFound) {
+			respond(s, i, fmt.Sprintf("翻訳グループ `%s` がこのサーバーに見つかりません。", groupID), true)
+			return
+		}
+		respond(s, i, err.Error(), true)
+		return
+	}
+
+	switch {
+	case storeCustom != "":
+		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをカスタム指示に設定しました: `%s`", groupID, storeCustom), true)
+	case storePreset != "":
+		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをプリセット `%s` に設定しました。", groupID, storePreset), true)
+	default:
+		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをリセットしました。", groupID), true)
+	}
 }
 
 func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {

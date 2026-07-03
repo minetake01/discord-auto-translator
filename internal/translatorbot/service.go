@@ -174,6 +174,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			return err
 		}
 		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
+		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, source.GroupID)
 		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
 				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
@@ -203,7 +204,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
 		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
+		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, source.GroupID))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
@@ -234,7 +235,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, source GroupChannel, targets []GroupChannel) error {
 	var errs []error
 	for _, target := range targets {
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
+		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, source.GroupID))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
@@ -318,6 +319,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 			return err
 		}
 		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
+		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID)
 		targetLanguages := []string{target.Language}
 		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
@@ -342,7 +344,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		content = m.Content
 	}
 	content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
+	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID))
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
@@ -397,6 +399,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		content := m.Content
 		if hasTranslatableText(m.Content) {
 			translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
+			translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, link.GroupID)
 			glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
 			if err != nil {
 				return err
@@ -534,7 +537,7 @@ func (s *Service) SyncPin(ctx context.Context, sourceChannelID, sourceMessageID 
 	return errors.Join(errs...)
 }
 
-func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
+func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage, styleInstructions string) (string, error) {
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
@@ -569,7 +572,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	snippet := snippetSource
 	if hasTranslatableText(content) {
 		var err error
-		snippet, err = s.translateSnippet(ctx, m.GuildID, targetLanguage, snippetSource)
+		snippet, err = s.translateSnippet(ctx, m.GuildID, targetLanguage, snippetSource, styleInstructions)
 		if err != nil {
 			return "", err
 		}
@@ -659,6 +662,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 				return false, err
 			}
 			translationContext := s.translationContext(ctx, req.GuildID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID)
+			translationContext.StyleInstructions = s.groupStyleInstructions(ctx, req.GuildID, source.GroupID)
 			if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.Name, translationContext, glossary); err != nil {
 				return false, err
 			}
@@ -812,7 +816,7 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 	return s.postProcessContent(ctx, guildID, translated, targetLanguage), nil
 }
 
-func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage, content string) (string, error) {
+func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage, content, styleInstructions string) (string, error) {
 	if strings.TrimSpace(content) == "" {
 		return "", nil
 	}
@@ -823,13 +827,14 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 	if err != nil {
 		return "", err
 	}
-	if err := s.checkTranslationRateLimit(guildID, []string{targetLanguage}, content, TranslationContext{}, glossary); err != nil {
+	translationContext := TranslationContext{StyleInstructions: styleInstructions}
+	if err := s.checkTranslationRateLimit(guildID, []string{targetLanguage}, content, translationContext, glossary); err != nil {
 		if errors.Is(err, errTranslationRateLimited) {
 			return content, nil
 		}
 		return "", err
 	}
-	result, err := s.translator.TranslateMulti(ctx, []string{targetLanguage}, content, TranslationContext{}, glossary)
+	result, err := s.translator.TranslateMulti(ctx, []string{targetLanguage}, content, translationContext, glossary)
 	if err != nil {
 		return "", err
 	}
@@ -926,13 +931,14 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		if err != nil {
 			return err
 		}
-		if err := s.checkTranslationRateLimit(guildID, []string{target.Language}, name, TranslationContext{}, glossary); err != nil {
+		translationContext := TranslationContext{StyleInstructions: s.groupStyleInstructions(ctx, guildID, thread.GroupID)}
+		if err := s.checkTranslationRateLimit(guildID, []string{target.Language}, name, translationContext, glossary); err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
 				continue
 			}
 			return err
 		}
-		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, name, TranslationContext{}, glossary)
+		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, name, translationContext, glossary)
 		if err != nil {
 			return err
 		}
@@ -992,6 +998,14 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 	}
 	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
 	return threadID, "", err
+}
+
+func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID string) string {
+	preset, custom, err := s.store.GroupStyle(ctx, guildID, groupID)
+	if err != nil {
+		return ""
+	}
+	return ResolveStyleInstructions(preset, custom)
 }
 
 func (s *Service) translationContext(ctx context.Context, guildID, channelID, historyChannelID, sourceLanguage, excludeMessageID string) TranslationContext {

@@ -290,6 +290,33 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	}
 }
 
+func TestHandleMessageCreatePassesGroupStyleInstructions(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SetGroupStyle(ctx, "guild", "g", "gaming", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "GG",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	want := ResolveStyleInstructions("gaming", "")
+	if translator.contexts[0].StyleInstructions != want {
+		t.Fatalf("style instructions = %q, want %q", translator.contexts[0].StyleInstructions, want)
+	}
+}
+
 func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -656,7 +683,7 @@ func TestTranslateSnippetSkipsTranslationForProtectedOnlyContent(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, &fakeDiscordAPI{}, translator)
 
-	got, err := service.translateSnippet(context.Background(), "guild", "en", "<@123> `hello` <:wave:456>")
+	got, err := service.translateSnippet(context.Background(), "guild", "en", "<@123> `hello` <:wave:456>", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -675,7 +702,7 @@ func TestReplyQuoteSkipsTranslationForCodeBlock(t *testing.T) {
 
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
 		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "source", ReferencedMessageContent: "```go\nfmt.Println(\"hello\")\n```",
-	}, "en", "en")
+	}, "en", "en", "")
 	if err != nil {
 		t.Fatal(err)
 	}

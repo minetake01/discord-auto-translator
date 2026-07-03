@@ -57,6 +57,7 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 | `/join-channel group:[グループ] language:[言語] [channel:[チャンネル]]` | 既存グループに追加チャンネルを参加させる |
 | `/leave-channel group:[グループ] [channel:[チャンネル]]` | グループからチャンネルを退出させる |
 | `/delete-group group:[グループ]` | グループ全体を削除する |
+| `/set-style group:[グループ] [preset:[プリセット]] [custom:[カスタム指示]]` | 翻訳グループの翻訳スタイルを設定する（プリセットまたはカスタム指示は排他） |
 | `/add-glossary term:[用語] translation:[訳]` | サーバー用語集に優先訳を登録する |
 | `/list-glossary` | サーバーの用語集を一覧表示する |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除する |
@@ -65,6 +66,25 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 - `channel` を省略した場合、コマンドを実行したチャンネルが対象になります。
 - 対応チャンネルタイプ: テキスト・ニュース・フォーラム・メディア
 - 用語集はサーバーごとに最大 10 件まで登録可能
+
+#### 翻訳スタイル（グループ単位）
+
+`/set-style` でグループごとに翻訳のトーン・文体を調整できます。プリセットとカスタム指示は排他で、同時に指定できません。
+
+| プリセット | 説明 |
+|---|---|
+| `default` | スタイル指定なし（リセット） |
+| `formal` | 丁寧・格式ある文体 |
+| `casual` | 友達同士の会話のようなカジュアルな文体 |
+| `business` | ビジネス向けの簡潔で礼儀正しい文体 |
+| `literal` | できるだけ直訳に近い文体 |
+| `gaming` | ゲームコミュニティ向けのカジュアルな文体 |
+| `friendly` | 温かく親しみやすい文体 |
+| `netslang` | 匿名掲示板・スレ風の文体 |
+| `tweet` | SNS（Twitter/X）のつぶやき風の文体 |
+
+- `custom` には自然言語で最大 200 文字までの指示を指定できます。
+- `/list-groups` で各グループの現在のスタイルを確認できます。
 
 #### 言語コード
 
@@ -293,6 +313,7 @@ Discordゲートウェイ
         │               ├── /join-channel → Store.JoinChannel
         │               ├── /leave-channel → Store.LeaveChannel
         │               ├── /delete-group → Store.DeleteGroup
+        │               ├── /set-style → Store.SetGroupStyle
         │               ├── /add-glossary → Store.UpsertGlossaryEntry
         │               ├── /list-glossary → Store.ListGlossaryEntries
         │               └── /remove-glossary → Store.RemoveGlossaryEntry

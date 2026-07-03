@@ -323,3 +323,63 @@ func TestMessageOriginal(t *testing.T) {
 		t.Fatalf("want not found, got ok=%v err=%v", ok, err)
 	}
 }
+
+func TestSetGroupStyleAndGroupStyle(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "ch-ja", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	preset, custom, err := s.GroupStyle(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "" || custom != "" {
+		t.Fatalf("default style = preset %q custom %q", preset, custom)
+	}
+
+	if err := s.SetGroupStyle(ctx, "g1", "team", "formal", ""); err != nil {
+		t.Fatal(err)
+	}
+	preset, custom, err = s.GroupStyle(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "formal" || custom != "" {
+		t.Fatalf("formal style = preset %q custom %q", preset, custom)
+	}
+
+	if err := s.SetGroupStyle(ctx, "g1", "team", "", "短くカジュアルに"); err != nil {
+		t.Fatal(err)
+	}
+	preset, custom, err = s.GroupStyle(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "" || custom != "短くカジュアルに" {
+		t.Fatalf("custom style = preset %q custom %q", preset, custom)
+	}
+
+	if err := s.SetGroupStyle(ctx, "g1", "team", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	preset, custom, err = s.GroupStyle(ctx, "g1", "team")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "" || custom != "" {
+		t.Fatalf("reset style = preset %q custom %q", preset, custom)
+	}
+
+	if err := s.SetGroupStyle(ctx, "g1", "missing", "formal", ""); !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("SetGroupStyle missing group = %v, want ErrGroupNotFound", err)
+	}
+	_, _, err = s.GroupStyle(ctx, "g1", "missing")
+	if !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("GroupStyle missing group = %v, want ErrGroupNotFound", err)
+	}
+}

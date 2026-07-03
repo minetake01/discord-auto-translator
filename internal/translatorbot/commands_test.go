@@ -332,6 +332,107 @@ func TestHandleViewOriginalNotManaged(t *testing.T) {
 	}
 }
 
+func TestHandleSetStyle(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	ctx := context.Background()
+
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "general", GuildID: "g1", ChannelID: "ch-ja", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var responses []string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) {
+		responses = append(responses, msg)
+	}
+	t.Cleanup(func() {
+		interactionResponseHook = oldHook
+	})
+
+	member := adminCommandMember()
+	invoke := func(options []*discordgo.ApplicationCommandInteractionDataOption) {
+		handler.Handle(nil, &discordgo.InteractionCreate{
+			Interaction: &discordgo.Interaction{
+				Type:    discordgo.InteractionApplicationCommand,
+				GuildID: "g1",
+				Member:  member,
+				Data: discordgo.ApplicationCommandInteractionData{
+					Name:    "set-style",
+					Options: options,
+				},
+			},
+		})
+	}
+
+	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "どちらかを指定") {
+		t.Fatalf("missing options response = %#v", responses)
+	}
+
+	responses = nil
+	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
+		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: "formal"},
+		{Name: "custom", Type: discordgo.ApplicationCommandOptionString, Value: "短く"},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "同時に指定できません") {
+		t.Fatalf("both options response = %#v", responses)
+	}
+
+	responses = nil
+	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
+		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: "netslang"},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "プリセット `netslang`") {
+		t.Fatalf("preset response = %#v", responses)
+	}
+	preset, custom, err := store.GroupStyle(ctx, "g1", "general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "netslang" || custom != "" {
+		t.Fatalf("stored preset = %q custom = %q", preset, custom)
+	}
+
+	responses = nil
+	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
+		{Name: "custom", Type: discordgo.ApplicationCommandOptionString, Value: "敬語を使わないで"},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "カスタム指示") {
+		t.Fatalf("custom response = %#v", responses)
+	}
+	preset, custom, err = store.GroupStyle(ctx, "g1", "general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "" || custom != "敬語を使わないで" {
+		t.Fatalf("stored custom = preset %q custom %q", preset, custom)
+	}
+
+	responses = nil
+	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
+		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: StylePresetDefault},
+	})
+	if len(responses) != 1 || !strings.Contains(responses[0], "リセット") {
+		t.Fatalf("reset response = %#v", responses)
+	}
+	preset, custom, err = store.GroupStyle(ctx, "g1", "general")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preset != "" || custom != "" {
+		t.Fatalf("reset style = preset %q custom %q", preset, custom)
+	}
+}
+
 func viewOriginalInteraction(guildID, channelID, messageID string, member *discordgo.Member) *discordgo.InteractionCreate {
 	return &discordgo.InteractionCreate{
 		Interaction: &discordgo.Interaction{
