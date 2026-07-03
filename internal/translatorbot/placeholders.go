@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-var protectedPattern = regexp.MustCompile("https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|```[\\s\\S]*?```|`[^`]*`")
+var protectedPattern = regexp.MustCompile("<https?://[^\\s<>()]+>|https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|<a?:[A-Za-z0-9_]+:\\d+>|```[\\s\\S]*?```|`[^`]*`")
+
+func hasTranslatableText(text string) bool {
+	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
+}
 
 type Protector struct {
 	items map[string]string

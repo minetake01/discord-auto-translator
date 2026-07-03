@@ -336,6 +336,53 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	}
 }
 
+func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternateURL(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
+	}))
+	t.Cleanup(page.Close)
+	service.httpClient = page.Client()
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: page.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 0 {
+		t.Fatalf("URL-only content should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "https://example.com/en" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateTranslatesMarkdownLinkLabel(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "[資料](https://example.invalid)",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("Markdown link label should be translated: %#v", translator.contexts)
+	}
+}
+
 func TestMessageContentAppendsUnsignedBareURLsForAllAttachments(t *testing.T) {
 	content, err := messageContentWithAssetURLs("translated", []DiscordAttachment{
 		{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", ContentType: "image/png"},
@@ -485,6 +532,19 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if got := discord.sent[1]; got.ThreadID != "thread-1" || got.Content != "https://cdn.discordapp.com/attachments/1/2/thread.png" {
 		t.Fatalf("unexpected attachment-only thread message: %#v", got)
 	}
+
+	err = service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "code-in-thread", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "`fmt.Println()`",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != translatorCalls {
+		t.Fatal("code-only thread message must not be translated")
+	}
+	if got := discord.sent[2]; got.ThreadID != "thread-1" || got.Content != "`fmt.Println()`" {
+		t.Fatalf("unexpected code-only thread message: %#v", got)
+	}
 }
 
 func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
@@ -547,6 +607,83 @@ func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
 	}
 	if got := discord.webhookEdits[0].content; got != "[en] see https://example.com/en" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
+	}))
+	t.Cleanup(page.Close)
+	service.httpClient = page.Client()
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en", SourceContentSnapshot: "before",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "source-msg", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: page.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 0 {
+		t.Fatalf("URL-only edit should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "https://example.com/en" {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+	links, err := store.MessageTargets(ctx, "ja", "source-msg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].SourceContentSnapshot != page.URL {
+		t.Fatalf("snapshot not updated: %#v", links)
+	}
+}
+
+func TestTranslateSnippetSkipsTranslationForProtectedOnlyContent(t *testing.T) {
+	store := newTestStore(t)
+	translator := &echoTranslator{}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+
+	got, err := service.translateSnippet(context.Background(), "guild", "en", "<@123> `hello` <:wave:456>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "<@123> `hello` <:wave:456>" {
+		t.Fatalf("got %q", got)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("protected-only snippet should not be translated: %#v", translator.contexts)
+	}
+}
+
+func TestReplyQuoteSkipsTranslationForCodeBlock(t *testing.T) {
+	store := newTestStore(t)
+	translator := &echoTranslator{}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+
+	got, err := service.replyQuote(context.Background(), DiscordMessage{
+		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "source", ReferencedMessageContent: "```go\nfmt.Println(\"hello\")\n```",
+	}, "en", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "> ```go\n") {
+		t.Fatalf("unexpected quote: %q", got)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("code-only reply quote should not be translated: %#v", translator.contexts)
 	}
 }
 
@@ -1324,5 +1461,37 @@ func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *test
 	}
 	if !strings.HasSuffix(discord.sent[0].Content, "\nhttps://cdn.discordapp.com/stickers/9.png") {
 		t.Fatalf("expected sticker URL on deferred initial message, got %q", discord.sent[0].Content)
+	}
+}
+
+func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "<@123> `example` <:wave:456>",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("only the thread name should be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "<@123> `example` <:wave:456>" {
+		t.Fatalf("sent: %#v", discord.sent)
 	}
 }

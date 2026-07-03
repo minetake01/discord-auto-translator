@@ -162,29 +162,37 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		return s.mirrorEmptyContent(ctx, m, source, targets)
 	}
 
-	glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-	if err != nil {
-		return err
-	}
-	translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
-	if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
-		if errors.Is(err, errTranslationRateLimited) {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-			return nil
+	translations := make(map[string]string, len(targetLanguages))
+	if hasTranslatableText(m.Content) {
+		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
+		if err != nil {
+			return err
 		}
-		return err
-	}
+		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
+		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+				return nil
+			}
+			return err
+		}
 
-	result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
-	if err != nil {
-		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-		return err
+		result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
+		if err != nil {
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
+			return err
+		}
+		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
+		translations = result.Translations
+	} else {
+		for _, language := range targetLanguages {
+			translations[language] = m.Content
+		}
 	}
-	s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
 
 	var errs []error
 	for _, target := range targets {
-		content, ok := result.Translations[target.Language]
+		content, ok := translations[target.Language]
 		if !ok {
 			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
 			return fmt.Errorf("missing translation for %q", target.Language)
@@ -299,7 +307,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	}
 
 	content := ""
-	if strings.TrimSpace(m.Content) != "" {
+	if strings.TrimSpace(m.Content) != "" && hasTranslatableText(m.Content) {
 		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
 		if err != nil {
 			return err
@@ -324,8 +332,11 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
-		content = ReplaceAlternateURLs(ctx, translated, target.Language, s.httpClient)
+		content = translated
+	} else if strings.TrimSpace(m.Content) != "" {
+		content = m.Content
 	}
+	content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
@@ -378,25 +389,29 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		if target == nil {
 			continue
 		}
-		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
-		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-		if err != nil {
-			return err
-		}
-		if err := s.checkTranslationRateLimit(m.GuildID, []string{target.Language}, m.Content, translationContext, glossary); err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				continue
+		content := m.Content
+		if hasTranslatableText(m.Content) {
+			translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
+			glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
+			if err != nil {
+				return err
 			}
-			return err
-		}
-		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, m.Content, translationContext, glossary)
-		if err != nil {
-			return err
-		}
-		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-		content, ok := result.Translations[target.Language]
-		if !ok {
-			return fmt.Errorf("missing translation for %q", target.Language)
+			if err := s.checkTranslationRateLimit(m.GuildID, []string{target.Language}, m.Content, translationContext, glossary); err != nil {
+				if errors.Is(err, errTranslationRateLimited) {
+					continue
+				}
+				return err
+			}
+			result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, m.Content, translationContext, glossary)
+			if err != nil {
+				return err
+			}
+			s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
+			var ok bool
+			content, ok = result.Translations[target.Language]
+			if !ok {
+				return fmt.Errorf("missing translation for %q", target.Language)
+			}
 		}
 		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
@@ -545,9 +560,16 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	if strings.TrimSpace(content) == "" {
 		return "", nil
 	}
-	snippet, err := s.translateSnippet(ctx, m.GuildID, targetLanguage, firstLine(content))
-	if err != nil {
-		return "", err
+	snippetSource := firstLine(content)
+	snippet := snippetSource
+	if hasTranslatableText(content) {
+		var err error
+		snippet, err = s.translateSnippet(ctx, m.GuildID, targetLanguage, snippetSource)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		snippet = ReplaceAlternateURLs(ctx, snippetSource, targetLanguage, s.httpClient)
 	}
 	snippet = firstLine(snippet)
 	if len([]rune(snippet)) > 20 {
@@ -645,7 +667,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 				return false, fmt.Errorf("missing translation for %q", target.Language)
 			}
 			translatedInitial := ""
-			if strings.TrimSpace(req.InitialMessageText) != "" {
+			if strings.TrimSpace(req.InitialMessageText) != "" && hasTranslatableText(req.InitialMessageText) {
 				if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.InitialMessageText, translationContext, glossary); err != nil {
 					return false, err
 				}
@@ -658,8 +680,10 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 				if !ok {
 					return false, fmt.Errorf("missing translation for %q", target.Language)
 				}
-				translatedInitial = ReplaceAlternateURLs(ctx, translatedInitial, target.Language, s.httpClient)
+			} else if strings.TrimSpace(req.InitialMessageText) != "" {
+				translatedInitial = req.InitialMessageText
 			}
+			translatedInitial = ReplaceAlternateURLs(ctx, translatedInitial, target.Language, s.httpClient)
 			threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
 			if err != nil {
 				return false, err
@@ -765,6 +789,9 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 	if strings.TrimSpace(content) == "" {
 		return "", nil
 	}
+	if !hasTranslatableText(content) {
+		return ReplaceAlternateURLs(ctx, content, targetLanguage, s.httpClient), nil
+	}
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
 		return "", err
@@ -783,6 +810,9 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage, content string) (string, error) {
 	if strings.TrimSpace(content) == "" {
 		return "", nil
+	}
+	if !hasTranslatableText(content) {
+		return ReplaceAlternateURLs(ctx, content, targetLanguage, s.httpClient), nil
 	}
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
