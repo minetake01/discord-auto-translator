@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"google.golang.org/genai"
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
@@ -153,13 +155,41 @@ func TestMultiTranslationGenerateConfigSchema(t *testing.T) {
 	if translations == nil {
 		t.Fatal("missing translations property")
 	}
-	wantLangRequired := []string{"en", "ja", "zh-CN"}
-	if !slices.Equal(translations.Required, wantLangRequired) {
-		t.Fatalf("translations.Required = %#v, want %#v", translations.Required, wantLangRequired)
+	if translations.Type != genai.TypeArray || translations.MinItems == nil || *translations.MinItems != 3 || translations.MaxItems == nil || *translations.MaxItems != 3 {
+		t.Fatalf("unexpected translations array constraints: %#v", translations)
 	}
-	for _, lang := range wantLangRequired {
-		if translations.Properties[lang] == nil {
-			t.Fatalf("missing nested property for %q", lang)
+	item := translations.Items
+	if item == nil || !slices.Equal(item.Required, []string{"language", "translated_text"}) {
+		t.Fatalf("unexpected item schema: %#v", item)
+	}
+	language := item.Properties["language"]
+	if language == nil || language.Format != "enum" || !slices.Equal(language.Enum, []string{"en", "ja", "zh-CN"}) {
+		t.Fatalf("unexpected language schema: %#v", language)
+	}
+	text := item.Properties["translated_text"]
+	if text == nil || text.MinLength == nil || *text.MinLength != 1 {
+		t.Fatalf("unexpected translated_text schema: %#v", text)
+	}
+}
+
+func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testing.T) {
+	p := NewProtector()
+	got, err := parseMultiTranslationResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`, []string{"en", "ja"}, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["en"] != "Hello" || got["ja"] != "こんにちは" {
+		t.Fatalf("unexpected translations: %#v", got)
+	}
+
+	for _, raw := range []string{
+		`{"translations":[{"language":"en-US","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`,
+		`{"translations":[{"language":"ja","translated_text":"こんにちは"},{"language":"en","translated_text":"Hello"}]}`,
+		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
+		`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは","extra":true}]}`,
+	} {
+		if _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p); err == nil {
+			t.Fatalf("expected strict validation error for %s", raw)
 		}
 	}
 }
