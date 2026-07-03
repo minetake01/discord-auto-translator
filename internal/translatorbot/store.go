@@ -23,8 +23,8 @@ var (
 )
 
 type Store struct {
-	db                  *sql.DB
-	saveMessageLinkErr  error // set only in tests to simulate persistence failure
+	db                 *sql.DB
+	saveMessageLinkErr error // set only in tests to simulate persistence failure
 }
 
 func OpenStore(path string) (*Store, error) {
@@ -438,49 +438,49 @@ func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string
 	}, true, nil
 }
 
-func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (authorID, content, quoteChannelID, quoteMessageID string, ok bool, err error) {
+func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (content, quoteChannelID, quoteMessageID string, ok bool, err error) {
 	links, err := s.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
-		return "", "", "", "", false, err
+		return "", "", "", false, err
 	}
 	if len(links) > 0 {
 		link := links[0]
 		for _, target := range links {
 			if target.TargetChannelID == targetChannelID {
-				return link.SourceAuthorID, link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
+				return link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
 			}
 		}
 		if link.SourceChannelID == targetChannelID {
-			return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+			return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 		}
-		return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+		return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 	}
 
 	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
 	var link MessageLink
 	err = row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceAuthorDisplayName, &link.SourceContentSnapshot)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", "", false, nil
+		return "", "", "", false, nil
 	}
 	if err != nil {
-		return "", "", "", "", false, err
+		return "", "", "", false, err
 	}
 	if link.TargetChannelID == targetChannelID {
-		return link.SourceAuthorID, link.SourceContentSnapshot, link.TargetChannelID, link.TargetMessageID, true, nil
+		return link.SourceContentSnapshot, link.TargetChannelID, link.TargetMessageID, true, nil
 	}
 	if link.SourceChannelID == targetChannelID {
-		return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+		return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 	}
 	targets, err := s.MessageTargets(ctx, link.SourceChannelID, link.SourceMessageID)
 	if err != nil {
-		return "", "", "", "", false, err
+		return "", "", "", false, err
 	}
 	for _, target := range targets {
 		if target.TargetChannelID == targetChannelID {
-			return link.SourceAuthorID, link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
+			return link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
 		}
 	}
-	return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+	return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 }
 
 func (s *Store) RecentMessageHistory(ctx context.Context, channelID, excludeMessageID string, limit int) ([]MessageLink, error) {

@@ -60,7 +60,7 @@ func main() {
 			return
 		}
 		parentChannelID, threadName := threadContext(s, m.ChannelID)
-		refID, refChannelID, refAuthorID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
+		refID, refChannelID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
 		err := service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
@@ -69,9 +69,7 @@ func main() {
 			Stickers:                   stickersFromDiscord(m.StickerItems),
 			ReferencedMessageID:        refID,
 			ReferencedMessageChannelID: refChannelID,
-			ReferencedMessageAuthorID:  refAuthorID,
 			ReferencedMessageContent:   refContent,
-			MentionAuthor:              mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
@@ -221,7 +219,7 @@ func authorDisplayName(author *discordgo.User, member *discordgo.Member) string 
 	return ""
 }
 
-func referencedMessageFields(ref *discordgo.MessageReference, referenced *discordgo.Message) (id, channelID, authorID, content string) {
+func referencedMessageFields(ref *discordgo.MessageReference, referenced *discordgo.Message) (id, channelID, content string) {
 	if ref != nil {
 		id = ref.MessageID
 		channelID = ref.ChannelID
@@ -233,24 +231,9 @@ func referencedMessageFields(ref *discordgo.MessageReference, referenced *discor
 		if channelID == "" {
 			channelID = referenced.ChannelID
 		}
-		if referenced.Author != nil {
-			authorID = referenced.Author.ID
-		}
 		content = referenced.Content
 	}
-	return id, channelID, authorID, content
-}
-
-func mentionsReferencedAuthor(m *discordgo.Message, referenced *discordgo.Message) bool {
-	if m == nil || referenced == nil || referenced.Author == nil {
-		return false
-	}
-	for _, mention := range m.Mentions {
-		if mention.ID == referenced.Author.ID {
-			return true
-		}
-	}
-	return false
+	return id, channelID, content
 }
 
 func threadContext(s *discordgo.Session, channelID string) (string, string) {

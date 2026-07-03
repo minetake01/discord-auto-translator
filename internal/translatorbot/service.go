@@ -541,7 +541,6 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
-	authorID := m.ReferencedMessageAuthorID
 	content := m.ReferencedMessageContent
 	quoteChannelID := m.ReferencedMessageChannelID
 	quoteMessageID := m.ReferencedMessageID
@@ -549,7 +548,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		quoteChannelID = m.ChannelID
 	}
 
-	dbAuthorID, dbContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
+	dbContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
 	if err != nil {
 		return "", err
 	}
@@ -558,12 +557,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 			quoteChannelID = dbQuoteChannelID
 			quoteMessageID = dbQuoteMessageID
 		}
-		if authorID == "" {
-			authorID = dbAuthorID
-		}
-		if strings.TrimSpace(content) == "" {
-			content = dbContent
-		}
+		content = dbContent
 	}
 	if strings.TrimSpace(content) == "" {
 		return "", nil
@@ -580,15 +574,11 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		snippet = s.postProcessContent(ctx, m.GuildID, snippetSource, targetLanguage)
 	}
 	snippet = firstLine(snippet)
-	if len([]rune(snippet)) > 20 {
-		snippet = string([]rune(snippet)[:20]) + "..."
+	if len([]rune(snippet)) > 40 {
+		snippet = string([]rune(snippet)[:40]) + "..."
 	}
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
-	prefix := fmt.Sprintf("> %s\n-# [original message](%s)", snippet, link)
-	if m.MentionAuthor && authorID != "" {
-		prefix = fmt.Sprintf("<@%s>\n%s", authorID, prefix)
-	}
-	return prefix, nil
+	return fmt.Sprintf("> %s\n-# [original message](%s)", snippet, link), nil
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {

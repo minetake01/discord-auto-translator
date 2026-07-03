@@ -76,15 +76,15 @@ func TestAttachmentsFromDiscordMapsWebhookFileFields(t *testing.T) {
 }
 
 func TestReferencedMessageFields(t *testing.T) {
-	id, channelID, authorID, content := referencedMessageFields(
+	id, channelID, content := referencedMessageFields(
 		&discordgo.MessageReference{MessageID: "ref", ChannelID: "ch"},
 		&discordgo.Message{
 			ID: "ref", ChannelID: "ch", Content: "quoted",
 			Author: &discordgo.User{ID: "author"},
 		},
 	)
-	if id != "ref" || channelID != "ch" || authorID != "author" || content != "quoted" {
-		t.Fatalf("got %q %q %q %q", id, channelID, authorID, content)
+	if id != "ref" || channelID != "ch" || content != "quoted" {
+		t.Fatalf("got %q %q %q", id, channelID, content)
 	}
 }
 
