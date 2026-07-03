@@ -50,13 +50,8 @@ func main() {
 		if g == nil || g.Unavailable || g.ID == "" {
 			return
 		}
-		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID)
-		if err != nil {
+		if err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID); err != nil {
 			log.Printf("register commands in new guild %s: %v", g.ID, err)
-			return
-		}
-		if cmdID != "" {
-			service.SetAddGlossaryCommandID(g.ID, cmdID)
 		}
 	})
 	dg.AddHandler(commands.Handle)
@@ -158,8 +153,7 @@ func main() {
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
-	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
-	service.SetAddGlossaryCommandIDs(addGlossaryCommandIDs)
+	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 	log.Println("Discord Gemini Auto Translator is running")
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
