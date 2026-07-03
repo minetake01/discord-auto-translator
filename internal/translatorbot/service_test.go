@@ -1,12 +1,9 @@
 package translatorbot
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -45,13 +42,6 @@ type threadCall struct {
 	channelType int
 	messageID   string
 	name        string
-	content     string
-	files       []sentFile
-}
-
-type sentFile struct {
-	name        string
-	contentType string
 	content     string
 }
 
@@ -104,15 +94,6 @@ func (f *fakeDiscordAPI) SendChannelMessage(channelID, content string) error {
 }
 
 func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error) {
-	var files []WebhookFile
-	for _, file := range msg.Files {
-		content, err := io.ReadAll(file.Reader)
-		if err != nil {
-			return "", err
-		}
-		files = append(files, WebhookFile{Name: file.Name, ContentType: file.ContentType, Reader: strings.NewReader(string(content))})
-	}
-	msg.Files = files
 	f.nextID++
 	f.sent = append(f.sent, msg)
 	return fmt.Sprintf("sent-%d", f.nextID), nil
@@ -148,13 +129,13 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
 	return nil
 }
 
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (threadID, initialMessageID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error) {
 	f.nextID++
 	threadID = fmt.Sprintf("thread-%d", f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, files: readSentFiles(files)})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage})
 	return threadID, initialMessageID, nil
 }
 
@@ -172,15 +153,6 @@ func (f *fakeDiscordAPI) EditThread(threadID, name string) error {
 func (f *fakeDiscordAPI) DeleteThread(threadID string) error {
 	f.deletes = append(f.deletes, threadID)
 	return nil
-}
-
-func readSentFiles(files []WebhookFile) []sentFile {
-	out := make([]sentFile, 0, len(files))
-	for _, file := range files {
-		content, _ := io.ReadAll(file.Reader)
-		out = append(out, sentFile{name: file.Name, contentType: file.ContentType, content: string(content)})
-	}
-	return out
 }
 
 type echoTranslator struct {
@@ -324,17 +296,10 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
-		fmt.Fprint(w, "png-bytes")
-	}))
-	t.Cleanup(fileServer.Close)
-	service.httpClient = fileServer.Client()
-
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "画像です",
-		Attachments: []DiscordAttachment{{URL: fileServer.URL + "/image.png", Filename: "image.png", ContentType: "image/png"}},
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", Filename: "image.png", ContentType: "image/png"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -343,15 +308,8 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	if got := discord.sent[0]; len(got.Files) != 1 || got.Files[0].Name != "image.png" || got.Files[0].ContentType != "image/png" {
-		t.Fatalf("unexpected files: %#v", got.Files)
-	}
-	content, err := io.ReadAll(discord.sent[0].Files[0].Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(content) != "png-bytes" {
-		t.Fatalf("file content = %q", content)
+	if got := discord.sent[0].Content; got != "[en] 画像です\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
+		t.Fatalf("unexpected content: %q", got)
 	}
 }
 
@@ -362,15 +320,9 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
-	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "file-only")
-	}))
-	t.Cleanup(fileServer.Close)
-	service.httpClient = fileServer.Client()
-
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		Attachments: []DiscordAttachment{{URL: fileServer.URL + "/photo.jpg", Filename: "photo.jpg", ContentType: "image/jpeg"}},
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/photo.jpg?ex=1", Filename: "photo.jpg", ContentType: "image/jpeg"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -379,8 +331,36 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	if len(translator.contexts) != 0 {
 		t.Fatalf("blank content should not be translated: %#v", translator.contexts)
 	}
-	if len(discord.sent) != 1 || discord.sent[0].Content != "" || len(discord.sent[0].Files) != 1 {
+	if len(discord.sent) != 1 || discord.sent[0].Content != "https://cdn.discordapp.com/attachments/1/2/photo.jpg" {
 		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+func TestMessageContentAppendsUnsignedBareURLsForAllAttachments(t *testing.T) {
+	content, err := messageContentWithAssetURLs("translated", []DiscordAttachment{
+		{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", ContentType: "image/png"},
+		{URL: "https://cdn.discordapp.com/attachments/1/3/archive.zip?ex=4&is=5&hm=6", ContentType: "application/zip"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "translated\nhttps://cdn.discordapp.com/attachments/1/2/image.png\nhttps://cdn.discordapp.com/attachments/1/3/archive.zip"
+	if content != want {
+		t.Fatalf("got %q, want %q", content, want)
+	}
+}
+
+func TestMessageContentRejectsInvalidAttachmentURL(t *testing.T) {
+	_, err := messageContentWithAssetURLs("", []DiscordAttachment{{URL: "javascript:alert(1)", Filename: "bad"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid HTTP URL") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestMessageContentRejectsDiscordContentLimit(t *testing.T) {
+	_, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.png"}}, nil)
+	if err == nil || !strings.Contains(err.Error(), "Discord limit") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -466,7 +446,8 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
@@ -488,6 +469,21 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] スレッド本文" {
 		t.Fatalf("unexpected thread message: %#v", got)
+	}
+
+	translatorCalls := len(translator.contexts)
+	err = service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "asset-in-thread", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/thread.png?ex=1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != translatorCalls {
+		t.Fatal("attachment-only thread message must not be translated")
+	}
+	if got := discord.sent[1]; got.ThreadID != "thread-1" || got.Content != "https://cdn.discordapp.com/attachments/1/2/thread.png" {
+		t.Fatalf("unexpected attachment-only thread message: %#v", got)
 	}
 }
 
@@ -1230,6 +1226,7 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
 		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&hm=2"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1239,6 +1236,9 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	}
 	if len(links) != 1 || links[0].SourceContentSnapshot != "after" {
 		t.Fatalf("snapshot not updated: %#v", links)
+	}
+	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "[en] after\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
+		t.Fatalf("attachment URL not preserved in edit: %#v", discord.webhookEdits)
 	}
 }
 
@@ -1261,58 +1261,33 @@ func TestHandleMessageCreateForwardsTTS(t *testing.T) {
 }
 
 func TestStickerAssetURL(t *testing.T) {
-	url, contentType, skip := stickerAssetURL(DiscordSticker{ID: "1", FormatType: stickerFormatGIF})
-	if url != "https://media.discordapp.net/stickers/1.gif" || contentType != "image/gif" || skip {
-		t.Fatalf("gif: %q %q %v", url, contentType, skip)
+	url := stickerAssetURL(DiscordSticker{ID: "1", FormatType: stickerFormatGIF})
+	if url != "https://media.discordapp.net/stickers/1.gif" {
+		t.Fatalf("gif: %q", url)
 	}
-	url, contentType, skip = stickerAssetURL(DiscordSticker{ID: "2", FormatType: stickerFormatLottie})
-	if url != "https://cdn.discordapp.com/stickers/2.png" || contentType != "image/png" || !skip {
-		t.Fatalf("lottie: %q %q %v", url, contentType, skip)
-	}
-}
-
-func TestStickerFilesDownloadsSticker(t *testing.T) {
-	ctx := context.Background()
-	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
-	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		rec := httptest.NewRecorder()
-		rec.WriteHeader(http.StatusOK)
-		_, _ = rec.WriteString("sticker-bytes")
-		return rec.Result(), nil
-	})}
-
-	files, err := service.stickerFiles(ctx, []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 1 || files[0].Name != "wave.png" {
-		t.Fatalf("unexpected files: %#v", files)
+	url = stickerAssetURL(DiscordSticker{ID: "2", FormatType: stickerFormatLottie})
+	if url != "https://cdn.discordapp.com/stickers/2.png" {
+		t.Fatalf("lottie: %q", url)
 	}
 }
 
-func TestStickerFilesSkipsLottieAndLogs(t *testing.T) {
-	ctx := context.Background()
-	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
-	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		rec := httptest.NewRecorder()
-		rec.WriteHeader(http.StatusNotFound)
-		return rec.Result(), nil
-	})}
-
-	var buf bytes.Buffer
-	original := log.Writer()
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(original) })
-
-	files, err := service.stickerFiles(ctx, []DiscordSticker{{ID: "lottie-1", Name: "wave", FormatType: stickerFormatLottie}})
+func TestMessageContentUsesStickerCDNWithoutDownload(t *testing.T) {
+	content, err := messageContentWithAssetURLs("", nil, []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 0 {
-		t.Fatalf("expected lottie sticker to be skipped, got %#v", files)
+	if content != "https://cdn.discordapp.com/stickers/9.png" {
+		t.Fatalf("unexpected content: %q", content)
 	}
-	if !strings.Contains(buf.String(), "skip lottie sticker lottie-1 (wave)") {
-		t.Fatalf("expected skip log, got %q", buf.String())
+}
+
+func TestMessageContentUsesLottiePNGCDN(t *testing.T) {
+	content, err := messageContentWithAssetURLs("", nil, []DiscordSticker{{ID: "lottie-1", Name: "wave", FormatType: stickerFormatLottie}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content != "https://cdn.discordapp.com/stickers/lottie-1.png" {
+		t.Fatalf("unexpected content: %q", content)
 	}
 }
 
@@ -1321,12 +1296,6 @@ func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *test
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
-	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		rec := httptest.NewRecorder()
-		rec.WriteHeader(http.StatusOK)
-		_, _ = rec.WriteString("sticker-bytes")
-		return rec.Result(), nil
-	})}
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
 		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
 	}); err != nil {
@@ -1353,13 +1322,7 @@ func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *test
 	if !discord.sent[0].TTS {
 		t.Fatalf("expected TTS on deferred initial message, got %#v", discord.sent[0])
 	}
-	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "wave.png" {
-		t.Fatalf("expected sticker file on deferred initial message, got %#v", discord.sent[0].Files)
+	if !strings.HasSuffix(discord.sent[0].Content, "\nhttps://cdn.discordapp.com/stickers/9.png") {
+		t.Fatalf("expected sticker URL on deferred initial message, got %q", discord.sent[0].Content)
 	}
-}
-
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
 }

@@ -1,12 +1,9 @@
 package translatorbot
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -14,11 +11,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 const translationHistoryLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
 const discordEpochMillis = 1420070400000
+const discordMessageContentLimit = 2000
 
 var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 
@@ -199,14 +198,14 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		if quote != "" {
 			content = quote + "\n" + content
 		}
-		files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
+		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
 		}
 		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, Files: files,
+			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
@@ -231,14 +230,14 @@ func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, sour
 		if quote != "" {
 			content = quote
 		}
-		files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
+		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
 		}
 		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, Files: files,
+			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
@@ -299,33 +298,34 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		return nil
 	}
 
-	glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-	if err != nil {
-		return err
-	}
-	translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
-	targetLanguages := []string{target.Language}
-	if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
-		if errors.Is(err, errTranslationRateLimited) {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-			return nil
+	content := ""
+	if strings.TrimSpace(m.Content) != "" {
+		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
+		if err != nil {
+			return err
 		}
-		return err
+		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
+		targetLanguages := []string{target.Language}
+		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+				return nil
+			}
+			return err
+		}
+		result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
+		if err != nil {
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
+			return err
+		}
+		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
+		translated, ok := result.Translations[target.Language]
+		if !ok {
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
+			return fmt.Errorf("missing translation for %q", target.Language)
+		}
+		content = ReplaceAlternateURLs(ctx, translated, target.Language, s.httpClient)
 	}
-
-	result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
-	if err != nil {
-		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-		return err
-	}
-	s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-
-	content, ok := result.Translations[target.Language]
-	if !ok {
-		_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-		return fmt.Errorf("missing translation for %q", target.Language)
-	}
-	content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
 	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
@@ -333,13 +333,13 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	if quote != "" {
 		content = quote + "\n" + content
 	}
-	files, err := s.messageFiles(ctx, m.Attachments, m.Stickers)
+	content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
 	err = s.sendAndSaveLink(ctx, *target, thread.TargetThreadID, WebhookSend{
-		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID, Files: files,
+		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID,
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
 		TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
@@ -399,6 +399,10 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
 		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
+		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
+		if err != nil {
+			return err
+		}
 		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
 			return err
 		}
@@ -676,13 +680,13 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 					return false, err
 				}
 				if !synced {
-					files, err := s.messageFiles(ctx, req.InitialMessageFiles, req.InitialMessageStickers)
+					content, err := messageContentWithAssetURLs(translatedInitial, req.InitialMessageFiles, req.InitialMessageStickers)
 					if err != nil {
 						return false, err
 					}
 					avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
 					if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
-						Content: translatedInitial, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID, Files: files,
+						Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID,
 					}, MessageLink{
 						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 						TargetChannelID: threadID, TargetLanguage: target.Language,
@@ -802,18 +806,6 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 	return translated, nil
 }
 
-func (s *Service) messageFiles(ctx context.Context, attachments []DiscordAttachment, stickers []DiscordSticker) ([]WebhookFile, error) {
-	files, err := s.attachmentFiles(ctx, attachments)
-	if err != nil {
-		return nil, err
-	}
-	stickerFiles, err := s.stickerFiles(ctx, stickers)
-	if err != nil {
-		return nil, err
-	}
-	return append(files, stickerFiles...), nil
-}
-
 const (
 	stickerFormatPNG    = 1
 	stickerFormatAPNG   = 2
@@ -821,132 +813,52 @@ const (
 	stickerFormatGIF    = 4
 )
 
-func stickerAssetURL(sticker DiscordSticker) (url, contentType string, skipOnFailure bool) {
+func stickerAssetURL(sticker DiscordSticker) string {
 	switch sticker.FormatType {
 	case stickerFormatGIF:
-		return fmt.Sprintf("https://media.discordapp.net/stickers/%s.gif", sticker.ID), "image/gif", false
-	case stickerFormatLottie:
-		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID), "image/png", true
+		return fmt.Sprintf("https://media.discordapp.net/stickers/%s.gif", sticker.ID)
 	default:
-		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID), "image/png", false
+		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID)
 	}
 }
 
-func (s *Service) stickerFiles(ctx context.Context, stickers []DiscordSticker) ([]WebhookFile, error) {
-	files := make([]WebhookFile, 0, len(stickers))
+func messageContentWithAssetURLs(content string, attachments []DiscordAttachment, stickers []DiscordSticker) (string, error) {
+	assetURLs := make([]string, 0, len(attachments)+len(stickers))
+	for _, attachment := range attachments {
+		unsignedURL, err := unsignedAssetURL(attachment.URL)
+		if err != nil {
+			return "", fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)
+		}
+		assetURLs = append(assetURLs, unsignedURL)
+	}
 	for _, sticker := range stickers {
 		if strings.TrimSpace(sticker.ID) == "" {
-			continue
+			return "", errors.New("sticker ID is required")
 		}
-		url, contentType, skipOnFailure := stickerAssetURL(sticker)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			if skipOnFailure {
-				logSkippedLottieSticker(sticker, "build request", err)
-				continue
-			}
-			return nil, err
-		}
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			if skipOnFailure {
-				logSkippedLottieSticker(sticker, "download", err)
-				continue
-			}
-			return nil, err
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		closeErr := resp.Body.Close()
-		if readErr != nil {
-			if skipOnFailure {
-				logSkippedLottieSticker(sticker, "read body", readErr)
-				continue
-			}
-			return nil, readErr
-		}
-		if closeErr != nil {
-			if skipOnFailure {
-				logSkippedLottieSticker(sticker, "close body", closeErr)
-				continue
-			}
-			return nil, closeErr
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			if skipOnFailure {
-				logSkippedLottieSticker(sticker, fmt.Sprintf("status %s", resp.Status), nil)
-				continue
-			}
-			return nil, fmt.Errorf("download sticker %s: %s", url, resp.Status)
-		}
-		name := strings.TrimSpace(sticker.Name)
-		if name == "" {
-			name = "sticker-" + sticker.ID
-		}
-		if !strings.Contains(name, ".") {
-			switch sticker.FormatType {
-			case stickerFormatGIF:
-				name += ".gif"
-			default:
-				name += ".png"
-			}
-		}
-		files = append(files, WebhookFile{
-			Name:        name,
-			ContentType: contentType,
-			Reader:      bytes.NewReader(body),
-		})
+		assetURLs = append(assetURLs, stickerAssetURL(sticker))
 	}
-	return files, nil
+	if len(assetURLs) > 0 {
+		if strings.TrimSpace(content) != "" {
+			content += "\n"
+		}
+		content += strings.Join(assetURLs, "\n")
+	}
+	if utf8.RuneCountInString(content) > discordMessageContentLimit {
+		return "", fmt.Errorf("message content has %d characters; Discord limit is %d", utf8.RuneCountInString(content), discordMessageContentLimit)
+	}
+	return content, nil
 }
 
-func logSkippedLottieSticker(sticker DiscordSticker, reason string, err error) {
-	if sticker.FormatType != stickerFormatLottie {
-		return
+func unsignedAssetURL(rawURL string) (string, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", fmt.Errorf("invalid HTTP URL %q", rawURL)
 	}
-	name := strings.TrimSpace(sticker.Name)
-	if name == "" {
-		name = sticker.ID
-	}
-	if err != nil {
-		log.Printf("skip lottie sticker %s (%s): %s: %v", sticker.ID, name, reason, err)
-		return
-	}
-	log.Printf("skip lottie sticker %s (%s): %s", sticker.ID, name, reason)
-}
-
-func (s *Service) attachmentFiles(ctx context.Context, attachments []DiscordAttachment) ([]WebhookFile, error) {
-	files := make([]WebhookFile, 0, len(attachments))
-	for _, attachment := range attachments {
-		url := strings.TrimSpace(attachment.URL)
-		if url == "" {
-			continue
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return nil, err
-		}
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		body, readErr := io.ReadAll(resp.Body)
-		closeErr := resp.Body.Close()
-		if readErr != nil {
-			return nil, readErr
-		}
-		if closeErr != nil {
-			return nil, closeErr
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("download attachment %s: %s", url, resp.Status)
-		}
-		files = append(files, WebhookFile{
-			Name:        attachmentFileName(attachment),
-			ContentType: attachment.ContentType,
-			Reader:      bytes.NewReader(body),
-		})
-	}
-	return files, nil
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	return u.String(), nil
 }
 
 func attachmentFileName(attachment DiscordAttachment) string {
@@ -1016,17 +928,17 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 
 func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
 	if isThreadOnlyChannelType(target.ChannelType) {
-		files, err := s.messageFiles(ctx, req.InitialMessageFiles, req.InitialMessageStickers)
+		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
 		if err != nil {
 			return "", "", err
 		}
-		if initialMessage == "" && len(files) == 0 {
+		if content == "" {
 			if req.DeferWithoutSourceMsg {
 				return "", "", nil
 			}
-			initialMessage = name
+			content = name
 		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, initialMessage, files)
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content)
 	}
 	if req.SourceMessageID != "" {
 		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
@@ -1043,7 +955,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", nil
 		}
 	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil)
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
 	return threadID, "", err
 }
 

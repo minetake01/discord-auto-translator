@@ -96,6 +96,7 @@ func main() {
 		err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
+			Attachments: attachmentsFromDiscord(m.Attachments), Stickers: stickersFromDiscord(m.StickerItems),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
 		})
 		if err != nil {

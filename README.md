@@ -12,7 +12,7 @@ Google Gemini を使って、異なる言語を話すユーザーが同じサー
 - **リアクションの同期**: 絵文字リアクションが全言語チャンネルに反映
 - **スレッドの同期**: スレッド作成・名前変更・削除も対応（テキスト・フォーラム・メディア）
 - **用語集**: サーバー単位で優先翻訳を登録し、翻訳品質を調整
-- **添付ファイルの転送**: 本文が空でも添付ファイルのみのメッセージをミラーリング
+- **添付ファイルの共有**: 本文が空でも、署名なし Discord CDN URL を使って添付ファイルのみのメッセージをミラーリング
 - **翻訳文脈の考慮**: チャンネル名・トピック・直近の会話履歴を踏まえて自然な翻訳
 - **プロンプトインジェクション対策**: URL・メンション・コードブロック等を保護
 
@@ -34,13 +34,13 @@ Google Gemini を使って、異なる言語を話すユーザーが同じサー
    - Scopes: `bot`, `applications.commands`
    - Permissions（Developer Portal の表示名）:
      - **基本**: `View Channel`, `Read Message History`
-     - **メッセージ**: `Send Messages`, `Send Messages in Threads`, `Attach Files`
+     - **メッセージ**: `Send Messages`, `Send Messages in Threads`
      - **モデレーション**: `Pin Messages`
      - **ウェブフック**: `Manage Webhooks`
      - **スレッド**: `Create Public Threads`, `Manage Threads`
      - **リアクション**: `Add Reactions`
-   - 上記の permissions 整数は `2252126768172096` です
-   - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768434240` です
+   - 上記の permissions 整数は `2252126768139328` です
+   - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768401472` です
 
 ### 2. Gemini API キーの取得
 
