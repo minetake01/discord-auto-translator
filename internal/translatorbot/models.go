@@ -23,12 +23,12 @@ type GroupChannel struct {
 }
 
 type MessageLink struct {
-	SourceMessageID       string
-	SourceChannelID       string
-	GroupID               string
-	TargetChannelID       string
-	TargetMessageID       string
-	TargetLanguage        string
+	SourceMessageID         string
+	SourceChannelID         string
+	GroupID                 string
+	TargetChannelID         string
+	TargetMessageID         string
+	TargetLanguage          string
 	SourceAuthorID          string
 	SourceAuthorDisplayName string
 	SourceContentSnapshot   string
@@ -57,9 +57,7 @@ type DiscordMessage struct {
 	Stickers                   []DiscordSticker
 	ReferencedMessageID        string
 	ReferencedMessageChannelID string
-	ReferencedMessageAuthorID  string
 	ReferencedMessageContent   string
-	MentionAuthor              bool
 	TTS                        bool
 	WebhookID                  string
 	Bot                        bool

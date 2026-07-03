@@ -232,7 +232,7 @@ func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
 	}
 }
 
-func TestReplyQuoteIncludesMentionAndTruncatedFirstLine(t *testing.T) {
+func TestReplyQuoteUsesSourceSnapshotWithoutMention(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -249,13 +249,14 @@ func TestReplyQuoteIncludesMentionAndTruncatedFirstLine(t *testing.T) {
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName: "reply-user", Content: "はじめまして！",
-		ReferencedMessageID: "orig", MentionAuthor: true,
+		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "> [ja] already translated quote\n-# [original message](https://discord.com/channels/guild/en/older)\n[ja] translated body",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := "<@source-user>\n> [en] こんにちは、はじめまして\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] はじめまして！"
+	want := "> [en] こんにちは、はじめまして\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] はじめまして！"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -1278,14 +1279,13 @@ func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName: "reply-user", Content: "返信です",
 		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
-		ReferencedMessageAuthorID: "source-user", ReferencedMessageContent: "元メッセージ本文",
-		MentionAuthor: true,
+		ReferencedMessageContent: "元メッセージ本文",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := "<@source-user>\n> [en] 元メッセージ本文\n-# [original message](https://discord.com/channels/guild/ja/orig)\n[en] 返信です"
+	want := "> [en] 元メッセージ本文\n-# [original message](https://discord.com/channels/guild/ja/orig)\n[en] 返信です"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
