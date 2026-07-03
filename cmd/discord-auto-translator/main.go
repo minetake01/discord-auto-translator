@@ -116,7 +116,7 @@ func main() {
 		if r.UserID == s.State.User.ID {
 			return
 		}
-		if err := service.SyncReaction(context.Background(), r.GuildID, r.ChannelID, r.MessageID, r.Emoji.APIName(), s.State.User.ID, true); err != nil {
+		if err := service.SyncReaction(context.Background(), r.GuildID, r.ChannelID, r.MessageID, r.Emoji.APIName(), true); err != nil {
 			log.Printf("reaction add sync: %v", err)
 		}
 	})
@@ -124,7 +124,7 @@ func main() {
 		if r.UserID == s.State.User.ID {
 			return
 		}
-		if err := service.SyncReaction(context.Background(), r.GuildID, r.ChannelID, r.MessageID, r.Emoji.APIName(), s.State.User.ID, false); err != nil {
+		if err := service.SyncReaction(context.Background(), r.GuildID, r.ChannelID, r.MessageID, r.Emoji.APIName(), false); err != nil {
 			log.Printf("reaction remove sync: %v", err)
 		}
 	})

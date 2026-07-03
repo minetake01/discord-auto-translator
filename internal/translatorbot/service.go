@@ -498,7 +498,7 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 	return nil
 }
 
-func (s *Service) SyncReaction(ctx context.Context, guildID, sourceChannelID, sourceMessageID, emoji, userID string, add bool) error {
+func (s *Service) SyncReaction(ctx context.Context, guildID, sourceChannelID, sourceMessageID, emoji string, add bool) error {
 	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceMessageID)
 	if err != nil {
 		return err
@@ -507,7 +507,7 @@ func (s *Service) SyncReaction(ctx context.Context, guildID, sourceChannelID, so
 		if add {
 			err = s.discord.AddReaction(link.TargetChannelID, link.TargetMessageID, emoji)
 		} else {
-			err = s.discord.RemoveReaction(link.TargetChannelID, link.TargetMessageID, emoji, userID)
+			err = s.discord.RemoveOwnReaction(link.TargetChannelID, link.TargetMessageID, emoji)
 		}
 		if err != nil {
 			return err
