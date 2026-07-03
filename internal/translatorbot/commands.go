@@ -90,32 +90,12 @@ func Commands() []*discordgo.ApplicationCommand {
 }
 
 type CommandHandler struct {
-	store         *Store
-	api           DiscordAPI
-	adminRoleIDs  map[string]struct{}
+	store *Store
+	api   DiscordAPI
 }
 
-func NewCommandHandler(store *Store, api DiscordAPI, adminRoleIDs []string) *CommandHandler {
-	roleSet := make(map[string]struct{}, len(adminRoleIDs))
-	for _, id := range adminRoleIDs {
-		roleSet[id] = struct{}{}
-	}
-	return &CommandHandler{store: store, api: api, adminRoleIDs: roleSet}
-}
-
-func (h *CommandHandler) memberCanUseCommands(member *discordgo.Member) bool {
-	if member == nil {
-		return false
-	}
-	if member.Permissions&discordgo.PermissionAdministrator != 0 {
-		return true
-	}
-	for _, roleID := range member.Roles {
-		if _, ok := h.adminRoleIDs[roleID]; ok {
-			return true
-		}
-	}
-	return false
+func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
+	return &CommandHandler{store: store, api: api}
 }
 
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -126,17 +106,6 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 	if i.Type == discordgo.InteractionApplicationCommand && data.CommandType == discordgo.MessageApplicationCommand {
 		if data.Name == viewOriginalCommandName {
 			h.handleViewOriginal(s, i, data)
-		}
-		return
-	}
-	if !h.memberCanUseCommands(i.Member) {
-		if i.Type == discordgo.InteractionApplicationCommand {
-			respond(s, i, "このコマンドはサーバー管理者または許可されたロールのみ実行できます。", true)
-		} else {
-			_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-				Type: discordgo.InteractionApplicationCommandAutocompleteResult,
-				Data: &discordgo.InteractionResponseData{Choices: []*discordgo.ApplicationCommandOptionChoice{}},
-			})
 		}
 		return
 	}
@@ -467,10 +436,10 @@ func truncateSnapshot(text string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-func RegisterGuildCommands(s *discordgo.Session, appID string, adminRoleIDs []string) map[string]string {
+func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string {
 	addGlossaryCommandIDs := make(map[string]string)
 	for _, g := range s.State.Guilds {
-		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID, adminRoleIDs); err != nil {
+		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
 			log.Printf("register commands in guild %s: %v", g.ID, err)
 			continue
 		} else if cmdID != "" {
@@ -480,7 +449,7 @@ func RegisterGuildCommands(s *discordgo.Session, appID string, adminRoleIDs []st
 	return addGlossaryCommandIDs
 }
 
-func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string, adminRoleIDs []string) (addGlossaryCommandID string, err error) {
+func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) (addGlossaryCommandID string, err error) {
 	created, err := s.ApplicationCommandBulkOverwrite(appID, guildID, Commands())
 	if err != nil {
 		return "", err
@@ -489,27 +458,8 @@ func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string, 
 		if cmd.Name == "add-glossary" {
 			addGlossaryCommandID = cmd.ID
 		}
-		if len(adminRoleIDs) > 0 && cmd.Name != viewOriginalCommandName {
-			if permErr := grantRoleCommandPermissions(s, appID, guildID, cmd.ID, adminRoleIDs); permErr != nil {
-				log.Printf("grant command permissions for %s in guild %s: %v", cmd.Name, guildID, permErr)
-			}
-		}
 	}
 	return addGlossaryCommandID, nil
-}
-
-func grantRoleCommandPermissions(s *discordgo.Session, appID, guildID, cmdID string, roleIDs []string) error {
-	perms := make([]*discordgo.ApplicationCommandPermissions, 0, len(roleIDs))
-	for _, roleID := range roleIDs {
-		perms = append(perms, &discordgo.ApplicationCommandPermissions{
-			ID:         roleID,
-			Type:       discordgo.ApplicationCommandPermissionTypeRole,
-			Permission: true,
-		})
-	}
-	return s.ApplicationCommandPermissionsEdit(appID, guildID, cmdID, &discordgo.ApplicationCommandPermissionsList{
-		Permissions: perms,
-	})
 }
 
 func joinChannelErrorMessage(groupID string, err error) string {

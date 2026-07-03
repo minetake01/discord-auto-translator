@@ -15,48 +15,17 @@ func adminCommandMember() *discordgo.Member {
 	}
 }
 
-func TestMemberCanUseCommands(t *testing.T) {
-	handler := NewCommandHandler(nil, nil, []string{"123456789012345678"})
-
-	if !handler.memberCanUseCommands(&discordgo.Member{Permissions: discordgo.PermissionAdministrator}) {
-		t.Fatal("admin should be allowed")
-	}
-	if !handler.memberCanUseCommands(&discordgo.Member{Roles: []string{"123456789012345678"}}) {
-		t.Fatal("allowed role should be permitted")
-	}
-	if handler.memberCanUseCommands(&discordgo.Member{Roles: []string{"999999999999999999"}}) {
-		t.Fatal("unauthorized member should be denied")
-	}
-	if handler.memberCanUseCommands(nil) {
-		t.Fatal("nil member should be denied")
-	}
-}
-
-func TestHandleRejectsUnauthorizedMember(t *testing.T) {
-	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
-
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
-	handler.Handle(nil, &discordgo.InteractionCreate{
-		Interaction: &discordgo.Interaction{
-			Type:    discordgo.InteractionApplicationCommand,
-			GuildID: "g1",
-			Member:  &discordgo.Member{User: &discordgo.User{ID: "u1"}},
-			Data: discordgo.ApplicationCommandInteractionData{
-				Name: "list-groups",
-			},
-		},
-	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "許可されたロールのみ") {
-		t.Fatalf("response = %#v", responses)
+func TestCommandDefaultPermissions(t *testing.T) {
+	for _, command := range Commands() {
+		if command.Name == viewOriginalCommandName {
+			if command.DefaultMemberPermissions != nil {
+				t.Fatalf("%s DefaultMemberPermissions = %d, want nil", command.Name, *command.DefaultMemberPermissions)
+			}
+			continue
+		}
+		if command.DefaultMemberPermissions == nil || *command.DefaultMemberPermissions != discordgo.PermissionAdministrator {
+			t.Fatalf("%s DefaultMemberPermissions = %v, want Administrator", command.Name, command.DefaultMemberPermissions)
+		}
 	}
 }
 
@@ -82,7 +51,7 @@ func TestOptionChannelFallsBackToCurrentChannel(t *testing.T) {
 
 func TestHandleAddListRemoveGlossary(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
 
 	var responses []string
@@ -162,7 +131,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 
 func TestHandleListGroups(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
 
 	var responses []string
@@ -224,7 +193,7 @@ func TestHandleListGroups(t *testing.T) {
 
 func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
 
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
@@ -272,7 +241,7 @@ func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 
 func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
 
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
@@ -313,7 +282,7 @@ func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
 
 func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
 
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
@@ -346,7 +315,7 @@ func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
 
 func TestHandleViewOriginalNotManaged(t *testing.T) {
 	store := newTestStore(t)
-	handler := NewCommandHandler(store, &fakeDiscordAPI{}, nil)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 
 	var responses []string
 	oldHook := interactionResponseHook
