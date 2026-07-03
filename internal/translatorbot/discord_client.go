@@ -24,7 +24,7 @@ type DiscordAPI interface {
 	EditWebhook(webhookID, token, messageID, threadID, content string) error
 	DeleteWebhook(webhookID, token, messageID, threadID string) error
 	AddReaction(channelID, messageID, emoji string) error
-	RemoveReaction(channelID, messageID, emoji, userID string) error
+	RemoveOwnReaction(channelID, messageID, emoji string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
 	CreateThread(channelID string, channelType int, name, initialMessage string, files []WebhookFile) (threadID, initialMessageID string, err error)
@@ -212,8 +212,8 @@ func (d DiscordGoAPI) AddReaction(channelID, messageID, emoji string) error {
 	return d.session.MessageReactionAdd(channelID, messageID, emoji)
 }
 
-func (d DiscordGoAPI) RemoveReaction(channelID, messageID, emoji, userID string) error {
-	return d.session.MessageReactionRemove(channelID, messageID, emoji, userID)
+func (d DiscordGoAPI) RemoveOwnReaction(channelID, messageID, emoji string) error {
+	return d.session.MessageReactionRemove(channelID, messageID, emoji, "@me")
 }
 
 func (d DiscordGoAPI) PinMessage(channelID, messageID string) error {

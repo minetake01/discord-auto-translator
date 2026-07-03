@@ -20,6 +20,7 @@ import (
 type fakeDiscordAPI struct {
 	sent              []WebhookSend
 	reactions         []reactionCall
+	removedReactions  []reactionCall
 	threads           []threadCall
 	webhookEdits      []webhookEditCall
 	webhookDeletes    []webhookDeleteCall
@@ -132,7 +133,8 @@ func (f *fakeDiscordAPI) AddReaction(channelID, messageID, emoji string) error {
 	return nil
 }
 
-func (f *fakeDiscordAPI) RemoveReaction(channelID, messageID, emoji, userID string) error {
+func (f *fakeDiscordAPI) RemoveOwnReaction(channelID, messageID, emoji string) error {
+	f.removedReactions = append(f.removedReactions, reactionCall{channelID: channelID, messageID: messageID, emoji: emoji})
 	return nil
 }
 
@@ -222,7 +224,7 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 
-	if err := service.SyncReaction(ctx, "guild", "en", "translated-msg", "👍", "bot", true); err != nil {
+	if err := service.SyncReaction(ctx, "guild", "en", "translated-msg", "👍", true); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,6 +233,30 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	}
 	if got := discord.reactions[0]; got.channelID != "ja" || got.messageID != "source-msg" || got.emoji != "👍" {
 		t.Fatalf("unexpected reaction sync: %#v", got)
+	}
+}
+
+func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceAuthorID: "author", SourceContentSnapshot: "hello",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+
+	if err := service.SyncReaction(ctx, "guild", "ja", "source-msg", "👍", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.removedReactions) != 1 {
+		t.Fatalf("expected one own-reaction removal, got %#v", discord.removedReactions)
+	}
+	if got := discord.removedReactions[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.emoji != "👍" {
+		t.Fatalf("unexpected reaction removal: %#v", got)
 	}
 }
 
