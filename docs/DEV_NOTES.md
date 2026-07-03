@@ -248,7 +248,7 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 ### メッセージ内容がない場合
 
-`HandleMessageCreate` は `Content` が空のメッセージをスキップします（例: 画像のみの投稿）。添付ファイルや埋め込みは翻訳・ミラーリングされません。
+`HandleMessageCreate` は本文が空でも、添付ファイルまたはステッカーがあればミラーリングします。アセットは再アップロードせず、署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
 
 ### ウェブフック由来メッセージの無視
 
