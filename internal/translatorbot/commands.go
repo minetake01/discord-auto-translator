@@ -421,7 +421,7 @@ func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, chan
 }
 
 func messageJumpURL(guildID, channelID, messageID string) string {
-	return fmt.Sprintf("https://discord.com/channels/%s/%s/%s", guildID, channelID, messageID)
+	return MessageJumpURL(guildID, channelID, messageID)
 }
 
 func truncateSnapshot(text string, maxRunes int) string {
