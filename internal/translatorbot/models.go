@@ -27,8 +27,9 @@ type MessageLink struct {
 	TargetChannelID       string
 	TargetMessageID       string
 	TargetLanguage        string
-	SourceAuthorID        string
-	SourceContentSnapshot string
+	SourceAuthorID          string
+	SourceAuthorDisplayName string
+	SourceContentSnapshot   string
 }
 
 type ThreadLink struct {
