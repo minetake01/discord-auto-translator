@@ -61,6 +61,7 @@ func Commands() []*discordgo.ApplicationCommand {
 			Options: []*discordgo.ApplicationCommandOption{
 				{Name: "term", Description: "Source term to match", Type: discordgo.ApplicationCommandOptionString, Required: true},
 				{Name: "translation", Description: "Preferred translation", Type: discordgo.ApplicationCommandOptionString, Required: true},
+				{Name: "always_include", Description: "Always include this term in translation instructions", Type: discordgo.ApplicationCommandOptionBoolean, Required: false},
 			},
 		},
 		{
@@ -278,16 +279,22 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 	ctx := context.Background()
 	term := optionString(data.Options, "term")
 	translation := optionString(data.Options, "translation")
-	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, i.Member.User.ID); err != nil {
+	alwaysInclude := optionBool(data.Options, "always_include")
+	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, i.Member.User.ID, alwaysInclude); err != nil {
 		respond(s, i, err.Error(), true)
 		return
 	}
-	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました。", strings.TrimSpace(term), strings.TrimSpace(translation)), true)
+	mode := "本文に含まれる場合のみ使用"
+	if alwaysInclude {
+		mode = "常に使用"
+	}
+	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました（%s）。", strings.TrimSpace(term), strings.TrimSpace(translation), mode), true)
 }
 
 const (
-	discordMessageMaxLen      = 2000
-	listGroupsTruncatedSuffix = "\n（表示を省略しました）"
+	discordMessageMaxLen        = 2000
+	listGroupsTruncatedSuffix   = "\n（表示を省略しました）"
+	listGlossaryTruncatedSuffix = "\n（残りの用語は表示を省略しました）"
 )
 
 func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -357,11 +364,25 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 		return
 	}
 	var b strings.Builder
-	b.WriteString("グロッサリー:\n")
+	fmt.Fprintf(&b, "グロッサリー (%d):\n", len(entries))
+	truncated := false
 	for _, entry := range entries {
-		fmt.Fprintf(&b, "- `%s` → `%s`\n", entry.SourceTerm, entry.PreferredTranslation)
+		mode := "一致時"
+		if entry.AlwaysInclude {
+			mode = "常時"
+		}
+		line := fmt.Sprintf("- `%s` → `%s`（%s）\n", entry.SourceTerm, entry.PreferredTranslation, mode)
+		if b.Len()+len(line)+len(listGlossaryTruncatedSuffix) > discordMessageMaxLen {
+			truncated = true
+			break
+		}
+		b.WriteString(line)
 	}
-	respond(s, i, strings.TrimSpace(b.String()), true)
+	msg := strings.TrimSpace(b.String())
+	if truncated {
+		msg += listGlossaryTruncatedSuffix
+	}
+	respond(s, i, msg, true)
 }
 
 func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -545,6 +566,16 @@ func optionString(options []*discordgo.ApplicationCommandInteractionDataOption, 
 		}
 	}
 	return ""
+}
+
+func optionBool(options []*discordgo.ApplicationCommandInteractionDataOption, name string) bool {
+	for _, o := range options {
+		if o.Name == name {
+			value, _ := o.Value.(bool)
+			return value
+		}
+	}
+	return false
 }
 
 func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption, name, fallback string) string {

@@ -2,7 +2,9 @@ package translatorbot
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -223,36 +225,67 @@ func TestMarkProcessedIdempotent(t *testing.T) {
 func TestGlossaryCRUDAndLimit(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Non-Player Character", "u1"); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Non-Player Character", "u1", true); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := s.ListGlossaryEntries(ctx, "g1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].SourceTerm != "NPC" {
+	if len(entries) != 1 || entries[0].SourceTerm != "NPC" || !entries[0].AlwaysInclude {
 		t.Fatalf("got %#v", entries)
 	}
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "npc", "Updated", "u2"); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "npc", "Updated", "u2", false); err != nil {
 		t.Fatal(err)
 	}
 	entries, err = s.ListGlossaryEntries(ctx, "g1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" {
+	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" || entries[0].AlwaysInclude {
 		t.Fatalf("expected upsert overwrite, got %#v", entries)
 	}
 	for i := 0; i < glossaryMaxEntries-1; i++ {
-		if err := s.UpsertGlossaryEntry(ctx, "g1", "term"+string(rune('a'+i)), "value", "u"); err != nil {
+		if err := s.UpsertGlossaryEntry(ctx, "g1", fmt.Sprintf("term%d", i), "value", "u", false); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := s.UpsertGlossaryEntry(ctx, "g1", "overflow", "value", "u"); !errors.Is(err, ErrGlossaryFull) {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "overflow", "value", "u", false); !errors.Is(err, ErrGlossaryFull) {
 		t.Fatalf("want ErrGlossaryFull, got %v", err)
 	}
-	if err := s.RemoveGlossaryEntry(ctx, "g1", "terma"); err != nil {
+	if err := s.UpsertGlossaryEntry(ctx, "g1", "NPC", "Updated at capacity", "u", true); err != nil {
+		t.Fatalf("update at capacity: %v", err)
+	}
+	if err := s.RemoveGlossaryEntry(ctx, "g1", "term0"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGlossaryMigrationDefaultsAlwaysIncludeToFalse(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{db: db}
+	t.Cleanup(func() { _ = s.Close() })
+	ctx := context.Background()
+	_, err = db.ExecContext(ctx, `CREATE TABLE glossary_entries (
+		guild_id TEXT NOT NULL, source_term TEXT NOT NULL, source_term_key TEXT NOT NULL,
+		preferred_translation TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
+		PRIMARY KEY (guild_id, source_term_key)
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `INSERT INTO glossary_entries VALUES ('g1','NPC','npc','Non-Player Character','u1','now')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.ListGlossaryEntries(ctx, "g1")
+	if err != nil || len(entries) != 1 || entries[0].AlwaysInclude {
+		t.Fatalf("entries = %#v, err = %v", entries, err)
 	}
 }
 

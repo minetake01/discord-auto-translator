@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -27,6 +28,27 @@ func TestCommandDefaultPermissions(t *testing.T) {
 			t.Fatalf("%s DefaultMemberPermissions = %v, want Administrator", command.Name, command.DefaultMemberPermissions)
 		}
 	}
+}
+
+func TestAddGlossaryAlwaysIncludeOption(t *testing.T) {
+	for _, command := range Commands() {
+		if command.Name != "add-glossary" {
+			continue
+		}
+		for _, option := range command.Options {
+			if option.Name == "always_include" {
+				if option.Type != discordgo.ApplicationCommandOptionBoolean || option.Required {
+					t.Fatalf("always_include = %#v", option)
+				}
+				if optionBool(nil, "always_include") {
+					t.Fatal("omitted always_include must default to false")
+				}
+				return
+			}
+		}
+		t.Fatal("add-glossary is missing always_include")
+	}
+	t.Fatal("add-glossary command not found")
 }
 
 func TestOptionChannelUsesSelectedChannelID(t *testing.T) {
@@ -74,6 +96,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 				Options: []*discordgo.ApplicationCommandInteractionDataOption{
 					{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
 					{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
+					{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
 				},
 			},
 		},
@@ -83,7 +106,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 	}
 
 	entries, err := store.ListGlossaryEntries(ctx, "g1")
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 1 || !entries[0].AlwaysInclude {
 		t.Fatalf("entries = %#v, err = %v", entries, err)
 	}
 
@@ -98,7 +121,7 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 			},
 		},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "Non-Player Character") {
+	if len(responses) != 1 || !strings.Contains(responses[0], "Non-Player Character") || !strings.Contains(responses[0], "常時") {
 		t.Fatalf("list response = %#v", responses)
 	}
 
@@ -126,6 +149,35 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("entries = %#v, want empty", entries)
+	}
+}
+
+func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	ctx := context.Background()
+	for n := 0; n < glossaryMaxEntries; n++ {
+		term := fmt.Sprintf("term-%02d", n)
+		if err := store.UpsertGlossaryEntry(ctx, "g1", term, strings.Repeat("訳", 100), "u1", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var response string
+	oldHook := interactionResponseHook
+	interactionResponseHook = func(msg string, _ bool) { response = msg }
+	t.Cleanup(func() { interactionResponseHook = oldHook })
+	handler.Handle(nil, &discordgo.InteractionCreate{Interaction: &discordgo.Interaction{
+		Type:    discordgo.InteractionApplicationCommand,
+		GuildID: "g1",
+		Member:  adminCommandMember(),
+		Data:    discordgo.ApplicationCommandInteractionData{Name: "list-glossary"},
+	}})
+	if len(response) > discordMessageMaxLen {
+		t.Fatalf("response length = %d", len(response))
+	}
+	if !strings.Contains(response, listGlossaryTruncatedSuffix) {
+		t.Fatalf("response was not marked truncated: %q", response)
 	}
 }
 
