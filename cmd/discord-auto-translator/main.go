@@ -37,7 +37,7 @@ func main() {
 	service := translatorbot.NewService(store, api, translator)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
 	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
-	commands := translatorbot.NewCommandHandler(store, api, cfg.AdminRoleIDs)
+	commands := translatorbot.NewCommandHandler(store, api)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
@@ -50,7 +50,7 @@ func main() {
 		if g == nil || g.Unavailable || g.ID == "" {
 			return
 		}
-		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID, cfg.AdminRoleIDs)
+		cmdID, err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID)
 		if err != nil {
 			log.Printf("register commands in new guild %s: %v", g.ID, err)
 			return
@@ -78,7 +78,7 @@ func main() {
 			ReferencedMessageContent:   refContent,
 			MentionAuthor:              mentionsReferencedAuthor(m.Message, m.ReferencedMessage),
 			TTS:                        m.TTS,
-			WebhookID: m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
+			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
 		if err != nil {
 			log.Printf("message create sync: %v", err)
@@ -158,7 +158,7 @@ func main() {
 	if err := dg.Open(); err != nil {
 		log.Fatal(err)
 	}
-	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID, cfg.AdminRoleIDs)
+	addGlossaryCommandIDs := translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 	service.SetAddGlossaryCommandIDs(addGlossaryCommandIDs)
 	log.Println("Discord Gemini Auto Translator is running")
 	stop := make(chan os.Signal, 1)

@@ -32,7 +32,13 @@ Google Gemini を使って、異なる言語を話すユーザーが同じサー
    - ボットトークンをコピー
 3. **OAuth2 → URL Generator** でボットをサーバーに招待:
    - Scopes: `bot`, `applications.commands`
-   - Permissions: `Send Messages`, `Manage Webhooks`, `Read Message History`, `Add Reactions`, `Manage Messages`
+   - Permissions（Developer Portal の表示名）:
+     - **基本**: `View Channel`, `Read Message History`
+     - **メッセージ**: `Send Messages`, `Send Messages in Threads`, `Send TTS Messages`, `Embed Links`, `Attach Files`, `Bypass Slowmode`
+     - **モデレーション**: `Manage Messages`, `Pin Messages`
+     - **ウェブフック**: `Manage Webhooks`
+     - **スレッド**: `Create Public Threads`, `Manage Threads`
+     - **リアクション**: `Add Reactions`, `Use External Emojis`
 
 ### 2. Gemini API キーの取得
 
@@ -63,7 +69,6 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
 | `PUBLIC_BASE_URL` | 任意 | アバターにオレンジリングバッジを付ける場合のベース URL |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
-| `ADMIN_ROLE_IDS` | 任意 | コマンド実行を許可する追加ロール ID（カンマ区切り）。未設定時はサーバー管理者のみ |
 
 ### 4. 起動
 
@@ -110,7 +115,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 ### コマンド一覧
 
-すべてのコマンドは**サーバー管理者**のみが実行できます。環境変数 `ADMIN_ROLE_IDS` にロール ID を指定すると、そのロールを持つメンバーも実行できます。
+管理用スラッシュコマンドは、デフォルトでは**サーバー管理者**のみが実行できます。追加のロールに実行を許可する場合は、Discord の「サーバー設定」→「連携サービス」→対象 Bot の「管理」→「コマンド権限」で、全コマンド共通またはコマンド単位の許可を設定してください。Bot はロールやコマンド権限を自動変更しません。
 
 | コマンド | 説明 |
 |---|---|
