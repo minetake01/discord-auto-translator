@@ -204,7 +204,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
 		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, source.GroupID))
+		quote, err := s.replyQuote(ctx, m, target.ChannelID)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
@@ -235,7 +235,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, source GroupChannel, targets []GroupChannel) error {
 	var errs []error
 	for _, target := range targets {
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, source.GroupID))
+		quote, err := s.replyQuote(ctx, m, target.ChannelID)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
 			continue
@@ -344,7 +344,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		content = m.Content
 	}
 	content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language, s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID))
+	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
@@ -537,7 +537,7 @@ func (s *Service) SyncPin(ctx context.Context, sourceChannelID, sourceMessageID 
 	return errors.Join(errs...)
 }
 
-func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage, styleInstructions string) (string, error) {
+func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID string) (string, error) {
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
@@ -548,7 +548,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		quoteChannelID = m.ChannelID
 	}
 
-	dbContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
+	dbOriginalContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
 	if err != nil {
 		return "", err
 	}
@@ -556,24 +556,19 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
 			quoteChannelID = dbQuoteChannelID
 			quoteMessageID = dbQuoteMessageID
+			if transferredContent, fetchErr := s.discord.MessageContent(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferredContent) != "" {
+				content = transferredContent
+			} else {
+				content = dbOriginalContent
+			}
+		} else {
+			content = dbOriginalContent
 		}
-		content = dbContent
 	}
-	if strings.TrimSpace(content) == "" {
+	snippet := firstLineWithoutPseudoReply(content)
+	if snippet == "" {
 		return "", nil
 	}
-	snippetSource := firstLine(content)
-	snippet := snippetSource
-	if hasTranslatableText(content) {
-		var err error
-		snippet, err = s.translateSnippet(ctx, m.GuildID, targetLanguage, snippetSource, styleInstructions)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		snippet = s.postProcessContent(ctx, m.GuildID, snippetSource, targetLanguage)
-	}
-	snippet = firstLine(snippet)
 	if len([]rune(snippet)) > 40 {
 		snippet = string([]rune(snippet)[:40]) + "..."
 	}
@@ -799,36 +794,6 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 	if err != nil {
 		return "", err
 	}
-	translated, ok := result.Translations[targetLanguage]
-	if !ok {
-		return "", fmt.Errorf("missing translation for %q", targetLanguage)
-	}
-	return s.postProcessContent(ctx, guildID, translated, targetLanguage), nil
-}
-
-func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage, content, styleInstructions string) (string, error) {
-	if strings.TrimSpace(content) == "" {
-		return "", nil
-	}
-	if !hasTranslatableText(content) {
-		return s.postProcessContent(ctx, guildID, content, targetLanguage), nil
-	}
-	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
-	if err != nil {
-		return "", err
-	}
-	translationContext := TranslationContext{StyleInstructions: styleInstructions}
-	if err := s.checkTranslationRateLimit(guildID, []string{targetLanguage}, content, translationContext, glossary); err != nil {
-		if errors.Is(err, errTranslationRateLimited) {
-			return content, nil
-		}
-		return "", err
-	}
-	result, err := s.translator.TranslateMulti(ctx, []string{targetLanguage}, content, translationContext, glossary)
-	if err != nil {
-		return "", err
-	}
-	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	translated, ok := result.Translations[targetLanguage]
 	if !ok {
 		return "", fmt.Errorf("missing translation for %q", targetLanguage)
@@ -1083,6 +1048,25 @@ func threadIDForWebhook(link MessageLink, target *GroupChannel) string {
 func firstLine(s string) string {
 	line, _, _ := strings.Cut(s, "\n")
 	return strings.TrimSpace(line)
+}
+
+func firstLineWithoutPseudoReply(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	start := 0
+	if len(lines) >= 2 && strings.HasPrefix(strings.TrimSpace(lines[0]), ">") && isPseudoReplyLinkLine(lines[1]) {
+		start = 2
+	}
+	for _, line := range lines[start:] {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func isPseudoReplyLinkLine(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.HasPrefix(line, "-# [original message](") && strings.HasSuffix(line, ")")
 }
 
 func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {

@@ -17,6 +17,7 @@ type DiscordAPI interface {
 	GuildDescription(guildID string) (string, error)
 	ChannelName(channelID string) (string, error)
 	ChannelTopic(channelID string) (string, error)
+	MessageContent(channelID, messageID string) (string, error)
 	CreateWebhook(channelID, name string) (id, token string, err error)
 	SendChannelMessage(channelID, content string) error
 	SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error)
@@ -78,6 +79,16 @@ func (d DiscordGoAPI) ChannelTopic(channelID string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(ch.Topic), nil
+}
+
+func (d DiscordGoAPI) MessageContent(channelID, messageID string) (string, error) {
+	message, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+		return d.session.ChannelMessage(channelID, messageID)
+	})
+	if err != nil {
+		return "", err
+	}
+	return message.Content, nil
 }
 
 func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, error) {
