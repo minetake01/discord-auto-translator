@@ -210,7 +210,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-			SourceAuthorID: m.AuthorID, SourceContentSnapshot: m.Content,
+			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
 		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
@@ -242,7 +242,7 @@ func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, sour
 		}, MessageLink{
 			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
 			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-			SourceAuthorID: m.AuthorID, SourceContentSnapshot: m.Content,
+			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
 		})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
@@ -343,7 +343,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
 		TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
-		SourceAuthorID: m.AuthorID, SourceContentSnapshot: m.Content,
+		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
 	})
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
@@ -686,7 +686,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 					}, MessageLink{
 						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 						TargetChannelID: threadID, TargetLanguage: target.Language,
-						SourceAuthorID: req.InitialMessageAuthor, SourceContentSnapshot: req.InitialMessageText,
+						SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
 					}); err != nil {
 						return false, err
 					}
@@ -702,7 +702,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 					if err := s.store.SaveMessageLink(ctx, MessageLink{
 						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 						TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
-						SourceAuthorID: req.InitialMessageAuthor, SourceContentSnapshot: req.InitialMessageText,
+						SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
 					}); err != nil {
 						return false, err
 					}
@@ -1078,7 +1078,7 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID, hi
 			continue
 		}
 		translationContext.History = append(translationContext.History, ChatContextMessage{
-			Author:   link.SourceAuthorID,
+			Author:   strings.TrimSpace(link.SourceAuthorDisplayName),
 			Language: sourceLanguage,
 			Content:  link.SourceContentSnapshot,
 		})

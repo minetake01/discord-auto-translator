@@ -73,6 +73,7 @@ func (s *Store) Init(ctx context.Context) error {
 			target_message_id TEXT NOT NULL,
 			target_language TEXT NOT NULL,
 			source_author_id TEXT NOT NULL,
+			source_author_display_name TEXT NOT NULL DEFAULT '',
 			source_content_snapshot TEXT NOT NULL,
 			PRIMARY KEY (source_message_id, source_channel_id, target_channel_id)
 		)`,
@@ -111,6 +112,7 @@ func (s *Store) Init(ctx context.Context) error {
 		}
 	}
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE thread_links ADD COLUMN source_channel_id TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE message_links ADD COLUMN source_author_display_name TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
 
@@ -314,13 +316,13 @@ func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
 	if s.saveMessageLinkErr != nil {
 		return s.saveMessageLinkErr
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?)`,
-		l.SourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceContentSnapshot)
+	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
+		l.SourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot)
 	return err
 }
 
 func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessageID string) ([]MessageLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
+	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +334,7 @@ func (s *Store) MessagePeers(ctx context.Context, channelID, messageID string) (
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=?`, channelID, messageID)
+	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=?`, channelID, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +352,7 @@ func (s *Store) MessagePeers(ctx context.Context, channelID, messageID string) (
 			peers = append(peers, MessageLink{
 				SourceMessageID: link.SourceMessageID, SourceChannelID: link.SourceChannelID, GroupID: link.GroupID,
 				TargetChannelID: link.SourceChannelID, TargetMessageID: link.SourceMessageID, TargetLanguage: "",
-				SourceAuthorID: link.SourceAuthorID, SourceContentSnapshot: link.SourceContentSnapshot,
+				SourceAuthorID: link.SourceAuthorID, SourceAuthorDisplayName: link.SourceAuthorDisplayName, SourceContentSnapshot: link.SourceContentSnapshot,
 			})
 			seen[key] = true
 		}
@@ -400,9 +402,9 @@ type MessageOriginalResult struct {
 }
 
 func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string) (MessageOriginalResult, bool, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
+	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
 	var link MessageLink
-	err := row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceContentSnapshot)
+	err := row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceAuthorDisplayName, &link.SourceContentSnapshot)
 	if err == nil {
 		return MessageOriginalResult{
 			SourceChannelID: link.SourceChannelID,
@@ -450,9 +452,9 @@ func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, ta
 		return link.SourceAuthorID, link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 	}
 
-	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
+	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
 	var link MessageLink
-	err = row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceContentSnapshot)
+	err = row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceAuthorDisplayName, &link.SourceContentSnapshot)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", "", "", false, nil
 	}
@@ -481,7 +483,7 @@ func (s *Store) RecentMessageHistory(ctx context.Context, channelID, excludeMess
 	if limit <= 0 {
 		return nil, nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot
+	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot
 		FROM message_links
 		WHERE source_channel_id=? AND source_message_id<>?
 		GROUP BY source_channel_id, source_message_id
@@ -505,7 +507,7 @@ func scanMessageLinks(rows *sql.Rows) ([]MessageLink, error) {
 	var out []MessageLink
 	for rows.Next() {
 		var l MessageLink
-		if err := rows.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceContentSnapshot); err != nil {
+		if err := rows.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

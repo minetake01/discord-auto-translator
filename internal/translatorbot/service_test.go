@@ -394,7 +394,7 @@ func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en",
-		SourceAuthorID: "alice", SourceContentSnapshot: "前の発言",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前の発言",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -411,7 +411,7 @@ func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].History
-	if len(got) != 1 || got[0].Author != "alice" || got[0].Language != "ja" || got[0].Content != "前の発言" {
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "ja" || got[0].Content != "前の発言" {
 		t.Fatalf("unexpected history: %#v", got)
 	}
 }
@@ -428,12 +428,12 @@ func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
 		{
 			SourceMessageID: snowflakeForTime(now.Add(-25*time.Hour), 1), SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
-			SourceAuthorID: "alice", SourceContentSnapshot: "昨日の発言",
+			SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "昨日の発言",
 		},
 		{
 			SourceMessageID: snowflakeForTime(now.Add(-23*time.Hour), 2), SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "en", TargetMessageID: "recent-target", TargetLanguage: "en",
-			SourceAuthorID: "bob", SourceContentSnapshot: "今日の発言",
+			SourceAuthorID: "bob-id", SourceAuthorDisplayName: "Bob", SourceContentSnapshot: "今日の発言",
 		},
 	} {
 		if err := store.SaveMessageLink(ctx, link); err != nil {
@@ -453,7 +453,7 @@ func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].History
-	if len(got) != 1 || got[0].Author != "bob" || got[0].Content != "今日の発言" {
+	if len(got) != 1 || got[0].Author != "Bob" || got[0].Content != "今日の発言" {
 		t.Fatalf("unexpected history: %#v", got)
 	}
 }
