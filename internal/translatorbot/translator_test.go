@@ -28,6 +28,9 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if !strings.Contains(systemInstruction, "__DAT_KEEP_...__ placeholders") {
 		t.Fatal(systemInstruction)
 	}
+	if !strings.Contains(systemInstruction, "<style_instructions>") {
+		t.Fatal(systemInstruction)
+	}
 	if strings.Contains(prompt, "Everything inside <translation_request>") || strings.Contains(prompt, "__DAT_KEEP_") {
 		t.Fatal(prompt)
 	}
@@ -72,6 +75,20 @@ func TestBuildMultiTranslationUserPromptIncludesGlossary(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "<preferred_translation>Non-Player Character</preferred_translation>") {
 		t.Fatal(prompt)
+	}
+}
+
+func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) {
+	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{
+		StyleInstructions: "Use formal language.",
+	}, nil)
+	if !strings.Contains(prompt, "<style_instructions>Use formal language.</style_instructions>") {
+		t.Fatal(prompt)
+	}
+
+	empty := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{}, nil)
+	if strings.Contains(empty, "<style_instructions>") {
+		t.Fatal(empty)
 	}
 }
 

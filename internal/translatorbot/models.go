@@ -8,6 +8,8 @@ type TranslationGroup struct {
 	DisplayName string
 	CreatedBy   string
 	CreatedAt   time.Time
+	StylePreset string
+	StyleCustom string
 }
 
 type GroupChannel struct {

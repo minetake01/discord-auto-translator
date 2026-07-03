@@ -51,6 +51,8 @@ func (s *Store) Init(ctx context.Context) error {
 			display_name TEXT NOT NULL,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL,
+			style_preset TEXT NOT NULL DEFAULT '',
+			style_custom TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (guild_id, id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS group_channels (
@@ -113,6 +115,8 @@ func (s *Store) Init(ctx context.Context) error {
 	}
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE thread_links ADD COLUMN source_channel_id TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE message_links ADD COLUMN source_author_display_name TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_preset TEXT NOT NULL DEFAULT ''`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_custom TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
 
@@ -235,7 +239,7 @@ func (s *Store) GroupExists(ctx context.Context, guildID, groupID string) (bool,
 
 func (s *Store) Groups(ctx context.Context, guildID, query string, limit int) ([]TranslationGroup, error) {
 	q := "%" + strings.ToLower(query) + "%"
-	rows, err := s.db.QueryContext(ctx, `SELECT id,guild_id,display_name,created_by,created_at FROM translation_groups
+	rows, err := s.db.QueryContext(ctx, `SELECT id,guild_id,display_name,created_by,created_at,style_preset,style_custom FROM translation_groups
 		WHERE guild_id=? AND (lower(id) LIKE ? OR lower(display_name) LIKE ?)
 		ORDER BY display_name LIMIT ?`, guildID, q, q, limit)
 	if err != nil {
@@ -246,7 +250,7 @@ func (s *Store) Groups(ctx context.Context, guildID, query string, limit int) ([
 	for rows.Next() {
 		var g TranslationGroup
 		var ts string
-		if err := rows.Scan(&g.ID, &g.GuildID, &g.DisplayName, &g.CreatedBy, &ts); err != nil {
+		if err := rows.Scan(&g.ID, &g.GuildID, &g.DisplayName, &g.CreatedBy, &ts, &g.StylePreset, &g.StyleCustom); err != nil {
 			return nil, err
 		}
 		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, ts)
@@ -698,6 +702,28 @@ func (s *Store) ListGlossaryEntries(ctx context.Context, guildID string) ([]Glos
 		out = append(out, entry)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) SetGroupStyle(ctx context.Context, guildID, groupID, preset, custom string) error {
+	exists, err := s.GroupExists(ctx, guildID, groupID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return ErrGroupNotFound
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE translation_groups SET style_preset=?, style_custom=? WHERE guild_id=? AND id=?`,
+		strings.TrimSpace(preset), strings.TrimSpace(custom), guildID, groupID)
+	return err
+}
+
+func (s *Store) GroupStyle(ctx context.Context, guildID, groupID string) (preset, custom string, err error) {
+	row := s.db.QueryRowContext(ctx, `SELECT style_preset, style_custom FROM translation_groups WHERE guild_id=? AND id=?`, guildID, groupID)
+	err = row.Scan(&preset, &custom)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrGroupNotFound
+	}
+	return preset, custom, err
 }
 
 func normalizeLanguage(s string) string { return strings.TrimSpace(s) }
