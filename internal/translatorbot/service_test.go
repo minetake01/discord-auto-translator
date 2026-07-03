@@ -250,7 +250,7 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{messageContents: map[string]string{
-		"en\x00translated": "> > previous pseudo reply\n-# [original message](https://discord.com/channels/guild/ja/older)\n\nStable translated body\nsecond line",
+		"en\x00translated": "> > previous pseudo reply · [Original message](https://discord.com/channels/guild/ja/older)\n\nStable translated body\nsecond line",
 	}}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
@@ -267,13 +267,13 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName: "reply-user", Content: "はじめまして！",
 		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
-		ReferencedMessageContent: "> [ja] already translated quote\n-# [original message](https://discord.com/channels/guild/en/older)\n[ja] translated body",
+		ReferencedMessageContent: "> [ja] already translated quote · [引用元を見る](https://discord.com/channels/guild/en/older)\n\n[ja] translated body",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := "> Stable translated body\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] はじめまして！"
+	want := "> Stable translated body · [Original message](https://discord.com/channels/guild/en/translated)\n\n[en] はじめまして！"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -706,15 +706,43 @@ func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
 		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "source", ReferencedMessageContent: "```go\nfmt.Println(\"hello\")\n```",
-	}, "en")
+	}, "en", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(got, "> ```go\n") {
+	if got != "> ```go · [Original message](https://discord.com/channels/guild/ja/source)" {
 		t.Fatalf("unexpected quote: %q", got)
 	}
 	if len(translator.contexts) != 0 {
 		t.Fatalf("reply quote should not be translated: %#v", translator.contexts)
+	}
+}
+
+func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	m := DiscordMessage{
+		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "source",
+		ReferencedMessageContent: "snippet",
+	}
+
+	tests := []struct {
+		language string
+		label    string
+	}{
+		{language: "ja", label: "引用元を見る"},
+		{language: "xx-unknown", label: "Original message"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.language, func(t *testing.T) {
+			got, err := service.replyQuote(context.Background(), m, "target", tt.language)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := fmt.Sprintf("> snippet · [%s](https://discord.com/channels/guild/en/source)", tt.label)
+			if got != want {
+				t.Fatalf("got %q, want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -1288,7 +1316,7 @@ func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "> 元メッセージ本文\n-# [original message](https://discord.com/channels/guild/ja/orig)\n[en] 返信です"
+	want := "> 元メッセージ本文 · [Original message](https://discord.com/channels/guild/ja/orig)\n\n[en] 返信です"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -1311,7 +1339,7 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantPrefix := "> 引用元\n-# [original message](https://discord.com/channels/guild/ja/orig)"
+	wantPrefix := "> 引用元 · [Original message](https://discord.com/channels/guild/ja/orig)"
 	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix {
 		t.Fatalf("got %#v, want %q", discord.sent, wantPrefix)
 	}
@@ -1338,7 +1366,7 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> 保存済み原文\n-# [original message](https://discord.com/channels/guild/en/translated)\n[en] 返信"
+	want := "> 保存済み原文 · [Original message](https://discord.com/channels/guild/en/translated)\n\n[en] 返信"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -1377,10 +1405,10 @@ func TestFirstLineWithoutPseudoReply(t *testing.T) {
 		want    string
 	}{
 		{name: "plain", content: "first\nsecond", want: "first"},
-		{name: "pseudo reply", content: "> quoted\n-# [original message](https://discord.com/channels/g/c/m)\n\nbody\nsecond", want: "body"},
-		{name: "nested pseudo reply", content: "> > quoted\n-# [original message](https://discord.com/channels/g/c/m)\nbody", want: "body"},
+		{name: "pseudo reply", content: "> quoted · [Original message](https://discord.com/channels/g/c/m)\n\nbody\nsecond", want: "body"},
+		{name: "localized pseudo reply", content: "> > quoted · [引用元を見る](https://discord.com/channels/g/c/m)\nbody", want: "body"},
 		{name: "user blockquote", content: "> user-authored quote\nbody", want: "> user-authored quote"},
-		{name: "pseudo reply only", content: "> quoted\n-# [original message](https://discord.com/channels/g/c/m)", want: ""},
+		{name: "pseudo reply only", content: "> quoted · [Original message](https://discord.com/channels/g/c/m)", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
