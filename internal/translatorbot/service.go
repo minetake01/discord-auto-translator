@@ -268,7 +268,9 @@ func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []st
 	if s.rateLimiter == nil {
 		return nil
 	}
-	estimate := EstimateTranslationTokens(BuildMultiTranslationUserPrompt(targetLanguages, content, translationContext, glossary), "") + 200*len(targetLanguages)
+	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary)
+	userPrompt := BuildMultiTranslationUserPrompt(targetLanguages, content, translationContext)
+	estimate := EstimateTranslationTokens(systemInstruction+userPrompt, "") + 200*len(targetLanguages)
 	if !s.rateLimiter.Allow(guildID, estimate) {
 		return errTranslationRateLimited
 	}

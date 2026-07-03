@@ -58,14 +58,14 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 | `/leave-channel group:[グループ] [channel:[チャンネル]]` | グループからチャンネルを退出させる |
 | `/delete-group group:[グループ]` | グループ全体を削除する |
 | `/set-style group:[グループ] [preset:[プリセット]] [custom:[カスタム指示]]` | 翻訳グループの翻訳スタイルを設定する（プリセットまたはカスタム指示は排他） |
-| `/add-glossary term:[用語] translation:[訳]` | サーバー用語集に優先訳を登録する |
+| `/add-glossary term:[用語] translation:[訳] always_include:[常時使用]` | サーバー用語集に優先訳を登録する（`always_include` は任意、既定値は `false`） |
 | `/list-glossary` | サーバーの用語集を一覧表示する |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除する |
 
 - `language` と `group` オプションはオートコンプリートに対応しています。
 - `channel` を省略した場合、コマンドを実行したチャンネルが対象になります。
 - 対応チャンネルタイプ: テキスト・ニュース・フォーラム・メディア
-- 用語集はサーバーごとに最大 10 件まで登録可能
+- 用語集はサーバーごとに最大 50 件まで登録可能
 
 #### 翻訳スタイル（グループ単位）
 
@@ -203,10 +203,13 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 
 ### 3.11 用語集 (Glossary)
 
-サーバー単位でソース用語と優先訳を登録し、翻訳プロンプトの `<glossary>` セクションに渡します。
+サーバー単位でソース用語と優先訳を登録し、条件を満たす用語を翻訳のシステム指示にある `<glossary>` セクションへ渡します。
 
 - `/add-glossary` で登録、`/list-glossary` で一覧、`/remove-glossary` で削除
-- サーバーごとに最大 10 件
+- `always_include:false`（既定値）の用語は、現在の翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけ追加
+- `always_include:true` の用語は本文にかかわらず常に追加
+- 一致判定の対象は現在の翻訳対象本文だけで、会話履歴やサーバー・チャンネル情報は対象外
+- サーバーごとに最大 50 件
 
 ---
 
@@ -299,7 +302,7 @@ pin_states (
 
 -- 未使用（将来実装用）
 processed_events (event_id, created_at)
-glossary_entries (guild_id, source_term, source_term_key, preferred_translation, created_by, created_at)
+glossary_entries (guild_id, source_term, source_term_key, preferred_translation, always_include, created_by, created_at)
 ```
 
 ---
