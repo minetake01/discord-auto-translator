@@ -1495,3 +1495,32 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 		t.Fatalf("sent: %#v", discord.sent)
 	}
 }
+
+func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "linked-ja", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "linked-en", TargetLanguage: "en",
+		SourceAuthorID: "author", SourceContentSnapshot: "referenced",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u",
+		Content:           "see " + MessageJumpURL("guild", "ja", "linked-ja"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := "[en] see " + MessageJumpURL("guild", "en", "linked-en")
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+}

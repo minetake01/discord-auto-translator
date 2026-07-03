@@ -46,6 +46,11 @@ func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
 	s.rateLimiter = limiter
 }
 
+func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetLanguage string) string {
+	text = ReplaceAlternateURLs(ctx, text, targetLanguage, s.httpClient)
+	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
+}
+
 func (s *Service) SetPublicBaseURL(publicBaseURL string) {
 	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
 }
@@ -197,7 +202,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
-		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
+		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
 		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
@@ -336,7 +341,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	} else if strings.TrimSpace(m.Content) != "" {
 		content = m.Content
 	}
-	content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
+	content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
 	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
@@ -413,7 +418,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 				return fmt.Errorf("missing translation for %q", target.Language)
 			}
 		}
-		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
+		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
 		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
 			return err
@@ -569,13 +574,13 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 			return "", err
 		}
 	} else {
-		snippet = ReplaceAlternateURLs(ctx, snippetSource, targetLanguage, s.httpClient)
+		snippet = s.postProcessContent(ctx, m.GuildID, snippetSource, targetLanguage)
 	}
 	snippet = firstLine(snippet)
 	if len([]rune(snippet)) > 20 {
 		snippet = string([]rune(snippet)[:20]) + "..."
 	}
-	link := fmt.Sprintf("https://discord.com/channels/%s/%s/%s", m.GuildID, quoteChannelID, quoteMessageID)
+	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
 	prefix := fmt.Sprintf("> %s\n-# [original message](%s)", snippet, link)
 	if m.MentionAuthor && authorID != "" {
 		prefix = fmt.Sprintf("<@%s>\n%s", authorID, prefix)
@@ -683,7 +688,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			} else if strings.TrimSpace(req.InitialMessageText) != "" {
 				translatedInitial = req.InitialMessageText
 			}
-			translatedInitial = ReplaceAlternateURLs(ctx, translatedInitial, target.Language, s.httpClient)
+			translatedInitial = s.postProcessContent(ctx, req.GuildID, translatedInitial, target.Language)
 			threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
 			if err != nil {
 				return false, err
@@ -790,7 +795,7 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 		return "", nil
 	}
 	if !hasTranslatableText(content) {
-		return ReplaceAlternateURLs(ctx, content, targetLanguage, s.httpClient), nil
+		return s.postProcessContent(ctx, guildID, content, targetLanguage), nil
 	}
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
@@ -804,7 +809,7 @@ func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLa
 	if !ok {
 		return "", fmt.Errorf("missing translation for %q", targetLanguage)
 	}
-	return ReplaceAlternateURLs(ctx, translated, targetLanguage, s.httpClient), nil
+	return s.postProcessContent(ctx, guildID, translated, targetLanguage), nil
 }
 
 func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage, content string) (string, error) {
@@ -812,7 +817,7 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 		return "", nil
 	}
 	if !hasTranslatableText(content) {
-		return ReplaceAlternateURLs(ctx, content, targetLanguage, s.httpClient), nil
+		return s.postProcessContent(ctx, guildID, content, targetLanguage), nil
 	}
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
@@ -833,7 +838,7 @@ func (s *Service) translateSnippet(ctx context.Context, guildID, targetLanguage,
 	if !ok {
 		return "", fmt.Errorf("missing translation for %q", targetLanguage)
 	}
-	return translated, nil
+	return s.postProcessContent(ctx, guildID, translated, targetLanguage), nil
 }
 
 const (
