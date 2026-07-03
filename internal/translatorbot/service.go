@@ -23,15 +23,14 @@ const discordEpochMillis = 1420070400000
 var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 
 type Service struct {
-	store                  *Store
-	discord                DiscordAPI
-	translator             Translator
-	rateLimiter            *TokenRateLimiter
-	addGlossaryCommandIDs  map[string]string
-	httpClient             *http.Client
-	publicBaseURL          string
-	threadMu               sync.Mutex
-	messageLocks           sync.Map
+	store         *Store
+	discord       DiscordAPI
+	translator    Translator
+	rateLimiter   *TokenRateLimiter
+	httpClient    *http.Client
+	publicBaseURL string
+	threadMu      sync.Mutex
+	messageLocks  sync.Map
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
@@ -46,17 +45,6 @@ func NewService(store *Store, discord DiscordAPI, translator Translator) *Servic
 
 func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
 	s.rateLimiter = limiter
-}
-
-func (s *Service) SetAddGlossaryCommandIDs(ids map[string]string) {
-	s.addGlossaryCommandIDs = ids
-}
-
-func (s *Service) SetAddGlossaryCommandID(guildID, commandID string) {
-	if s.addGlossaryCommandIDs == nil {
-		s.addGlossaryCommandIDs = make(map[string]string)
-	}
-	s.addGlossaryCommandIDs[guildID] = commandID
 }
 
 func (s *Service) SetPublicBaseURL(publicBaseURL string) {
@@ -203,9 +191,6 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 			return fmt.Errorf("missing translation for %q", target.Language)
 		}
 		content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
-		if result.ContainsTranslationFeedback {
-			content += GlossaryFeedbackHint(target.Language, s.addGlossaryCommandID(m.GuildID))
-		}
 		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
@@ -264,13 +249,6 @@ func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, sour
 		}
 	}
 	return errors.Join(errs...)
-}
-
-func (s *Service) addGlossaryCommandID(guildID string) string {
-	if s.addGlossaryCommandIDs == nil {
-		return ""
-	}
-	return s.addGlossaryCommandIDs[guildID]
 }
 
 func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) error {
@@ -348,9 +326,6 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		return fmt.Errorf("missing translation for %q", target.Language)
 	}
 	content = ReplaceAlternateURLs(ctx, content, target.Language, s.httpClient)
-	if result.ContainsTranslationFeedback {
-		content += GlossaryFeedbackHint(target.Language, s.addGlossaryCommandID(m.GuildID))
-	}
 	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
 	if err != nil {
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
@@ -840,10 +815,10 @@ func (s *Service) messageFiles(ctx context.Context, attachments []DiscordAttachm
 }
 
 const (
-	stickerFormatPNG   = 1
-	stickerFormatAPNG = 2
+	stickerFormatPNG    = 1
+	stickerFormatAPNG   = 2
 	stickerFormatLottie = 3
-	stickerFormatGIF  = 4
+	stickerFormatGIF    = 4
 )
 
 func stickerAssetURL(sticker DiscordSticker) (url, contentType string, skipOnFailure bool) {

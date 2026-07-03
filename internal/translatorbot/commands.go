@@ -436,30 +436,17 @@ func truncateSnapshot(text string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-func RegisterGuildCommands(s *discordgo.Session, appID string) map[string]string {
-	addGlossaryCommandIDs := make(map[string]string)
+func RegisterGuildCommands(s *discordgo.Session, appID string) {
 	for _, g := range s.State.Guilds {
-		if cmdID, err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
+		if err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
 			log.Printf("register commands in guild %s: %v", g.ID, err)
-			continue
-		} else if cmdID != "" {
-			addGlossaryCommandIDs[g.ID] = cmdID
 		}
 	}
-	return addGlossaryCommandIDs
 }
 
-func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) (addGlossaryCommandID string, err error) {
-	created, err := s.ApplicationCommandBulkOverwrite(appID, guildID, Commands())
-	if err != nil {
-		return "", err
-	}
-	for _, cmd := range created {
-		if cmd.Name == "add-glossary" {
-			addGlossaryCommandID = cmd.ID
-		}
-	}
-	return addGlossaryCommandID, nil
+func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) error {
+	_, err := s.ApplicationCommandBulkOverwrite(appID, guildID, Commands())
+	return err
 }
 
 func joinChannelErrorMessage(groupID string, err error) string {

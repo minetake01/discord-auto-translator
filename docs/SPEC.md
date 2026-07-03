@@ -168,7 +168,6 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 
 - `/add-glossary` で登録、`/list-glossary` で一覧、`/remove-glossary` で削除
 - サーバーごとに最大 10 件
-- 翻訳結果に「訳語のフィードバック」が含まれる場合、対象言語向けの `/add-glossary` 案内をメッセージ末尾に付与
 
 ---
 

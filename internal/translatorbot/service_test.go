@@ -1030,38 +1030,6 @@ func seedThreeChannelGroup(t *testing.T, s *Store) {
 	}
 }
 
-type feedbackTranslator struct{}
-
-func (f *feedbackTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
-	out := make(map[string]string, len(targetLanguages))
-	for _, lang := range targetLanguages {
-		out[lang] = "[" + lang + "] " + text
-	}
-	return MultiTranslationResult{Translations: out, ContainsTranslationFeedback: true}, nil
-}
-
-func TestHandleMessageCreateAppendsFeedbackHint(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &feedbackTranslator{})
-	service.SetAddGlossaryCommandIDs(map[string]string{"guild": "cmd-1"})
-	seedGroup(t, store)
-
-	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
-		AuthorDisplayName: "u", Content: "翻訳が違う",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(discord.sent) != 1 {
-		t.Fatalf("sent: %#v", discord.sent)
-	}
-	if !strings.Contains(discord.sent[0].Content, "</add-glossary:cmd-1>") {
-		t.Fatalf("missing glossary hint: %#v", discord.sent[0])
-	}
-}
-
 func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1172,7 +1140,7 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
-		AuthorDisplayName: "reply-user",
+		AuthorDisplayName:   "reply-user",
 		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
 		ReferencedMessageContent: "引用元",
 	})
