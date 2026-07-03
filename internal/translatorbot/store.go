@@ -103,6 +103,7 @@ func (s *Store) Init(ctx context.Context) error {
 			source_term TEXT NOT NULL,
 			source_term_key TEXT NOT NULL,
 			preferred_translation TEXT NOT NULL,
+			attribute TEXT NOT NULL DEFAULT '',
 			always_include INTEGER NOT NULL DEFAULT 0,
 			created_by TEXT NOT NULL,
 			created_at TEXT NOT NULL,
@@ -119,6 +120,7 @@ func (s *Store) Init(ctx context.Context) error {
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_preset TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_custom TEXT NOT NULL DEFAULT ''`)
 	_, _ = s.db.ExecContext(ctx, `ALTER TABLE glossary_entries ADD COLUMN always_include INTEGER NOT NULL DEFAULT 0`)
+	_, _ = s.db.ExecContext(ctx, `ALTER TABLE glossary_entries ADD COLUMN attribute TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
 
@@ -643,9 +645,10 @@ func glossaryTermKey(term string) string {
 	return strings.ToLower(strings.TrimSpace(term))
 }
 
-func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translation, createdBy string, alwaysInclude bool) error {
+func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translation, attribute, createdBy string, alwaysInclude bool) error {
 	term = strings.TrimSpace(term)
 	translation = strings.TrimSpace(translation)
+	attribute = strings.TrimSpace(attribute)
 	if term == "" || translation == "" {
 		return errors.New("term and translation are required")
 	}
@@ -662,15 +665,16 @@ func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translat
 	if existing == 0 && count >= glossaryMaxEntries {
 		return ErrGlossaryFull
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO glossary_entries(guild_id,source_term,source_term_key,preferred_translation,always_include,created_by,created_at)
-		VALUES(?,?,?,?,?,?,?)
+	_, err = s.db.ExecContext(ctx, `INSERT INTO glossary_entries(guild_id,source_term,source_term_key,preferred_translation,attribute,always_include,created_by,created_at)
+		VALUES(?,?,?,?,?,?,?,?)
 		ON CONFLICT(guild_id, source_term_key) DO UPDATE SET
 			source_term=excluded.source_term,
 			preferred_translation=excluded.preferred_translation,
+			attribute=excluded.attribute,
 			always_include=excluded.always_include,
 			created_by=excluded.created_by,
 			created_at=excluded.created_at`,
-		guildID, term, key, translation, alwaysInclude, createdBy, time.Now().UTC().Format(time.RFC3339Nano))
+		guildID, term, key, translation, attribute, alwaysInclude, createdBy, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
 }
 
@@ -691,7 +695,7 @@ func (s *Store) RemoveGlossaryEntry(ctx context.Context, guildID, term string) e
 }
 
 func (s *Store) ListGlossaryEntries(ctx context.Context, guildID string) ([]GlossaryEntry, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT source_term, preferred_translation, always_include FROM glossary_entries WHERE guild_id=? ORDER BY source_term COLLATE NOCASE`, guildID)
+	rows, err := s.db.QueryContext(ctx, `SELECT source_term, preferred_translation, attribute, always_include FROM glossary_entries WHERE guild_id=? ORDER BY source_term COLLATE NOCASE`, guildID)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +703,7 @@ func (s *Store) ListGlossaryEntries(ctx context.Context, guildID string) ([]Glos
 	var out []GlossaryEntry
 	for rows.Next() {
 		var entry GlossaryEntry
-		if err := rows.Scan(&entry.SourceTerm, &entry.PreferredTranslation, &entry.AlwaysInclude); err != nil {
+		if err := rows.Scan(&entry.SourceTerm, &entry.PreferredTranslation, &entry.Attribute, &entry.AlwaysInclude); err != nil {
 			return nil, err
 		}
 		out = append(out, entry)

@@ -61,6 +61,7 @@ func Commands() []*discordgo.ApplicationCommand {
 			Options: []*discordgo.ApplicationCommandOption{
 				{Name: "term", Description: "Source term to match", Type: discordgo.ApplicationCommandOptionString, Required: true},
 				{Name: "translation", Description: "Preferred translation", Type: discordgo.ApplicationCommandOptionString, Required: true},
+				{Name: "attribute", Description: "Term type, such as person name, slang, or a custom value", Type: discordgo.ApplicationCommandOptionString, Required: false, Autocomplete: true},
 				{Name: "always_include", Description: "Always include this term in translation instructions", Type: discordgo.ApplicationCommandOptionBoolean, Required: false},
 			},
 		},
@@ -159,6 +160,11 @@ func (h *CommandHandler) handleAutocomplete(s *discordgo.Session, i *discordgo.I
 			for _, g := range groups {
 				choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: g.DisplayName, Value: g.ID})
 			}
+		}
+	}
+	if focused != nil && focused.Name == "attribute" {
+		for _, attribute := range glossaryAttributeSuggestions(focused.StringValue(), 25) {
+			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: attribute, Value: attribute})
 		}
 	}
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
@@ -279,8 +285,9 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 	ctx := context.Background()
 	term := optionString(data.Options, "term")
 	translation := optionString(data.Options, "translation")
+	attribute := optionString(data.Options, "attribute")
 	alwaysInclude := optionBool(data.Options, "always_include")
-	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, i.Member.User.ID, alwaysInclude); err != nil {
+	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, i.Member.User.ID, alwaysInclude); err != nil {
 		respond(s, i, err.Error(), true)
 		return
 	}
@@ -288,7 +295,11 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 	if alwaysInclude {
 		mode = "常に使用"
 	}
-	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました（%s）。", strings.TrimSpace(term), strings.TrimSpace(translation), mode), true)
+	attributeLabel := "属性なし"
+	if strings.TrimSpace(attribute) != "" {
+		attributeLabel = "属性: " + strings.TrimSpace(attribute)
+	}
+	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました（%s、%s）。", strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode), true)
 }
 
 const (
@@ -371,7 +382,11 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 		if entry.AlwaysInclude {
 			mode = "常時"
 		}
-		line := fmt.Sprintf("- `%s` → `%s`（%s）\n", entry.SourceTerm, entry.PreferredTranslation, mode)
+		attribute := "属性なし"
+		if entry.Attribute != "" {
+			attribute = entry.Attribute
+		}
+		line := fmt.Sprintf("- `%s` → `%s`（%s、%s）\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)
 		if b.Len()+len(line)+len(listGlossaryTruncatedSuffix) > discordMessageMaxLen {
 			truncated = true
 			break
@@ -576,6 +591,22 @@ func optionBool(options []*discordgo.ApplicationCommandInteractionDataOption, na
 		}
 	}
 	return false
+}
+
+var glossaryAttributeDefaults = []string{"人名", "地名", "スラング", "略語", "専門用語"}
+
+func glossaryAttributeSuggestions(query string, limit int) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	result := make([]string, 0, len(glossaryAttributeDefaults))
+	for _, attribute := range glossaryAttributeDefaults {
+		if query == "" || strings.Contains(strings.ToLower(attribute), query) {
+			result = append(result, attribute)
+			if len(result) == limit {
+				break
+			}
+		}
+	}
+	return result
 }
 
 func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption, name, fallback string) string {
