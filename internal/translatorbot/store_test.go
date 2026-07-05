@@ -184,7 +184,7 @@ func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing
 		}
 	}
 
-	got, err := s.RecentMessageHistory(ctx, "ja", "102", 5)
+	got, err := s.RecentMessageHistory(ctx, []string{"ja"}, "102", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,6 +192,31 @@ func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing
 		t.Fatalf("history: %#v", got)
 	}
 	if got[0].SourceMessageID != "100" || got[1].SourceMessageID != "101" {
+		t.Fatalf("unexpected order: %#v", got)
+	}
+}
+
+func TestRecentMessageHistoryAggregatesAcrossChannels(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, link := range []MessageLink{
+		{SourceMessageID: "100", SourceChannelID: "en", GroupID: "team", TargetChannelID: "ja", TargetMessageID: "200", TargetLanguage: "ja", SourceAuthorID: "a", SourceContentSnapshot: "english first"},
+		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "201", TargetLanguage: "en", SourceAuthorID: "b", SourceContentSnapshot: "japanese second"},
+		{SourceMessageID: "102", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "202", TargetLanguage: "en", SourceAuthorID: "c", SourceContentSnapshot: "current"},
+	} {
+		if err := s.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.RecentMessageHistory(ctx, []string{"ja", "en"}, "102", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("history: %#v", got)
+	}
+	if got[0].SourceMessageID != "100" || got[0].SourceChannelID != "en" || got[1].SourceMessageID != "101" {
 		t.Fatalf("unexpected order: %#v", got)
 	}
 }

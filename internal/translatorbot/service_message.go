@@ -91,7 +91,11 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		return nil
 	}
 	contextFn := func() TranslationContext {
-		return s.groupTranslationContext(ctx, m.GuildID, source.GroupID, m.ChannelID, m.ChannelID, source.Language, m.ID)
+		replyChannelID := m.ReferencedMessageChannelID
+		if replyChannelID == "" {
+			replyChannelID = m.ChannelID
+		}
+		return s.groupTranslationContext(ctx, m.GuildID, source.GroupID, m.ChannelID, m.ChannelID, source.Language, m.ID, replyChannelID, m.ReferencedMessageID)
 	}
 	return s.mirrorMessage(ctx, m, source.GroupID, source.Language, contextFn, dests)
 }
@@ -211,7 +215,11 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			continue
 		}
 		contextFn := func() TranslationContext {
-			return s.groupTranslationContext(ctx, m.GuildID, groupID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
+			replyChannelID := m.ReferencedMessageChannelID
+			if replyChannelID == "" {
+				replyChannelID = m.ChannelID
+			}
+			return s.groupTranslationContext(ctx, m.GuildID, groupID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID, replyChannelID, m.ReferencedMessageID)
 		}
 		languages := make([]string, 0, len(pending))
 		for _, p := range pending {
@@ -293,8 +301,8 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
 			quoteChannelID = dbQuoteChannelID
 			quoteMessageID = dbQuoteMessageID
-			if transferredContent, fetchErr := s.discord.MessageContent(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferredContent) != "" {
-				content = transferredContent
+			if transferred, fetchErr := s.discord.Message(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferred.Content) != "" {
+				content = transferred.Content
 			} else {
 				content = dbOriginalContent
 			}

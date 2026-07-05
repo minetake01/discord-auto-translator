@@ -63,6 +63,30 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	}
 }
 
+func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
+	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil)
+	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{
+		ReplyChain: []ChatContextMessage{
+			{Author: "alice", Language: "en", Content: "original post"},
+			{Author: "bob", Language: "en", Content: "follow up"},
+		},
+	})
+	if !strings.Contains(systemInstruction, "Prefer <reply_context> over <recent_context>") {
+		t.Fatal(systemInstruction)
+	}
+	if !strings.Contains(prompt, "<reply_context>") {
+		t.Fatal(prompt)
+	}
+	replyIndex := strings.Index(prompt, "<reply_context>")
+	finalIndex := strings.Index(prompt, "<final_message>")
+	if replyIndex == -1 || finalIndex == -1 || replyIndex > finalIndex {
+		t.Fatalf("reply_context should appear before final_message:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "<content>original post</content>") || !strings.Contains(prompt, "<content>follow up</content>") {
+		t.Fatal(prompt)
+	}
+}
+
 func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 	glossary := []GlossaryEntry{
 		{SourceTerm: "NPC", PreferredTranslation: "Non-Player Character", Attribute: "略語"},

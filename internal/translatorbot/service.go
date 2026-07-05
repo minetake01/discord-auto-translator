@@ -12,6 +12,7 @@ import (
 
 const translationHistoryLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
+const translationReplyChainLimit = 3
 
 var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 
@@ -120,10 +121,13 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 	}
 }
 
-// groupTranslationContext gathers server/channel context, recent history, and
-// the group's style instructions for a translation request.
-func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID string) TranslationContext {
-	translationContext := s.translationContext(ctx, guildID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID)
+// groupTranslationContext gathers server/channel context, recent history, reply
+// chain, and the group's style instructions for a translation request.
+func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID string) TranslationContext {
+	channelIDs, languageByChannel := s.conversationLocations(ctx, guildID, groupID, historyChannelID, sourceLanguage)
+	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID, languageByChannel)
+	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, languageByChannel, excludeMessageID, replyKeys)
+	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
 	return translationContext
 }
@@ -136,7 +140,46 @@ func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID s
 	return ResolveStyleInstructions(preset, custom)
 }
 
-func (s *Service) translationContext(ctx context.Context, guildID, channelID, historyChannelID, sourceLanguage, excludeMessageID string) TranslationContext {
+func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, historyChannelID, sourceLanguage string) ([]string, map[string]string) {
+	languageByChannel := make(map[string]string)
+	channels, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
+	if err != nil {
+		return nil, languageByChannel
+	}
+	if findChannel(channels, historyChannelID) != nil {
+		channelIDs := make([]string, len(channels))
+		for i, ch := range channels {
+			channelIDs[i] = ch.ChannelID
+			languageByChannel[ch.ChannelID] = ch.Language
+		}
+		return channelIDs, languageByChannel
+	}
+	if historyChannelID == "" {
+		return nil, languageByChannel
+	}
+	channelIDs := []string{historyChannelID}
+	languageByChannel[historyChannelID] = sourceLanguage
+	threads, err := s.store.ThreadTargets(ctx, historyChannelID)
+	if err != nil {
+		return channelIDs, languageByChannel
+	}
+	seen := map[string]bool{historyChannelID: true}
+	for _, thread := range threads {
+		if thread.SourceThreadID != "" && !seen[thread.SourceThreadID] {
+			seen[thread.SourceThreadID] = true
+			channelIDs = append(channelIDs, thread.SourceThreadID)
+			languageByChannel[thread.SourceThreadID] = languageForChannel(channels, thread.SourceChannelID)
+		}
+		if thread.TargetThreadID != "" && !seen[thread.TargetThreadID] {
+			seen[thread.TargetThreadID] = true
+			channelIDs = append(channelIDs, thread.TargetThreadID)
+			languageByChannel[thread.TargetThreadID] = thread.TargetLanguage
+		}
+	}
+	return channelIDs, languageByChannel
+}
+
+func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, languageByChannel map[string]string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
 	translationContext := TranslationContext{
 		ServerName: bestEffortString(func() (string, error) {
 			return s.discord.GuildName(guildID)
@@ -151,15 +194,18 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID, hi
 			return s.discord.ChannelTopic(channelID)
 		}),
 	}
-	if historyChannelID == "" {
+	if len(historyChannelIDs) == 0 {
 		return translationContext
 	}
-	links, err := s.store.RecentMessageHistory(ctx, historyChannelID, excludeMessageID, translationHistoryLimit)
+	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, translationHistoryLimit)
 	if err != nil {
 		return translationContext
 	}
 	cutoff := time.Now().UTC().Add(-translationHistoryMaxAge)
 	for _, link := range links {
+		if excludeReplyKeys != nil && excludeReplyKeys[messageRefKey(link.SourceChannelID, link.SourceMessageID)] {
+			continue
+		}
 		if strings.TrimSpace(link.SourceContentSnapshot) == "" {
 			continue
 		}
@@ -168,11 +214,92 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID, hi
 		}
 		translationContext.History = append(translationContext.History, ChatContextMessage{
 			Author:   strings.TrimSpace(link.SourceAuthorDisplayName),
-			Language: sourceLanguage,
+			Language: languageByChannel[link.SourceChannelID],
 			Content:  link.SourceContentSnapshot,
 		})
 	}
 	return translationContext
+}
+
+type messageRef struct {
+	channelID string
+	messageID string
+}
+
+func messageRefKey(channelID, messageID string) string {
+	return channelID + "\x00" + messageID
+}
+
+func (s *Service) replyChainContext(ctx context.Context, refChannelID, refMessageID string, languageByChannel map[string]string) ([]ChatContextMessage, map[string]bool) {
+	sourceKeys := make(map[string]bool)
+	if refMessageID == "" || refChannelID == "" {
+		return nil, sourceKeys
+	}
+	collected := make([]ChatContextMessage, 0, translationReplyChainLimit)
+	currentChannelID := refChannelID
+	currentMessageID := refMessageID
+	for len(collected) < translationReplyChainLimit {
+		entry, sourceChannelID, sourceMessageID, nextRef, ok := s.resolveReplyChainEntry(ctx, currentChannelID, currentMessageID, languageByChannel)
+		if !ok {
+			break
+		}
+		collected = append(collected, entry)
+		sourceKeys[messageRefKey(sourceChannelID, sourceMessageID)] = true
+		if nextRef.messageID == "" {
+			break
+		}
+		currentChannelID = nextRef.channelID
+		currentMessageID = nextRef.messageID
+		if currentChannelID == "" {
+			currentChannelID = sourceChannelID
+		}
+	}
+	for i, j := 0, len(collected)-1; i < j; i, j = i+1, j-1 {
+		collected[i], collected[j] = collected[j], collected[i]
+	}
+	return collected, sourceKeys
+}
+
+func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, messageID string, languageByChannel map[string]string) (entry ChatContextMessage, sourceChannelID, sourceMessageID string, nextRef messageRef, ok bool) {
+	original, tracked, err := s.store.MessageOriginal(ctx, channelID, messageID)
+	if err != nil {
+		return entry, "", "", nextRef, false
+	}
+	fetchChannelID := channelID
+	fetchMessageID := messageID
+	if tracked {
+		sourceChannelID = original.SourceChannelID
+		sourceMessageID = original.SourceMessageID
+		fetchChannelID = sourceChannelID
+		fetchMessageID = sourceMessageID
+		entry.Content = original.Snapshot
+		entry.Author = strings.TrimSpace(original.SourceAuthorDisplayName)
+		entry.Language = languageByChannel[sourceChannelID]
+	}
+	fetched, fetchErr := s.discord.Message(fetchChannelID, fetchMessageID)
+	if fetchErr != nil {
+		if !tracked {
+			return entry, "", "", nextRef, false
+		}
+		return entry, sourceChannelID, sourceMessageID, nextRef, strings.TrimSpace(entry.Content) != ""
+	}
+	if !tracked {
+		entry.Content = fetched.Content
+		entry.Author = strings.TrimSpace(fetched.AuthorDisplayName)
+		entry.Language = languageByChannel[channelID]
+		sourceChannelID = channelID
+		sourceMessageID = messageID
+	} else if entry.Author == "" {
+		entry.Author = strings.TrimSpace(fetched.AuthorDisplayName)
+	}
+	nextRef = messageRef{
+		channelID: fetched.ReferencedChannelID,
+		messageID: fetched.ReferencedMessageID,
+	}
+	if nextRef.channelID == "" && nextRef.messageID != "" {
+		nextRef.channelID = fetchChannelID
+	}
+	return entry, sourceChannelID, sourceMessageID, nextRef, strings.TrimSpace(entry.Content) != ""
 }
 
 // lockMessage serializes concurrent handling of the same (channel, message).
