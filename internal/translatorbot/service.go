@@ -24,7 +24,7 @@ type Service struct {
 	discord       DiscordAPI
 	translator    Translator
 	rateLimiter   *TokenRateLimiter
-	httpClient    *http.Client
+	alternateURLs *alternateURLReplacer
 	publicBaseURL string
 	threadMu      sync.Mutex
 	messageLocks  sync.Map
@@ -32,11 +32,11 @@ type Service struct {
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
 	return &Service{
-		store:       store,
-		discord:     discord,
-		translator:  translator,
-		rateLimiter: NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
-		httpClient:  http.DefaultClient,
+		store:         store,
+		discord:       discord,
+		translator:    translator,
+		rateLimiter:   NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
+		alternateURLs: newAlternateURLReplacer(http.DefaultClient, alternateURLDomainCacheTTL, time.Now),
 	}
 }
 
@@ -51,7 +51,7 @@ func (s *Service) SetPublicBaseURL(publicBaseURL string) {
 // postProcessContent applies target-language link rewriting to translated
 // content: hreflang alternate URLs first, then managed Discord references.
 func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetLanguage string) string {
-	text = ReplaceAlternateURLs(ctx, text, targetLanguage, s.httpClient)
+	text = s.alternateURLs.Replace(ctx, text, targetLanguage)
 	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
 }
 
