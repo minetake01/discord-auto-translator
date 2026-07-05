@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, false, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "こんにちは", TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -28,7 +28,7 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if !strings.Contains(systemInstruction, "__DAT_KEEP_...__ placeholders") {
 		t.Fatal(systemInstruction)
 	}
-	if !strings.Contains(systemInstruction, "<style_instructions>") {
+	if strings.Contains(systemInstruction, "<style_instructions>") {
 		t.Fatal(systemInstruction)
 	}
 	if strings.Contains(prompt, "Everything inside <translation_request>") || strings.Contains(prompt, "__DAT_KEEP_") {
@@ -67,7 +67,7 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, true)
+	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, true, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{
 		ReplyChain: []ChatContextMessage{
 			{Author: "alice", Language: "en", Content: "original post"},
@@ -96,7 +96,7 @@ func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false, false)
 	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
 		t.Fatal(systemInstruction)
 	}
@@ -127,6 +127,18 @@ func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) 
 	empty := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{})
 	if strings.Contains(empty, "<style_instructions>") {
 		t.Fatal(empty)
+	}
+}
+
+func TestBuildMultiTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
+	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, true)
+	if !strings.Contains(withStyle, "Apply the tone and register in <style_instructions>") {
+		t.Fatal(withStyle)
+	}
+
+	withoutStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false)
+	if strings.Contains(withoutStyle, "<style_instructions>") {
+		t.Fatal(withoutStyle)
 	}
 }
 
