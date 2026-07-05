@@ -527,7 +527,7 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternat
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.httpClient = page.Client()
+	service.alternateURLs.client = page.Client()
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
@@ -766,7 +766,7 @@ func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.httpClient = page.Client()
+	service.alternateURLs.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
@@ -801,7 +801,7 @@ func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.httpClient = page.Client()
+	service.alternateURLs.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
