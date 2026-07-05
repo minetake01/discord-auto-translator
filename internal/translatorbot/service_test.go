@@ -197,6 +197,17 @@ func seedGroup(t *testing.T, s *Store) {
 	}
 }
 
+func seedMultiLangGroup(t *testing.T, s *Store) {
+	t.Helper()
+	seedGroup(t, s)
+	ctx := context.Background()
+	if err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "fr", Language: "fr", WebhookID: "w-fr", WebhookToken: "t-fr",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1625,6 +1636,72 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	}
 	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "[en] after\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
 		t.Fatalf("attachment URL not preserved in edit: %#v", discord.webhookEdits)
+	}
+}
+
+func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedMultiLangGroup(t, store)
+	for _, link := range []MessageLink{
+		{
+			SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "en", TargetMessageID: "translated-en", TargetLanguage: "en",
+			SourceContentSnapshot: "before",
+		},
+		{
+			SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "fr", TargetMessageID: "translated-fr", TargetLanguage: "fr",
+			SourceContentSnapshot: "before",
+		},
+	} {
+		if err := store.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("expected one batched translation call, got %#v", translator.contexts)
+	}
+	if len(discord.webhookEdits) != 2 {
+		t.Fatalf("expected two webhook edits, got %#v", discord.webhookEdits)
+	}
+}
+
+func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedMultiLangGroup(t, store)
+	for _, link := range []ThreadLink{
+		{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"},
+		{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-fr", TargetChannelID: "fr", TargetLanguage: "fr"},
+	} {
+		if err := store.SaveThreadLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := service.SyncThreadUpdate(ctx, "guild", "thread-ja", "新タイトル"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("expected one batched translation call, got %#v", translator.contexts)
+	}
+	if len(discord.edits) != 2 {
+		t.Fatalf("expected two thread edits, got %#v", discord.edits)
 	}
 }
 

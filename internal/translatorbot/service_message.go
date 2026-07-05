@@ -156,6 +156,26 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 	})
 }
 
+type pendingMessageEdit struct {
+	link   MessageLink
+	target GroupChannel
+}
+
+func (s *Service) messageLinkTarget(ctx context.Context, targets []GroupChannel, link MessageLink) (*GroupChannel, error) {
+	target := findChannel(targets, link.TargetChannelID)
+	if target != nil {
+		return target, nil
+	}
+	parentID, ok, err := s.store.ThreadParentChannel(ctx, link.GroupID, link.TargetChannelID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return findChannel(targets, parentID), nil
+}
+
 func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) error {
 	if m.Bot || m.WebhookID != "" {
 		return nil
@@ -164,45 +184,58 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 	if err != nil {
 		return err
 	}
+	byGroup := make(map[string][]MessageLink)
 	for _, link := range links {
 		if link.SourceContentSnapshot == m.Content {
 			continue
 		}
-		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, link.GroupID)
+		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
+	}
+	for groupID, groupLinks := range byGroup {
+		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, groupID)
 		if err != nil {
 			return err
 		}
-		target := findChannel(targets, link.TargetChannelID)
-		if target == nil {
-			if parentID, ok, err := s.store.ThreadParentChannel(ctx, link.GroupID, link.TargetChannelID); err != nil {
+		pending := make([]pendingMessageEdit, 0, len(groupLinks))
+		for _, link := range groupLinks {
+			target, err := s.messageLinkTarget(ctx, targets, link)
+			if err != nil {
 				return err
-			} else if ok {
-				target = findChannel(targets, parentID)
 			}
+			if target == nil {
+				continue
+			}
+			pending = append(pending, pendingMessageEdit{link: link, target: *target})
 		}
-		if target == nil {
+		if len(pending) == 0 {
 			continue
 		}
 		contextFn := func() TranslationContext {
-			return s.groupTranslationContext(ctx, m.GuildID, link.GroupID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
+			return s.groupTranslationContext(ctx, m.GuildID, groupID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
 		}
-		translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, []string{target.Language}, contextFn)
+		languages := make([]string, 0, len(pending))
+		for _, p := range pending {
+			languages = append(languages, p.target.Language)
+		}
+		translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, languages, contextFn)
 		if err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
 				continue
 			}
 			return err
 		}
-		content := s.postProcessContent(ctx, m.GuildID, translations[target.Language], target.Language)
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
-		if err != nil {
-			return err
-		}
-		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
-			return err
-		}
-		if err := s.store.UpdateMessageLinkSnapshot(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, m.Content); err != nil {
-			return err
+		for _, p := range pending {
+			content := s.postProcessContent(ctx, m.GuildID, translations[p.target.Language], p.target.Language)
+			content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
+			if err != nil {
+				return err
+			}
+			if err := s.discord.EditWebhook(p.target.WebhookID, p.target.WebhookToken, p.link.TargetMessageID, threadIDForWebhook(p.link, &p.target), content); err != nil {
+				return err
+			}
+			if err := s.store.UpdateMessageLinkSnapshot(ctx, p.link.SourceChannelID, p.link.SourceMessageID, p.link.TargetChannelID, m.Content); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -213,24 +246,26 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 	if err != nil {
 		return err
 	}
+	byGroup := make(map[string][]MessageLink)
 	for _, link := range links {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, link.GroupID)
+		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
+	}
+	for groupID, groupLinks := range byGroup {
+		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
 		if err != nil {
 			return err
 		}
-		target := findChannel(targets, link.TargetChannelID)
-		if target == nil {
-			if parentID, ok, err := s.store.ThreadParentChannel(ctx, link.GroupID, link.TargetChannelID); err != nil {
+		for _, link := range groupLinks {
+			target, err := s.messageLinkTarget(ctx, targets, link)
+			if err != nil {
 				return err
-			} else if ok {
-				target = findChannel(targets, parentID)
 			}
-		}
-		if target == nil {
-			continue
-		}
-		if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target)); err != nil {
-			return err
+			if target == nil {
+				continue
+			}
+			if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
