@@ -216,8 +216,8 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "author", SourceContentSnapshot: "こんにちは",
 	}); err != nil {
 		t.Fatal(err)
@@ -225,14 +225,14 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 
-	if err := service.SyncReaction(ctx, "guild", "en", "translated-msg", "👍", true); err != nil {
+	if err := service.SyncReaction(ctx, "guild", "en", "100000000000000015", "👍", true); err != nil {
 		t.Fatal(err)
 	}
 
 	if len(discord.reactions) != 1 {
 		t.Fatalf("got %#v", discord.reactions)
 	}
-	if got := discord.reactions[0]; got.channelID != "ja" || got.messageID != "source-msg" || got.emoji != "👍" {
+	if got := discord.reactions[0]; got.channelID != "ja" || got.messageID != "100000000000000006" || got.emoji != "👍" {
 		t.Fatalf("unexpected reaction sync: %#v", got)
 	}
 }
@@ -241,8 +241,8 @@ func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "author", SourceContentSnapshot: "hello",
 	}); err != nil {
 		t.Fatal(err)
@@ -250,13 +250,13 @@ func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 
-	if err := service.SyncReaction(ctx, "guild", "ja", "source-msg", "👍", false); err != nil {
+	if err := service.SyncReaction(ctx, "guild", "ja", "100000000000000006", "👍", false); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.removedReactions) != 1 {
 		t.Fatalf("expected one own-reaction removal, got %#v", discord.removedReactions)
 	}
-	if got := discord.removedReactions[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.emoji != "👍" {
+	if got := discord.removedReactions[0]; got.channelID != "en" || got.messageID != "100000000000000015" || got.emoji != "👍" {
 		t.Fatalf("unexpected reaction removal: %#v", got)
 	}
 }
@@ -271,7 +271,7 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceAuthorID: "source-user", SourceContentSnapshot: "こんにちは、はじめまして\n二行目",
 	}); err != nil {
@@ -279,9 +279,9 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName: "reply-user", Content: "はじめまして！",
-		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
 		ReferencedMessageContent: "> [ja] already translated quote · [引用元を見る](https://discord.com/channels/guild/en/older)\n\n[ja] translated body",
 	})
 	if err != nil {
@@ -302,7 +302,7 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	store := newTestStore(t)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "original", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceContentSnapshot: "元本文",
 	}); err != nil {
@@ -314,8 +314,8 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		ForwardedMessage: &DiscordForwardedMessage{MessageID: "original", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000003", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -327,7 +327,7 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	if len(translator.contexts) != 0 {
 		t.Fatalf("reused forward was translated: %#v", translator.contexts)
 	}
-	links, err := store.MessageTargets(ctx, "ja", "forward")
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000004")
 	if err != nil || len(links) != 1 || links[0].SourceContentSnapshot != "元本文" {
 		t.Fatalf("forward snapshot was not saved: %#v, err=%v", links, err)
 	}
@@ -341,9 +341,9 @@ func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
 		ForwardedMessage: &DiscordForwardedMessage{
-			MessageID: "outside", ChannelID: "outside-channel", GuildID: "outside-guild", Content: "外部本文",
+			MessageID: "100000000000000016", ChannelID: "outside-channel", GuildID: "outside-guild", Content: "外部本文",
 			Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/file.png?ex=1&is=2&hm=3", Filename: "file.png"}},
 			Stickers:    []DiscordSticker{{ID: "sticker", FormatType: stickerFormatPNG}},
 		},
@@ -351,7 +351,7 @@ func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "-# Forwarded · https://discord.com/channels/outside-guild/outside-channel/outside\n[en] 外部本文\nhttps://cdn.discordapp.com/file.png\nhttps://cdn.discordapp.com/stickers/sticker.png"
+	want := "-# Forwarded · https://discord.com/channels/outside-guild/outside-channel/100000000000000016\n[en] 外部本文\nhttps://cdn.discordapp.com/file.png\nhttps://cdn.discordapp.com/stickers/sticker.png"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -368,8 +368,8 @@ func TestForwardWithoutTranslatableTextSkipsTranslation(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		ForwardedMessage: &DiscordForwardedMessage{MessageID: "outside", ChannelID: "outside-channel", GuildID: "guild", Content: "https://example.com `<@123>`"},
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000016", ChannelID: "outside-channel", GuildID: "guild", Content: "https://example.com `<@123>`"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -377,7 +377,7 @@ func TestForwardWithoutTranslatableTextSkipsTranslation(t *testing.T) {
 	if len(translator.contexts) != 0 {
 		t.Fatalf("non-translatable forward was translated: %#v", translator.contexts)
 	}
-	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/outside\nhttps://example.com `<@123>`"
+	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/100000000000000016\nhttps://example.com `<@123>`"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -391,9 +391,9 @@ func TestForwardMirrorsIntoThread(t *testing.T) {
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forward", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ID: "100000000000000004", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
 		AuthorID: "u", AuthorDisplayName: "u",
-		ForwardedMessage: &DiscordForwardedMessage{MessageID: "outside", ChannelID: "outside-channel", GuildID: "guild", Content: "外部本文"},
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000016", ChannelID: "outside-channel", GuildID: "guild", Content: "外部本文"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -401,7 +401,7 @@ func TestForwardMirrorsIntoThread(t *testing.T) {
 	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
 		t.Fatalf("unexpected thread send: %#v", discord.sent)
 	}
-	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/outside\n[en] 外部本文"
+	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/100000000000000016\n[en] 外部本文"
 	if discord.sent[0].Content != want {
 		t.Fatalf("got %q, want %q", discord.sent[0].Content, want)
 	}
@@ -428,7 +428,7 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	seedGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "出荷しました",
 	})
 	if err != nil {
@@ -455,7 +455,7 @@ func TestHandleMessageCreatePassesGroupStyleInstructions(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "GG",
 	})
 	if err != nil {
@@ -477,7 +477,7 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "画像です",
 		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", Filename: "image.png", ContentType: "image/png"}},
 	})
@@ -501,7 +501,7 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
 		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/photo.jpg?ex=1", Filename: "photo.jpg", ContentType: "image/jpeg"}},
 	})
 	if err != nil {
@@ -531,7 +531,7 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternat
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: page.URL,
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: page.URL,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +553,7 @@ func TestHandleMessageCreateTranslatesMarkdownLinkLabel(t *testing.T) {
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "[資料](https://example.invalid)",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "[資料](https://example.invalid)",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +677,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "[en] topic" {
@@ -685,7 +685,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "msg-in-thread", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ID: "100000000000000017", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "スレッド本文",
 	})
 	if err != nil {
@@ -713,7 +713,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 
 	translatorCalls := len(translator.contexts)
 	err = service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "asset-in-thread", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ID: "100000000000000020", ChannelID: "100000000000000005", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
 		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/thread.png?ex=1"}},
 	})
 	if err != nil {
@@ -727,7 +727,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 
 	err = service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "code-in-thread", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "`fmt.Println()`",
+		ID: "100000000000000024", ChannelID: "100000000000000005", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "`fmt.Println()`",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -744,23 +744,23 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{
-		channelNames: map[string]string{"ja": "announcements-ja", "thread-ja": "topic"},
+		channelNames: map[string]string{"ja": "announcements-ja", "100000000000000005": "topic"},
 	}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
-	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
+	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "thread-ja", GroupID: "g",
-		TargetChannelID: "thread-en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "100000000000000005", GroupID: "g",
+		TargetChannelID: "thread-en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.HandleMessageUpdate(ctx, DiscordMessage{ID: "source-msg", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", ThreadName: "topic", Content: "after"}); err != nil {
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{ID: "100000000000000006", ChannelID: "100000000000000005", GuildID: "guild", AuthorID: "u", ThreadName: "topic", Content: "after"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -774,7 +774,7 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	if len(discord.webhookEdits) != 1 {
 		t.Fatalf("webhook edits: %#v", discord.webhookEdits)
 	}
-	if got := discord.webhookEdits[0]; got.messageID != "translated-msg" || got.threadID != "thread-en" || got.content != "[en] after" {
+	if got := discord.webhookEdits[0]; got.messageID != "100000000000000015" || got.threadID != "thread-en" || got.content != "[en] after" {
 		t.Fatalf("unexpected webhook edit: %#v", got)
 	}
 }
@@ -792,15 +792,15 @@ func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
 	service.alternateURLs.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
-		ID: "source-msg", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "see " + page.URL,
+		ID: "100000000000000006", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "see " + page.URL,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -827,14 +827,14 @@ func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 	service.alternateURLs.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en", SourceContentSnapshot: "before",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en", SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
-		ID: "source-msg", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: page.URL,
+		ID: "100000000000000006", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: page.URL,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -845,7 +845,7 @@ func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "https://example.com/en" {
 		t.Fatalf("edits: %#v", discord.webhookEdits)
 	}
-	links, err := store.MessageTargets(ctx, "ja", "source-msg")
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000006")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,12 +860,12 @@ func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 	service := NewService(store, &fakeDiscordAPI{}, translator)
 
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
-		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "source", ReferencedMessageContent: "```go\nfmt.Println(\"hello\")\n```",
+		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "100000000000000001", ReferencedMessageContent: "```go\nfmt.Println(\"hello\")\n```",
 	}, "en", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "> ```go · [Source](https://discord.com/channels/guild/ja/source)" {
+	if got != "> ```go · [Source](https://discord.com/channels/guild/ja/100000000000000001)" {
 		t.Fatalf("unexpected quote: %q", got)
 	}
 	if len(translator.contexts) != 0 {
@@ -876,7 +876,7 @@ func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
 	m := DiscordMessage{
-		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "source",
+		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "100000000000000001",
 		ReferencedMessageContent: "snippet",
 	}
 
@@ -893,7 +893,7 @@ func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := fmt.Sprintf("> snippet · [%s](https://discord.com/channels/guild/en/source)", tt.label)
+			want := fmt.Sprintf("> snippet · [%s](https://discord.com/channels/guild/en/100000000000000001)", tt.label)
 			if got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
@@ -927,13 +927,13 @@ func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
 func TestReplyQuoteConvertsMarkdownHeaderSnippet(t *testing.T) {
 	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
-		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "source",
+		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "100000000000000001",
 		ReferencedMessageContent: "## Important\nbody",
 	}, "target", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> -# Important · [Source](https://discord.com/channels/guild/en/source)"
+	want := "> -# Important · [Source](https://discord.com/channels/guild/en/100000000000000001)"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -945,28 +945,28 @@ func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) 
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
+	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "thread-ja", GroupID: "g",
-		TargetChannelID: "thread-en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "100000000000000005", GroupID: "g",
+		TargetChannelID: "thread-en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.HandleMessageDelete(ctx, "guild", "thread-ja", "source-msg"); err != nil {
+	if err := service.HandleMessageDelete(ctx, "guild", "100000000000000005", "100000000000000006"); err != nil {
 		t.Fatal(err)
 	}
 
 	if len(discord.webhookDeletes) != 1 {
 		t.Fatalf("webhook deletes: %#v", discord.webhookDeletes)
 	}
-	if got := discord.webhookDeletes[0]; got.messageID != "translated-msg" || got.threadID != "thread-en" {
+	if got := discord.webhookDeletes[0]; got.messageID != "100000000000000015" || got.threadID != "thread-en" {
 		t.Fatalf("unexpected webhook delete: %#v", got)
 	}
-	links, err := store.MessageTargets(ctx, "thread-ja", "source-msg")
+	links, err := store.MessageTargets(ctx, "100000000000000005", "100000000000000006")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1016,11 +1016,11 @@ func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "starter", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u",
+		ID: "starter", ChannelID: "100000000000000005", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "最初の本文",
 		ThreadSystemMessage: true, ThreadStarterMessage: true,
 	})
@@ -1039,7 +1039,7 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "source-msg", "topic"); err != nil {
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000006", "topic"); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.threads) != 0 {
@@ -1047,15 +1047,15 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	}
 
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "本文",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "starter", ChannelID: "source-msg", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
-		ReferencedMessageID: "source-msg", ThreadSystemMessage: true, ThreadStarterMessage: true,
+		ID: "starter", ChannelID: "100000000000000006", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ReferencedMessageID: "100000000000000006", ThreadSystemMessage: true, ThreadStarterMessage: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1064,7 +1064,7 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	if len(discord.threads) != 1 {
 		t.Fatalf("threads: %#v", discord.threads)
 	}
-	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.name != "[en] topic" {
+	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "100000000000000015" || got.name != "[en] topic" {
 		t.Fatalf("unexpected thread sync: %#v", got)
 	}
 	if len(discord.sent) != 0 {
@@ -1080,7 +1080,7 @@ func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *t
 	seedGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "first", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ID: "100000000000000021", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
 	})
 	if err != nil {
@@ -1105,11 +1105,11 @@ func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "first", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		ID: "100000000000000021", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
 	})
 	if err != nil {
@@ -1131,10 +1131,10 @@ func TestSyncThreadCreateIsIdempotent(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1150,21 +1150,21 @@ func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) 
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source-msg", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-msg", TargetLanguage: "en",
+		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000015", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "本文",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "source-msg", "議題"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000006", "議題"); err != nil {
 		t.Fatal(err)
 	}
 
 	if len(discord.threads) != 1 {
 		t.Fatalf("threads: %#v", discord.threads)
 	}
-	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "translated-msg" || got.name != "[en] 議題" {
+	if got := discord.threads[0]; got.channelID != "en" || got.messageID != "100000000000000015" || got.name != "[en] 議題" {
 		t.Fatalf("unexpected thread sync: %#v", got)
 	}
 }
@@ -1185,7 +1185,7 @@ func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "forum-post-ja", "議題"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "議題"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1214,7 +1214,7 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
 	})
 	if err != nil {
@@ -1230,7 +1230,7 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 	if len(discord.sent) != 0 {
 		t.Fatalf("forum starter should not be sent as a second message: %#v", discord.sent)
 	}
-	links, err := store.MessageTargets(ctx, "forum-post-ja", "forum-post-ja")
+	links, err := store.MessageTargets(ctx, "100000000000000007", "100000000000000007")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1256,7 +1256,7 @@ func TestForumInitialMessageSendsFirstMessageToNonForumTargetThread(t *testing.T
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
 	})
 	if err != nil {
@@ -1269,7 +1269,7 @@ func TestForumInitialMessageSendsFirstMessageToNonForumTargetThread(t *testing.T
 	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" || discord.sent[0].Content != "[en] 最初の本文" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	links, err := store.MessageTargets(ctx, "forum-post-ja", "forum-post-ja")
+	links, err := store.MessageTargets(ctx, "100000000000000007", "100000000000000007")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1284,11 +1284,11 @@ func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadUpdate(ctx, "guild", "thread-ja", "新タイトル"); err != nil {
+	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1306,32 +1306,32 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "msg-in-thread", SourceChannelID: "thread-ja", GroupID: "g",
+		SourceMessageID: "100000000000000017", SourceChannelID: "100000000000000005", GroupID: "g",
 		TargetChannelID: "thread-1", TargetMessageID: "mirrored-msg", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "スレッド内メッセージ",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadDelete(ctx, "thread-ja"); err != nil {
+	if err := service.SyncThreadDelete(ctx, "100000000000000005"); err != nil {
 		t.Fatal(err)
 	}
 
 	if len(discord.deletes) != 1 || discord.deletes[0] != "thread-1" {
 		t.Fatalf("deletes: %#v", discord.deletes)
 	}
-	threads, err := store.ThreadTargets(ctx, "thread-ja")
+	threads, err := store.ThreadTargets(ctx, "100000000000000005")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(threads) != 0 {
 		t.Fatalf("thread links were not deleted: %#v", threads)
 	}
-	links, err := store.MessageTargets(ctx, "thread-ja", "msg-in-thread")
+	links, err := store.MessageTargets(ctx, "100000000000000005", "100000000000000017")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1366,7 +1366,7 @@ func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "existing", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "hello",
 	}); err != nil {
@@ -1374,7 +1374,7 @@ func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "hello",
 	})
 	if err != nil {
@@ -1392,7 +1392,7 @@ func TestHandleMessageCreateDuplicateDelivery(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	msg := DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "hello",
 	}
 	if err := service.HandleMessageCreate(ctx, msg); err != nil {
@@ -1417,7 +1417,7 @@ func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 	err := service.sendAndSaveLink(ctx, GroupChannel{
 		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
 	}, "", WebhookSend{Content: "[en] hello", Username: "u"}, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "hello",
 	})
@@ -1479,7 +1479,7 @@ func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "this message should exceed the tiny rate limit",
 	}); err != nil {
 		t.Fatal(err)
@@ -1500,7 +1500,7 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	seedThreeChannelGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "hello",
 	})
 	if err == nil {
@@ -1512,7 +1512,7 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	if !strings.Contains(discord.sent[0].Content, "翻訳に失敗") {
 		t.Fatalf("unexpected notification: %#v", discord.sent[0])
 	}
-	links, err := store.MessageTargets(ctx, "ja", "source")
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1527,16 +1527,16 @@ func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
 	discord := &fakeDiscordAPI{pinCalls: []pinCall{}}
 	service := NewService(store, discord, &echoTranslator{})
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncPin(ctx, "ja", "source", true); err != nil {
+	if err := service.SyncPin(ctx, "ja", "100000000000000001", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SyncPin(ctx, "ja", "source", false); err != nil {
+	if err := service.SyncPin(ctx, "ja", "100000000000000001", false); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.pinCalls) != 2 {
@@ -1555,16 +1555,16 @@ func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 	seedGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName: "reply-user", Content: "返信です",
-		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
 		ReferencedMessageContent: "元メッセージ本文",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := "> 元メッセージ本文 · [Source](https://discord.com/channels/guild/ja/orig)\n\n[en] 返信です"
+	want := "> 元メッセージ本文 · [Source](https://discord.com/channels/guild/ja/100000000000000002)\n\n[en] 返信です"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -1578,16 +1578,16 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 	seedGroup(t, store)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "reply-user",
 		AuthorDisplayName:   "reply-user",
-		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
 		ReferencedMessageContent: "引用元",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	wantPrefix := "> 引用元 · [Source](https://discord.com/channels/guild/ja/orig)"
+	wantPrefix := "> 引用元 · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
 	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix {
 		t.Fatalf("got %#v, want %q", discord.sent, wantPrefix)
 	}
@@ -1600,7 +1600,7 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceContentSnapshot: "保存済み原文",
 	}); err != nil {
@@ -1608,8 +1608,8 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		Content: "返信", ReferencedMessageID: "orig", ReferencedMessageContent: "Gateway本文",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Content: "返信", ReferencedMessageID: "100000000000000002", ReferencedMessageContent: "Gateway本文",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1627,7 +1627,7 @@ func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *t
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceContentSnapshot: "",
 	}); err != nil {
@@ -1635,8 +1635,8 @@ func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *t
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		Content: "返信", ReferencedMessageID: "orig", ReferencedMessageContent: "Gateway本文",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Content: "返信", ReferencedMessageID: "100000000000000002", ReferencedMessageContent: "Gateway本文",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1673,19 +1673,19 @@ func TestHandleMessagePinUpdateSyncsOnceAndSkipsEcho(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000018", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.HandleMessagePinUpdate(ctx, "ja", "source", true); err != nil {
+	if err := service.HandleMessagePinUpdate(ctx, "ja", "100000000000000001", true); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.pinCalls) != 1 {
 		t.Fatalf("pin calls: %#v", discord.pinCalls)
 	}
-	if err := service.HandleMessagePinUpdate(ctx, "en", "translated", true); err != nil {
+	if err := service.HandleMessagePinUpdate(ctx, "en", "100000000000000018", true); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.pinCalls) != 1 {
@@ -1701,7 +1701,7 @@ func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceContentSnapshot: "same",
 	}); err != nil {
@@ -1709,7 +1709,7 @@ func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	}
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "same",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "same",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1734,7 +1734,7 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceContentSnapshot: "before",
 	}); err != nil {
@@ -1742,12 +1742,12 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	}
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
 		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&hm=2"}},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	links, err := store.MessageTargets(ctx, "ja", "source")
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1768,12 +1768,12 @@ func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
 	seedMultiLangGroup(t, store)
 	for _, link := range []MessageLink{
 		{
-			SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+			SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "en", TargetMessageID: "translated-en", TargetLanguage: "en",
 			SourceContentSnapshot: "before",
 		},
 		{
-			SourceMessageID: "source", SourceChannelID: "ja", GroupID: "g",
+			SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "fr", TargetMessageID: "translated-fr", TargetLanguage: "fr",
 			SourceContentSnapshot: "before",
 		},
@@ -1784,7 +1784,7 @@ func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
 	}
 
 	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "after",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1805,15 +1805,15 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedMultiLangGroup(t, store)
 	for _, link := range []ThreadLink{
-		{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"},
-		{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-fr", TargetChannelID: "fr", TargetLanguage: "fr"},
+		{GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"},
+		{GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja", TargetThreadID: "thread-fr", TargetChannelID: "fr", TargetLanguage: "fr"},
 	} {
 		if err := store.SaveThreadLink(ctx, link); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	if err := service.SyncThreadUpdate(ctx, "guild", "thread-ja", "新タイトル"); err != nil {
+	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1833,7 +1833,7 @@ func TestHandleMessageCreateForwardsTTS(t *testing.T) {
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u", Content: "こんにちは", TTS: true,
 	}); err != nil {
 		t.Fatal(err)
@@ -1891,7 +1891,7 @@ func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *test
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文", TTS: true,
 		Stickers: []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}},
 	})
@@ -1928,7 +1928,7 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 	}
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "forum-post-ja", ChannelID: "forum-post-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
+		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "<@123> `example` <:wave:456>",
 	}); err != nil {
 		t.Fatal(err)
@@ -1949,7 +1949,7 @@ func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "linked-ja", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000009", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "linked-en", TargetLanguage: "en",
 		SourceAuthorID: "author", SourceContentSnapshot: "referenced",
 	}); err != nil {
@@ -1957,9 +1957,9 @@ func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "source", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
 		AuthorDisplayName: "u",
-		Content:           "see " + MessageJumpURL("guild", "ja", "linked-ja"),
+		Content:           "see " + MessageJumpURL("guild", "ja", "100000000000000009"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2015,7 +2015,7 @@ func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "こんにちは",
 	}); err != nil {
@@ -2023,9 +2023,9 @@ func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
 		AuthorDisplayName: "bob", Content: "返信です",
-		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
 		ReferencedMessageContent: "こんにちは",
 	})
 	if err != nil {
@@ -2046,20 +2046,20 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{
 		messages: map[string]DiscordFetchedMessage{
-			"ja\x00one":   {Content: "first", AuthorDisplayName: "A"},
-			"ja\x00two":   {Content: "second", AuthorDisplayName: "B", ReferencedChannelID: "ja", ReferencedMessageID: "one"},
-			"ja\x00three": {Content: "third", AuthorDisplayName: "C", ReferencedChannelID: "ja", ReferencedMessageID: "two"},
-			"ja\x00four":  {Content: "fourth", AuthorDisplayName: "D", ReferencedChannelID: "ja", ReferencedMessageID: "three"},
+			"ja\x00one":   {Content: "100000000000000021", AuthorDisplayName: "A"},
+			"ja\x00two":   {Content: "second", AuthorDisplayName: "B", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000012"},
+			"ja\x00100000000000000022": {Content: "third", AuthorDisplayName: "C", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000019"},
+			"ja\x00100000000000000023": {Content: "fourth", AuthorDisplayName: "D", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000022"},
 		},
 	}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	for _, link := range []MessageLink{
-		{SourceMessageID: "one", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t1", TargetLanguage: "en", SourceAuthorDisplayName: "A", SourceContentSnapshot: "first"},
-		{SourceMessageID: "two", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t2", TargetLanguage: "en", SourceAuthorDisplayName: "B", SourceContentSnapshot: "second"},
-		{SourceMessageID: "three", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t3", TargetLanguage: "en", SourceAuthorDisplayName: "C", SourceContentSnapshot: "third"},
-		{SourceMessageID: "four", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t4", TargetLanguage: "en", SourceAuthorDisplayName: "D", SourceContentSnapshot: "fourth"},
+		{SourceMessageID: "100000000000000012", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t1", TargetLanguage: "en", SourceAuthorDisplayName: "A", SourceContentSnapshot: "first"},
+		{SourceMessageID: "100000000000000019", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t2", TargetLanguage: "en", SourceAuthorDisplayName: "B", SourceContentSnapshot: "second"},
+		{SourceMessageID: "100000000000000022", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t3", TargetLanguage: "en", SourceAuthorDisplayName: "C", SourceContentSnapshot: "third"},
+		{SourceMessageID: "100000000000000023", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t4", TargetLanguage: "en", SourceAuthorDisplayName: "D", SourceContentSnapshot: "fourth"},
 	} {
 		if err := store.SaveMessageLink(ctx, link); err != nil {
 			t.Fatal(err)
@@ -2067,9 +2067,9 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
 		AuthorDisplayName: "bob", Content: "返信",
-		ReferencedMessageID: "four", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000023", ReferencedMessageChannelID: "ja",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2110,7 +2110,7 @@ func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前の発言",
 	}); err != nil {
@@ -2120,7 +2120,7 @@ func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "101", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
 		AuthorDisplayName: "bob", Content: "返信",
-		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2147,17 +2147,17 @@ func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testin
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "en", GroupID: "g",
-		TargetChannelID: "ja", TargetMessageID: "translated", TargetLanguage: "ja",
+		SourceMessageID: "100000000000000002", SourceChannelID: "en", GroupID: "g",
+		TargetChannelID: "ja", TargetMessageID: "100000000000000018", TargetLanguage: "ja",
 		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "Hello",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
 		AuthorDisplayName: "bob", Content: "返信",
-		ReferencedMessageID: "translated", ReferencedMessageChannelID: "ja",
+		ReferencedMessageID: "100000000000000018", ReferencedMessageChannelID: "ja",
 	})
 	if err != nil {
 		t.Fatal(err)

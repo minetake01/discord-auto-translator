@@ -37,13 +37,13 @@ func TestReplaceDiscordRefsMessageURL(t *testing.T) {
 	store := newTestStore(t)
 	seedJAENGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "msg-ja", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000010", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "msg-en", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	got := ReplaceDiscordRefs(ctx, store, "guild", "jump https://discord.com/channels/guild/ja/msg-ja", "en")
+	got := ReplaceDiscordRefs(ctx, store, "guild", "jump https://discord.com/channels/guild/ja/100000000000000010", "en")
 	want := "jump " + MessageJumpURL("guild", "en", "msg-en")
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
@@ -67,13 +67,13 @@ func TestReplaceDiscordRefsThreadURL(t *testing.T) {
 	store := newTestStore(t)
 	seedJAENGroup(t, store)
 	if err := store.SaveThreadLink(ctx, ThreadLink{
-		GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja",
+		GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja",
 		TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	got := ReplaceDiscordRefs(ctx, store, "guild", "https://discord.com/channels/guild/thread-ja", "en")
+	got := ReplaceDiscordRefs(ctx, store, "guild", "https://discord.com/channels/guild/100000000000000005", "en")
 	want := "https://discord.com/channels/guild/thread-en"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)

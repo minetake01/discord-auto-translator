@@ -2,9 +2,9 @@ package translatorbot
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,6 +17,108 @@ func newTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	return s
+}
+
+func TestStoreOptimizedSchema(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	columnTypes := map[string]map[string]string{
+		"translation_groups": {"created_at": "INTEGER"},
+		"message_links":      {"source_message_id": "INTEGER"},
+		"pin_states":         {"message_id": "INTEGER"},
+		"processed_events":   {"created_at": "INTEGER"},
+		"glossary_entries":   {"created_at": "INTEGER"},
+	}
+	for table, expected := range columnTypes {
+		rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]string{}
+		for rows.Next() {
+			var cid, notNull, primaryKey int
+			var name, declaredType string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &declaredType, &notNull, &defaultValue, &primaryKey); err != nil {
+				t.Fatal(err)
+			}
+			found[name] = declaredType
+		}
+		_ = rows.Close()
+		for column, want := range expected {
+			if found[column] != want {
+				t.Errorf("%s.%s type = %q, want %q", table, column, found[column], want)
+			}
+		}
+	}
+
+	wantIndexes := []string{
+		"idx_group_channels_guild_channel",
+		"idx_message_links_source_channel_message",
+		"idx_message_links_target_channel_message",
+		"idx_message_links_group_source_channel",
+		"idx_message_links_group_target_channel",
+		"idx_thread_links_source_thread",
+		"idx_thread_links_target_thread",
+		"idx_thread_links_group_target_thread",
+		"idx_thread_links_group_source_channel",
+		"idx_thread_links_group_target_channel",
+		"idx_pin_states_message",
+		"idx_processed_events_created_at",
+	}
+	for _, index := range wantIndexes {
+		var count int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Errorf("index %s count = %d, want 1", index, count)
+		}
+	}
+}
+
+func TestStoreRejectsInvalidIntegerSnowflakes(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "not-a-snowflake"}); err == nil {
+		t.Fatal("SaveMessageLink accepted a non-numeric source message ID")
+	}
+	if err := s.SavePinState(ctx, "channel", "0", true); err == nil {
+		t.Fatal("SavePinState accepted a non-positive message ID")
+	}
+}
+
+func TestPurgeQueriesUseIndexesWithoutCast(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		query string
+		index string
+	}{
+		{`DELETE FROM message_links WHERE source_message_id < ?`, "sqlite_autoindex_message_links_1"},
+		{`DELETE FROM pin_states WHERE message_id < ?`, "idx_pin_states_message"},
+		{`DELETE FROM processed_events WHERE created_at < ?`, "idx_processed_events_created_at"},
+	} {
+		rows, err := s.db.QueryContext(ctx, `EXPLAIN QUERY PLAN `+tc.query, int64(1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var details []string
+		for rows.Next() {
+			var id, parent, unused int
+			var detail string
+			if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+				t.Fatal(err)
+			}
+			details = append(details, detail)
+		}
+		_ = rows.Close()
+		plan := strings.Join(details, "\n")
+		if !strings.Contains(plan, tc.index) || strings.Contains(strings.ToUpper(plan), "CAST(") {
+			t.Errorf("query plan for %q = %q, want index %q without CAST", tc.query, plan, tc.index)
+		}
+	}
 }
 
 func TestCreateGroupDefaultAndDuplicate(t *testing.T) {
@@ -95,7 +197,7 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: "c2", Language: "en", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "m1", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
@@ -113,7 +215,7 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	if len(channels) != 1 || channels[0].ChannelID != "c1" {
 		t.Fatalf("unexpected channels: %#v", channels)
 	}
-	links, err := s.MessageTargets(ctx, "c1", "m1")
+	links, err := s.MessageTargets(ctx, "c1", "100000000000000013")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +239,7 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "m1", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
@@ -162,7 +264,7 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	if len(channels) != 0 {
 		t.Fatalf("channels were not deleted: %#v", channels)
 	}
-	links, err := s.MessageTargets(ctx, "c1", "m1")
+	links, err := s.MessageTargets(ctx, "c1", "100000000000000013")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,8 +277,8 @@ func TestDeleteMessageLinksBySourceRemovesAllTargetsForSource(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, link := range []MessageLink{
-		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "first"},
-		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "fr", TargetMessageID: "300", TargetLanguage: "fr", SourceAuthorID: "a", SourceContentSnapshot: "first"},
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "100000000000000021"},
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "fr", TargetMessageID: "300", TargetLanguage: "fr", SourceAuthorID: "a", SourceContentSnapshot: "100000000000000021"},
 		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "201", TargetLanguage: "en", SourceAuthorID: "b", SourceContentSnapshot: "second"},
 	} {
 		if err := s.SaveMessageLink(ctx, link); err != nil {
@@ -208,7 +310,7 @@ func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, link := range []MessageLink{
-		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "first"},
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "100000000000000021"},
 		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "201", TargetLanguage: "en", SourceAuthorID: "b", SourceContentSnapshot: "second"},
 		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "fr", TargetMessageID: "301", TargetLanguage: "fr", SourceAuthorID: "b", SourceContentSnapshot: "second"},
 		{SourceMessageID: "102", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "202", TargetLanguage: "en", SourceAuthorID: "c", SourceContentSnapshot: "current"},
@@ -320,59 +422,31 @@ func TestGlossaryCRUDAndLimit(t *testing.T) {
 	}
 }
 
-func TestGlossaryMigrationDefaultsNewFields(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := &Store{db: db}
-	t.Cleanup(func() { _ = s.Close() })
-	ctx := context.Background()
-	_, err = db.ExecContext(ctx, `CREATE TABLE glossary_entries (
-		guild_id TEXT NOT NULL, source_term TEXT NOT NULL, source_term_key TEXT NOT NULL,
-		preferred_translation TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL,
-		PRIMARY KEY (guild_id, source_term_key)
-	)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, `INSERT INTO glossary_entries VALUES ('g1','NPC','npc','Non-Player Character','u1','now')`); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.Init(ctx); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := s.ListGlossaryEntries(ctx, "g1")
-	if err != nil || len(entries) != 1 || entries[0].Attribute != "" || entries[0].AlwaysInclude {
-		t.Fatalf("entries = %#v, err = %v", entries, err)
-	}
-}
-
 func TestPinStateAndSnapshotUpdates(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	pinned, known, err := s.GetPinState(ctx, "ja", "msg")
+	pinned, known, err := s.GetPinState(ctx, "ja", "100000000000000014")
 	if err != nil || known || pinned {
 		t.Fatalf("unexpected initial pin state: pinned=%v known=%v err=%v", pinned, known, err)
 	}
-	if err := s.SavePinState(ctx, "ja", "msg", true); err != nil {
+	if err := s.SavePinState(ctx, "ja", "100000000000000014", true); err != nil {
 		t.Fatal(err)
 	}
-	pinned, known, err = s.GetPinState(ctx, "ja", "msg")
+	pinned, known, err = s.GetPinState(ctx, "ja", "100000000000000014")
 	if err != nil || !known || !pinned {
 		t.Fatalf("expected pinned state, got pinned=%v known=%v err=%v", pinned, known, err)
 	}
 	if err := s.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "msg", SourceChannelID: "ja", GroupID: "g",
+		SourceMessageID: "100000000000000014", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "target", TargetLanguage: "en",
 		SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.UpdateMessageLinkSnapshot(ctx, "ja", "msg", "en", "after"); err != nil {
+	if err := s.UpdateMessageLinkSnapshot(ctx, "ja", "100000000000000014", "en", "after"); err != nil {
 		t.Fatal(err)
 	}
-	links, err := s.MessageTargets(ctx, "ja", "msg")
+	links, err := s.MessageTargets(ctx, "ja", "100000000000000014")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,7 +460,7 @@ func TestMessageOriginal(t *testing.T) {
 	ctx := context.Background()
 
 	link := MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "team",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "team",
 		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceAuthorID: "a", SourceContentSnapshot: "hello",
 	}
@@ -398,19 +472,19 @@ func TestMessageOriginal(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("reverse lookup failed: %#v ok=%v err=%v", got, ok, err)
 	}
-	if got.SourceChannelID != "ja" || got.SourceMessageID != "orig" || got.Snapshot != "hello" || got.TargetLanguage != "en" || got.IsSource {
+	if got.SourceChannelID != "ja" || got.SourceMessageID != "100000000000000002" || got.Snapshot != "hello" || got.TargetLanguage != "en" || got.IsSource {
 		t.Fatalf("unexpected reverse result: %#v", got)
 	}
 
-	got, ok, err = s.MessageOriginal(ctx, "ja", "orig")
+	got, ok, err = s.MessageOriginal(ctx, "ja", "100000000000000002")
 	if err != nil || !ok {
 		t.Fatalf("source lookup failed: %#v ok=%v err=%v", got, ok, err)
 	}
-	if !got.IsSource || got.SourceChannelID != "ja" || got.SourceMessageID != "orig" || got.Snapshot != "hello" {
+	if !got.IsSource || got.SourceChannelID != "ja" || got.SourceMessageID != "100000000000000002" || got.Snapshot != "hello" {
 		t.Fatalf("unexpected source result: %#v", got)
 	}
 
-	_, ok, err = s.MessageOriginal(ctx, "ja", "unknown")
+	_, ok, err = s.MessageOriginal(ctx, "ja", "100000000000000011")
 	if err != nil || ok {
 		t.Fatalf("want not found, got ok=%v err=%v", ok, err)
 	}

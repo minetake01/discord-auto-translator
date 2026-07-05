@@ -274,7 +274,7 @@ translation_groups (
     guild_id TEXT,     -- サーバーID
     display_name TEXT,
     created_by TEXT,   -- 作成者のユーザーID
-    created_at TEXT    -- RFC3339Nano
+    created_at INTEGER, -- Unix milliseconds
     PRIMARY KEY (guild_id, id)
 )
 
@@ -293,7 +293,7 @@ group_channels (
 
 -- メッセージの対応関係
 message_links (
-    source_message_id TEXT,
+    source_message_id INTEGER, -- Discord snowflake
     source_channel_id TEXT,
     group_id TEXT,
     target_channel_id TEXT,
@@ -318,14 +318,14 @@ thread_links (
 -- ピン留め状態（エコー防止用）
 pin_states (
     channel_id TEXT,
-    message_id TEXT,
+    message_id INTEGER, -- Discord snowflake
     pinned INTEGER,
     PRIMARY KEY (channel_id, message_id)
 )
 
 -- 未使用（将来実装用）
-processed_events (event_id, created_at)
-glossary_entries (guild_id, source_term, source_term_key, preferred_translation, attribute, always_include, created_by, created_at)
+processed_events (event_id, created_at INTEGER) -- Unix milliseconds
+glossary_entries (guild_id, source_term, source_term_key, preferred_translation, attribute, always_include, created_by, created_at INTEGER) -- Unix milliseconds
 ```
 
 ---

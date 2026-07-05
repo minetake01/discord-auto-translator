@@ -266,7 +266,7 @@ func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ch-ja", GroupID: "general",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ch-ja", GroupID: "general",
 		TargetChannelID: "ch-en", TargetMessageID: "translated", TargetLanguage: "en",
 		SourceAuthorID: "a", SourceContentSnapshot: "Hello from the original message",
 	}); err != nil {
@@ -281,7 +281,7 @@ func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 	msg := (*responses)[0]
 	for _, want := range []string{
 		"Go to original message",
-		"https://discord.com/channels/g1/ch-ja/orig",
+		"https://discord.com/channels/g1/ch-ja/100000000000000002",
 		"> Hello from the original message",
 	} {
 		if !strings.Contains(msg, want) {
@@ -306,7 +306,7 @@ func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ch-ja", GroupID: "general",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ch-ja", GroupID: "general",
 		TargetChannelID: "ch-ja", TargetMessageID: "translated-ja", TargetLanguage: "ja",
 		SourceAuthorID: "a", SourceContentSnapshot: "original text",
 	}); err != nil {
@@ -334,15 +334,15 @@ func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
-		SourceMessageID: "orig", SourceChannelID: "ch-en", GroupID: "general",
+		SourceMessageID: "100000000000000002", SourceChannelID: "ch-en", GroupID: "general",
 		TargetChannelID: "ch-ja", TargetMessageID: "translated", TargetLanguage: "ja",
-		SourceAuthorID: "a", SourceContentSnapshot: "original",
+		SourceAuthorID: "a", SourceContentSnapshot: "100000000000000003",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	responses := captureResponses(handler)
-	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "orig", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "100000000000000002", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
 	if len(*responses) != 1 || (*responses)[0] != uiStrings["en"][uiKeyAlreadyOriginal] {
 		t.Fatalf("response = %#v", *responses)
 	}
@@ -353,7 +353,7 @@ func TestHandleViewOriginalNotManaged(t *testing.T) {
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 
 	responses := captureResponses(handler)
-	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "unknown", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "100000000000000011", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
 	if len(*responses) != 1 || (*responses)[0] != uiStrings["en"][uiKeyNotManaged] {
 		t.Fatalf("response = %#v", *responses)
 	}

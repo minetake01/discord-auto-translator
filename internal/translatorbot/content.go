@@ -165,8 +165,8 @@ func discordSnowflakeTime(id string) (time.Time, bool) {
 	return time.UnixMilli(timestampMillis).UTC(), true
 }
 
-func snowflakeIDBefore(cutoff time.Time) string {
-	return strconv.FormatUint((uint64(cutoff.UnixMilli()-discordEpochMillis)<<22), 10)
+func snowflakeIDBefore(cutoff time.Time) int64 {
+	return (cutoff.UnixMilli() - discordEpochMillis) << 22
 }
 
 func truncateRunes(text string, maxRunes int, ellipsis string) string {
