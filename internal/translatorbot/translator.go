@@ -24,6 +24,7 @@ type TranslationContext struct {
 	ServerDescription string
 	ChannelName       string
 	ChannelTopic      string
+	ThreadName        string
 	History           []ChatContextMessage
 	ReplyChain        []ChatContextMessage
 	StyleInstructions string
@@ -235,7 +236,7 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 	if strings.TrimSpace(translationContext.StyleInstructions) != "" {
 		writeXMLElement(&b, "style_instructions", translationContext.StyleInstructions)
 	}
-	if translationContext.ServerName != "" || translationContext.ServerDescription != "" || translationContext.ChannelName != "" || translationContext.ChannelTopic != "" {
+	if translationContext.ServerName != "" || translationContext.ServerDescription != "" || translationContext.ChannelName != "" || translationContext.ChannelTopic != "" || translationContext.ThreadName != "" {
 		b.WriteString("<discord_context>")
 		if translationContext.ServerName != "" {
 			writeXMLElement(&b, "server_name", translationContext.ServerName)
@@ -248,6 +249,9 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 		}
 		if translationContext.ChannelTopic != "" {
 			writeXMLElement(&b, "channel_topic", translationContext.ChannelTopic)
+		}
+		if translationContext.ThreadName != "" {
+			writeXMLElement(&b, "thread_name", translationContext.ThreadName)
 		}
 		b.WriteString("</discord_context>")
 	}

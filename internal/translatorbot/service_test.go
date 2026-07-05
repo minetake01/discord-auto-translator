@@ -685,8 +685,8 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "msg-in-thread", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u",
-		AuthorDisplayName: "u", Content: "スレッド本文",
+		ID: "msg-in-thread", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "スレッド本文",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -696,6 +696,19 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] スレッド本文" {
 		t.Fatalf("unexpected thread message: %#v", got)
+	}
+	if len(translator.contexts) < 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	var msgContext *TranslationContext
+	for i := range translator.contexts {
+		if translator.contexts[i].Author == "u" {
+			msgContext = &translator.contexts[i]
+			break
+		}
+	}
+	if msgContext == nil || msgContext.ThreadName != "topic" {
+		t.Fatalf("unexpected thread name in context: %#v", translator.contexts)
 	}
 
 	translatorCalls := len(translator.contexts)
@@ -730,8 +743,11 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
+	discord := &fakeDiscordAPI{
+		channelNames: map[string]string{"ja": "announcements-ja", "thread-ja": "topic"},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveThreadLink(ctx, ThreadLink{GroupID: "g", SourceThreadID: "thread-ja", SourceChannelID: "ja", TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en"}); err != nil {
 		t.Fatal(err)
@@ -744,8 +760,15 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := service.HandleMessageUpdate(ctx, DiscordMessage{ID: "source-msg", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", Content: "after"}); err != nil {
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{ID: "source-msg", ChannelID: "thread-ja", GuildID: "guild", AuthorID: "u", ThreadName: "topic", Content: "after"}); err != nil {
 		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if got := translator.contexts[0]; got.ChannelName != "announcements-ja" || got.ThreadName != "topic" {
+		t.Fatalf("unexpected translation context: %#v", got)
 	}
 
 	if len(discord.webhookEdits) != 1 {

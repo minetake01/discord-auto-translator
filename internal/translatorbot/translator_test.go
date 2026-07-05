@@ -67,6 +67,26 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	}
 }
 
+func TestBuildTranslationPromptIncludesThreadName(t *testing.T) {
+	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{
+		ChannelName: "general-ja",
+		ThreadName:  "release discussion",
+	})
+	if !strings.Contains(prompt, "<thread_name>release discussion</thread_name>") {
+		t.Fatal(prompt)
+	}
+	if !strings.Contains(prompt, "<channel_name>general-ja</channel_name>") {
+		t.Fatal(prompt)
+	}
+
+	empty := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{
+		ChannelName: "general-ja",
+	})
+	if strings.Contains(empty, "<thread_name>") {
+		t.Fatal(empty)
+	}
+}
+
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
 	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, true, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{

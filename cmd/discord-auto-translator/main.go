@@ -98,8 +98,10 @@ func main() {
 		if strings.TrimSpace(m.Content) == "" {
 			return
 		}
+		parentChannelID, threadName := threadContext(s, m.ChannelID)
 		err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
+			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
 			Attachments: attachmentsFromDiscord(m.Attachments), Stickers: stickersFromDiscord(m.StickerItems),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
