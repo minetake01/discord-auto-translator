@@ -70,7 +70,7 @@ const (
 var uiStrings = map[string]map[uiKey]string{
 	"en": {
 		uiKeyViewOriginalLink: "Go to original message",
-		uiKeyOriginalMessage:  "Original message",
+		uiKeyOriginalMessage:  "Source",
 		uiKeyAlreadyOriginal:  "This message is already the original.",
 		uiKeyNotManaged:       "This message is not managed by the translation bot.",
 		uiKeyForwarded:        "Forwarded",
@@ -180,7 +180,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"zh-CN": {
 		uiKeyViewOriginalLink: "前往原文消息",
-		uiKeyOriginalMessage:  "查看原消息",
+		uiKeyOriginalMessage:  "查看来源",
 		uiKeyAlreadyOriginal:  "此消息已是原文。",
 		uiKeyNotManaged:       "此消息不受翻译机器人管理。",
 		uiKeyForwarded:        "已转发",
@@ -235,7 +235,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"zh-TW": {
 		uiKeyViewOriginalLink: "前往原文訊息",
-		uiKeyOriginalMessage:  "查看原始訊息",
+		uiKeyOriginalMessage:  "查看來源",
 		uiKeyAlreadyOriginal:  "此訊息已是原文。",
 		uiKeyNotManaged:       "此訊息不受翻譯機器人管理。",
 		uiKeyForwarded:        "已轉發",
@@ -290,7 +290,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"ko": {
 		uiKeyViewOriginalLink: "원문 메시지로 이동",
-		uiKeyOriginalMessage:  "원문 보기",
+		uiKeyOriginalMessage:  "출처 보기",
 		uiKeyAlreadyOriginal:  "이 메시지는 이미 원문입니다.",
 		uiKeyNotManaged:       "이 메시지는 번역 봇이 관리하지 않습니다.",
 		uiKeyForwarded:        "전달됨",
@@ -345,7 +345,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"fr": {
 		uiKeyViewOriginalLink: "Aller au message original",
-		uiKeyOriginalMessage:  "Voir le message original",
+		uiKeyOriginalMessage:  "Source",
 		uiKeyAlreadyOriginal:  "Ce message est déjà l'original.",
 		uiKeyNotManaged:       "Ce message n'est pas géré par le bot de traduction.",
 		uiKeyForwarded:        "Transféré",
@@ -400,7 +400,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"de": {
 		uiKeyViewOriginalLink: "Zur Originalnachricht",
-		uiKeyOriginalMessage:  "Originalnachricht anzeigen",
+		uiKeyOriginalMessage:  "Quelle",
 		uiKeyAlreadyOriginal:  "Diese Nachricht ist bereits das Original.",
 		uiKeyNotManaged:       "Diese Nachricht wird vom Übersetzungsbot nicht verwaltet.",
 		uiKeyForwarded:        "Weitergeleitet",
@@ -455,7 +455,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"es": {
 		uiKeyViewOriginalLink: "Ir al mensaje original",
-		uiKeyOriginalMessage:  "Ver mensaje original",
+		uiKeyOriginalMessage:  "Ver fuente",
 		uiKeyAlreadyOriginal:  "Este mensaje ya es el original.",
 		uiKeyNotManaged:       "Este mensaje no está gestionado por el bot de traducción.",
 		uiKeyForwarded:        "Reenviado",
@@ -510,7 +510,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"pt-BR": {
 		uiKeyViewOriginalLink: "Ir para a mensagem original",
-		uiKeyOriginalMessage:  "Ver mensagem original",
+		uiKeyOriginalMessage:  "Ver fonte",
 		uiKeyAlreadyOriginal:  "Esta mensagem já é o original.",
 		uiKeyNotManaged:       "Esta mensagem não é gerenciada pelo bot de tradução.",
 		uiKeyForwarded:        "Encaminhado",
@@ -565,7 +565,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"it": {
 		uiKeyViewOriginalLink: "Vai al messaggio originale",
-		uiKeyOriginalMessage:  "Visualizza messaggio originale",
+		uiKeyOriginalMessage:  "Fonte",
 		uiKeyAlreadyOriginal:  "Questo messaggio è già l'originale.",
 		uiKeyNotManaged:       "Questo messaggio non è gestito dal bot di traduzione.",
 		uiKeyForwarded:        "Inoltrato",
@@ -620,7 +620,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"id": {
 		uiKeyViewOriginalLink: "Buka pesan asli",
-		uiKeyOriginalMessage:  "Lihat pesan asli",
+		uiKeyOriginalMessage:  "Lihat sumber",
 		uiKeyAlreadyOriginal:  "Pesan ini sudah merupakan pesan asli.",
 		uiKeyNotManaged:       "Pesan ini tidak dikelola oleh bot terjemahan.",
 		uiKeyForwarded:        "Diteruskan",
@@ -675,7 +675,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"th": {
 		uiKeyViewOriginalLink: "ไปยังข้อความต้นฉบับ",
-		uiKeyOriginalMessage:  "ดูข้อความต้นฉบับ",
+		uiKeyOriginalMessage:  "ดูต้นฉบับ",
 		uiKeyAlreadyOriginal:  "ข้อความนี้เป็นข้อความต้นฉบับอยู่แล้ว",
 		uiKeyNotManaged:       "ข้อความนี้ไม่ได้อยู่ภายใต้การจัดการของบอทแปลภาษา",
 		uiKeyForwarded:        "ส่งต่อแล้ว",
@@ -730,7 +730,7 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 	"vi": {
 		uiKeyViewOriginalLink: "Đi tới tin nhắn gốc",
-		uiKeyOriginalMessage:  "Xem tin nhắn gốc",
+		uiKeyOriginalMessage:  "Xem nguồn",
 		uiKeyAlreadyOriginal:  "Tin nhắn này đã là bản gốc.",
 		uiKeyNotManaged:       "Tin nhắn này không được bot dịch quản lý.",
 		uiKeyForwarded:        "Đã chuyển tiếp",
