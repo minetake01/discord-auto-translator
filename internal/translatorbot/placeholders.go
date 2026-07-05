@@ -39,9 +39,7 @@ func (p *Protector) Restore(text string) string {
 func (p *Protector) token() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "__DAT_KEEP_" + strings.NewReplacer("-", "_").Replace(randomFallback()) + "__"
+		return "__DAT_KEEP_FALLBACK__"
 	}
 	return "__DAT_KEEP_" + strings.ToUpper(hex.EncodeToString(b[:])) + "__"
 }
-
-func randomFallback() string { return "fallback" }

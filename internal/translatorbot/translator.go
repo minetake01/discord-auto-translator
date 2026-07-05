@@ -212,7 +212,7 @@ func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryE
 	if hasReplyChain {
 		b.WriteString("<reply_context> contains the direct reply chain for <final_message> (oldest first, up to 3 messages). Prefer <reply_context> over <recent_context> when resolving pronouns, references, and terminology continuity.\n")
 	}
-	b.WriteString("Preserve markdown, mentions, URLs, custom emoji, ||spoiler|| markers, __DAT_KEEP_...__ placeholders, line breaks, and tone.")
+	b.WriteString("Preserve markdown, __DAT_KEEP_...__ placeholders, line breaks, and tone.")
 	return b.String()
 }
 
