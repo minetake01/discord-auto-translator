@@ -55,6 +55,7 @@ const geminiModel = "gemini-3.1-flash-lite"
 - **best-effort fan-out**: 複数ターゲットへの転送中に一部が失敗しても残りは続行し、エラーは `errors.Join` で集約して返します。
 - **ピン留め同期**: `MESSAGE_UPDATE` で `pin_states` テーブルに保存済みの状態と `Pinned` を比較し、変化時のみ `SyncPin` を実行します。Webhook ミラー側のピン留めも双方向に同期し、bot 自身のピン操作によるエコーは状態比較で抑止します。
 - **内容不変の編集スキップ**: ピン留めなど本文が変わらない `MESSAGE_UPDATE` では `source_content_snapshot` と比較して再翻訳をスキップします。
+- **転送snapshotの再利用**: `FORWARD` は immutable な `message_snapshots[0]` から取り込みます。送信先に対応する既存ミラーがあれば翻訳済み本文を再利用し、対応がない外部本文だけを翻訳します。添付・ステッカーは既存のURL化処理を使い、保存snapshotには転送本文を記録します。
 
 ---
 

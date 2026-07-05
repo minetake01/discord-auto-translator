@@ -112,7 +112,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "") {
+	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil) {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -161,6 +161,34 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 	}
 	if len(targets) == 0 {
 		return nil
+	}
+	if m.ForwardedMessage != nil {
+		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
+		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, source.GroupID)
+		contents, err := s.forwardedContents(ctx, m, targets, translationContext)
+		if err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+				return nil
+			}
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
+			return err
+		}
+		var errs []error
+		for _, target := range targets {
+			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
+			err := s.sendAndSaveLink(ctx, target, "", WebhookSend{
+				Content: contents[target.ChannelID], Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
+			}, MessageLink{
+				SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
+				TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
+				SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.ForwardedMessage.Content,
+			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
+			}
+		}
+		return errors.Join(errs...)
 	}
 
 	if strings.TrimSpace(m.Content) == "" {
@@ -311,6 +339,33 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
 	}
 	if synced {
+		return nil
+	}
+	if m.ForwardedMessage != nil {
+		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
+		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID)
+		forwardTarget := *target
+		forwardTarget.ChannelID = thread.TargetThreadID
+		contents, err := s.forwardedContents(ctx, m, []GroupChannel{forwardTarget}, translationContext)
+		if err != nil {
+			if errors.Is(err, errTranslationRateLimited) {
+				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
+				return nil
+			}
+			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
+			return err
+		}
+		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
+		err = s.sendAndSaveLink(ctx, *target, thread.TargetThreadID, WebhookSend{
+			Content: contents[thread.TargetThreadID], Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID,
+		}, MessageLink{
+			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
+			TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
+			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.ForwardedMessage.Content,
+		})
+		if err != nil {
+			return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
+		}
 		return nil
 	}
 
@@ -577,6 +632,106 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
 	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
 	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
+}
+
+type forwardedTargetContent struct {
+	body        string
+	jumpURL     string
+	needsAssets bool
+}
+
+func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, targets []GroupChannel, translationContext TranslationContext) (map[string]string, error) {
+	forwarded := m.ForwardedMessage
+	if forwarded == nil {
+		return nil, errors.New("forwarded message is required")
+	}
+
+	prepared := make(map[string]forwardedTargetContent, len(targets))
+	translateTargets := make([]GroupChannel, 0, len(targets))
+	for _, target := range targets {
+		_, mirrorChannelID, mirrorMessageID, ok, err := s.store.MessageQuoteTarget(ctx, forwarded.ChannelID, forwarded.MessageID, target.ChannelID)
+		if err != nil {
+			return nil, err
+		}
+		if ok && mirrorChannelID == target.ChannelID && mirrorMessageID != "" {
+			body := forwarded.Content
+			needsAssets := mirrorChannelID == forwarded.ChannelID && mirrorMessageID == forwarded.MessageID
+			if mirrorChannelID != forwarded.ChannelID || mirrorMessageID != forwarded.MessageID {
+				body, err = s.discord.MessageContent(mirrorChannelID, mirrorMessageID)
+				if err != nil {
+					return nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, err)
+				}
+			}
+			prepared[target.ChannelID] = forwardedTargetContent{
+				body: mirroredMessageBody(body), jumpURL: MessageJumpURL(m.GuildID, mirrorChannelID, mirrorMessageID),
+				needsAssets: needsAssets,
+			}
+			continue
+		}
+		translateTargets = append(translateTargets, target)
+	}
+
+	translations := make(map[string]string, len(translateTargets))
+	if len(translateTargets) > 0 {
+		if strings.TrimSpace(forwarded.Content) == "" || !hasTranslatableText(forwarded.Content) {
+			for _, target := range translateTargets {
+				translations[target.Language] = forwarded.Content
+			}
+		} else {
+			glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
+			if err != nil {
+				return nil, err
+			}
+			languages := make([]string, 0, len(translateTargets))
+			for _, target := range translateTargets {
+				languages = append(languages, target.Language)
+			}
+			if err := s.checkTranslationRateLimit(m.GuildID, languages, forwarded.Content, translationContext, glossary); err != nil {
+				return nil, err
+			}
+			result, err := s.translator.TranslateMulti(ctx, languages, forwarded.Content, translationContext, glossary)
+			if err != nil {
+				return nil, err
+			}
+			s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
+			translations = result.Translations
+		}
+		for _, target := range translateTargets {
+			body, ok := translations[target.Language]
+			if !ok {
+				return nil, fmt.Errorf("missing translation for %q", target.Language)
+			}
+			jumpGuildID := forwarded.GuildID
+			if jumpGuildID == "" {
+				jumpGuildID = m.GuildID
+			}
+			prepared[target.ChannelID] = forwardedTargetContent{
+				body:        s.postProcessContent(ctx, m.GuildID, body, target.Language),
+				jumpURL:     MessageJumpURL(jumpGuildID, forwarded.ChannelID, forwarded.MessageID),
+				needsAssets: true,
+			}
+		}
+	}
+
+	contents := make(map[string]string, len(targets))
+	for _, target := range targets {
+		item := prepared[target.ChannelID]
+		body := item.body
+		var err error
+		if item.needsAssets {
+			body, err = messageContentWithAssetURLs(body, forwarded.Attachments, forwarded.Stickers)
+			if err != nil {
+				return nil, err
+			}
+		}
+		header := fmt.Sprintf("-# %s · %s", localizedUIString(target.Language, uiKeyForwarded), item.jumpURL)
+		if strings.TrimSpace(body) == "" {
+			contents[target.ChannelID] = header
+		} else {
+			contents[target.ChannelID] = header + "\n" + body
+		}
+	}
+	return contents, nil
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
@@ -1065,6 +1220,22 @@ func firstLineWithoutPseudoReply(content string) string {
 		}
 	}
 	return ""
+}
+
+func mirroredMessageBody(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	for len(lines) > 0 && (isPseudoReplyLine(lines[0]) || isForwardedHeaderLine(lines[0])) {
+		lines = lines[1:]
+		for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+			lines = lines[1:]
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func isForwardedHeaderLine(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.HasPrefix(line, "-# ") && strings.Contains(line, " · https://discord.com/channels/")
 }
 
 func isPseudoReplyLine(line string) bool {

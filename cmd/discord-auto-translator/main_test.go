@@ -88,6 +88,51 @@ func TestReferencedMessageFields(t *testing.T) {
 	}
 }
 
+func TestReferencedMessageFieldsIgnoresForward(t *testing.T) {
+	id, channelID, content := referencedMessageFields(
+		&discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "ref", ChannelID: "ch"},
+		&discordgo.Message{ID: "ref", Content: "not a reply"},
+	)
+	if id != "" || channelID != "" || content != "" {
+		t.Fatalf("forward leaked into reply fields: %q %q %q", id, channelID, content)
+	}
+}
+
+func TestForwardedMessageFields(t *testing.T) {
+	got, err := forwardedMessageFields(
+		&discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "message", ChannelID: "channel", GuildID: "origin-guild"},
+		[]discordgo.MessageSnapshot{{Message: &discordgo.Message{
+			Content:      "snapshot body",
+			Attachments:  []*discordgo.MessageAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png"}},
+			StickerItems: []*discordgo.StickerItem{{ID: "sticker", Name: "wave", FormatType: discordgo.StickerFormatTypePNG}},
+		}}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.MessageID != "message" || got.ChannelID != "channel" || got.GuildID != "origin-guild" || got.Content != "snapshot body" {
+		t.Fatalf("unexpected forward: %#v", got)
+	}
+	if len(got.Attachments) != 1 || len(got.Stickers) != 1 {
+		t.Fatalf("snapshot assets were not mapped: %#v", got)
+	}
+}
+
+func TestForwardedMessageFieldsRejectsMalformedSnapshots(t *testing.T) {
+	ref := &discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "message", ChannelID: "channel"}
+	for name, snapshots := range map[string][]discordgo.MessageSnapshot{
+		"missing":     nil,
+		"nil message": {{Message: nil}},
+		"multiple":    {{Message: &discordgo.Message{}}, {Message: &discordgo.Message{}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, err := forwardedMessageFields(ref, snapshots); err == nil || got != nil {
+				t.Fatalf("got %#v, err %v", got, err)
+			}
+		})
+	}
+}
+
 func TestStickersFromDiscordMapsStickerFields(t *testing.T) {
 	got := stickersFromDiscord([]*discordgo.StickerItem{
 		nil,
