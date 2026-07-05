@@ -314,6 +314,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	if snippet == "" {
 		return "", nil
 	}
+	snippet = normalizeMarkdownHeaderSnippet(snippet)
 	snippet = truncateRunes(snippet, 40, "...")
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
 	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)

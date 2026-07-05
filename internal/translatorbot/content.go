@@ -101,6 +101,28 @@ func firstLineWithoutPseudoReply(content string) string {
 	return ""
 }
 
+// normalizeMarkdownHeaderSnippet converts an ATX markdown header line into
+// Discord subtext form for use in pseudo-reply snippets.
+func normalizeMarkdownHeaderSnippet(line string) string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "#") {
+		return line
+	}
+	i := 0
+	for i < len(line) && line[i] == '#' {
+		i++
+	}
+	if i >= len(line) || line[i] != ' ' {
+		return line
+	}
+	title := strings.TrimSpace(line[i+1:])
+	title = strings.TrimRight(title, " #")
+	if title == "" {
+		return line
+	}
+	return "-# " + title
+}
+
 // mirroredMessageBody strips bot-generated pseudo-reply quotes and forwarded
 // headers from the top of a mirrored message, leaving only the body.
 func mirroredMessageBody(content string) string {

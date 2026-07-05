@@ -878,6 +878,44 @@ func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 	}
 }
 
+func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{name: "h1", line: "# Title", want: "-# Title"},
+		{name: "h2", line: "## Title", want: "-# Title"},
+		{name: "h3 with trailing hashes", line: "### Title ###", want: "-# Title"},
+		{name: "plain text", line: "plain text", want: "plain text"},
+		{name: "no space after hash", line: "#no-space", want: "#no-space"},
+		{name: "forwarded header", line: "-# Forwarded · https://discord.com/channels/g/c/m", want: "-# Forwarded · https://discord.com/channels/g/c/m"},
+		{name: "empty title", line: "# ", want: "#"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeMarkdownHeaderSnippet(tt.line); got != tt.want {
+				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReplyQuoteConvertsMarkdownHeaderSnippet(t *testing.T) {
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	got, err := service.replyQuote(context.Background(), DiscordMessage{
+		GuildID: "guild", ChannelID: "en", ReferencedMessageID: "source",
+		ReferencedMessageContent: "## Important\nbody",
+	}, "target", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "> -# Important · [Source](https://discord.com/channels/guild/en/source)"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
