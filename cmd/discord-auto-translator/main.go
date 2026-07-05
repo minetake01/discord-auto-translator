@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -60,8 +61,13 @@ func main() {
 			return
 		}
 		parentChannelID, threadName := threadContext(s, m.ChannelID)
+		forwarded, err := forwardedMessageFields(m.MessageReference, m.MessageSnapshots)
+		if err != nil {
+			log.Printf("message create forward payload: %v", err)
+			return
+		}
 		refID, refChannelID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
-		err := service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
+		err = service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), Content: m.Content,
@@ -70,6 +76,7 @@ func main() {
 			ReferencedMessageID:        refID,
 			ReferencedMessageChannelID: refChannelID,
 			ReferencedMessageContent:   refContent,
+			ForwardedMessage:           forwarded,
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 		})
@@ -220,6 +227,9 @@ func authorDisplayName(author *discordgo.User, member *discordgo.Member) string 
 }
 
 func referencedMessageFields(ref *discordgo.MessageReference, referenced *discordgo.Message) (id, channelID, content string) {
+	if ref != nil && ref.Type == discordgo.MessageReferenceTypeForward {
+		return "", "", ""
+	}
 	if ref != nil {
 		id = ref.MessageID
 		channelID = ref.ChannelID
@@ -234,6 +244,24 @@ func referencedMessageFields(ref *discordgo.MessageReference, referenced *discor
 		content = referenced.Content
 	}
 	return id, channelID, content
+}
+
+func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discordgo.MessageSnapshot) (*translatorbot.DiscordForwardedMessage, error) {
+	if ref == nil || ref.Type != discordgo.MessageReferenceTypeForward {
+		return nil, nil
+	}
+	if ref.MessageID == "" || ref.ChannelID == "" {
+		return nil, fmt.Errorf("forward reference requires message_id and channel_id")
+	}
+	if len(snapshots) != 1 || snapshots[0].Message == nil {
+		return nil, fmt.Errorf("forward reference requires exactly one non-nil snapshot, got %d", len(snapshots))
+	}
+	snapshot := snapshots[0].Message
+	return &translatorbot.DiscordForwardedMessage{
+		MessageID: ref.MessageID, ChannelID: ref.ChannelID, GuildID: ref.GuildID, Content: snapshot.Content,
+		Attachments: attachmentsFromDiscord(snapshot.Attachments),
+		Stickers:    stickersFromDiscord(snapshot.StickerItems),
+	}, nil
 }
 
 func threadContext(s *discordgo.Session, channelID string) (string, string) {

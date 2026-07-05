@@ -58,12 +58,22 @@ type DiscordMessage struct {
 	ReferencedMessageID        string
 	ReferencedMessageChannelID string
 	ReferencedMessageContent   string
+	ForwardedMessage           *DiscordForwardedMessage
 	TTS                        bool
 	WebhookID                  string
 	Bot                        bool
 	Edited                     bool
 	ThreadSystemMessage        bool
 	ThreadStarterMessage       bool
+}
+
+type DiscordForwardedMessage struct {
+	MessageID   string
+	ChannelID   string
+	GuildID     string
+	Content     string
+	Attachments []DiscordAttachment
+	Stickers    []DiscordSticker
 }
 
 type DiscordAttachment struct {

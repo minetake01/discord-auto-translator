@@ -282,6 +282,123 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	}
 }
 
+func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "original", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceContentSnapshot: "元本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discord := &fakeDiscordAPI{messageContents: map[string]string{
+		"en\x00translated": "> old quote · [Original message](https://discord.com/channels/guild/ja/old)\n\nTranslated first line\nTranslated second line",
+	}}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "original", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "-# Forwarded · https://discord.com/channels/guild/en/translated\nTranslated first line\nTranslated second line"
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("reused forward was translated: %#v", translator.contexts)
+	}
+	links, err := store.MessageTargets(ctx, "ja", "forward")
+	if err != nil || len(links) != 1 || links[0].SourceContentSnapshot != "元本文" {
+		t.Fatalf("forward snapshot was not saved: %#v, err=%v", links, err)
+	}
+}
+
+func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{
+			MessageID: "outside", ChannelID: "outside-channel", GuildID: "outside-guild", Content: "外部本文",
+			Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/file.png?ex=1&is=2&hm=3", Filename: "file.png"}},
+			Stickers:    []DiscordSticker{{ID: "sticker", FormatType: stickerFormatPNG}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "-# Forwarded · https://discord.com/channels/outside-guild/outside-channel/outside\n[en] 外部本文\nhttps://cdn.discordapp.com/file.png\nhttps://cdn.discordapp.com/stickers/sticker.png"
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("external forward translation calls: %d", len(translator.contexts))
+	}
+}
+
+func TestForwardWithoutTranslatableTextSkipsTranslation(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forward", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "outside", ChannelID: "outside-channel", GuildID: "guild", Content: "https://example.com `<@123>`"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("non-translatable forward was translated: %#v", translator.contexts)
+	}
+	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/outside\nhttps://example.com `<@123>`"
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+}
+
+func TestForwardMirrorsIntoThread(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "forward", ChannelID: "thread-ja", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
+		AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "outside", ChannelID: "outside-channel", GuildID: "guild", Content: "外部本文"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
+		t.Fatalf("unexpected thread send: %#v", discord.sent)
+	}
+	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/outside\n[en] 外部本文"
+	if discord.sent[0].Content != want {
+		t.Fatalf("got %q, want %q", discord.sent[0].Content, want)
+	}
+}
+
+func TestMirroredMessageBodyStripsGeneratedHeaders(t *testing.T) {
+	input := "-# Forwarded · https://discord.com/channels/g/c/m\n> quote · [Original message](https://discord.com/channels/g/c/q)\n\nbody\nsecond"
+	if got, want := mirroredMessageBody(input), "body\nsecond"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
 func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
