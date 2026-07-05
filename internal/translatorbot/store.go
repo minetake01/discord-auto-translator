@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,7 +53,7 @@ func (s *Store) Init(ctx context.Context) error {
 			guild_id TEXT NOT NULL,
 			display_name TEXT NOT NULL,
 			created_by TEXT NOT NULL,
-			created_at TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
 			style_preset TEXT NOT NULL DEFAULT '',
 			style_custom TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (guild_id, id)
@@ -69,7 +71,7 @@ func (s *Store) Init(ctx context.Context) error {
 			FOREIGN KEY (guild_id, group_id) REFERENCES translation_groups(guild_id, id) ON DELETE CASCADE
 		)`,
 		`CREATE TABLE IF NOT EXISTS message_links (
-			source_message_id TEXT NOT NULL,
+			source_message_id INTEGER NOT NULL,
 			source_channel_id TEXT NOT NULL,
 			group_id TEXT NOT NULL,
 			target_channel_id TEXT NOT NULL,
@@ -91,13 +93,13 @@ func (s *Store) Init(ctx context.Context) error {
 		)`,
 		`CREATE TABLE IF NOT EXISTS pin_states (
 			channel_id TEXT NOT NULL,
-			message_id TEXT NOT NULL,
+			message_id INTEGER NOT NULL,
 			pinned INTEGER NOT NULL,
 			PRIMARY KEY (channel_id, message_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS processed_events (
 			event_id TEXT PRIMARY KEY,
-			created_at TEXT NOT NULL
+			created_at INTEGER NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS glossary_entries (
 			guild_id TEXT NOT NULL,
@@ -107,22 +109,84 @@ func (s *Store) Init(ctx context.Context) error {
 			attribute TEXT NOT NULL DEFAULT '',
 			always_include INTEGER NOT NULL DEFAULT 0,
 			created_by TEXT NOT NULL,
-			created_at TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
 			PRIMARY KEY (guild_id, source_term_key)
 		)`,
+	}
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_group_channels_guild_channel ON group_channels(guild_id, channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_links_source_channel_message ON message_links(source_channel_id, source_message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_links_target_channel_message ON message_links(target_channel_id, target_message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_links_group_source_channel ON message_links(group_id, source_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_links_group_target_channel ON message_links(group_id, target_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_source_thread ON thread_links(source_thread_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_target_thread ON thread_links(target_thread_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_target_thread ON thread_links(group_id, target_thread_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_source_channel ON thread_links(group_id, source_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_target_channel ON thread_links(group_id, target_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_pin_states_message ON pin_states(message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_processed_events_created_at ON processed_events(created_at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return err
 		}
 	}
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE thread_links ADD COLUMN source_channel_id TEXT NOT NULL DEFAULT ''`)
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE message_links ADD COLUMN source_author_display_name TEXT NOT NULL DEFAULT ''`)
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_preset TEXT NOT NULL DEFAULT ''`)
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE translation_groups ADD COLUMN style_custom TEXT NOT NULL DEFAULT ''`)
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE glossary_entries ADD COLUMN always_include INTEGER NOT NULL DEFAULT 0`)
-	_, _ = s.db.ExecContext(ctx, `ALTER TABLE glossary_entries ADD COLUMN attribute TEXT NOT NULL DEFAULT ''`)
+	if err := s.validateOptimizedSchema(ctx); err != nil {
+		return err
+	}
+	for _, stmt := range indexes {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func (s *Store) validateOptimizedSchema(ctx context.Context) error {
+	required := map[string]map[string]string{
+		"translation_groups": {"created_at": "INTEGER"},
+		"message_links":      {"source_message_id": "INTEGER"},
+		"pin_states":         {"message_id": "INTEGER"},
+		"processed_events":   {"created_at": "INTEGER"},
+		"glossary_entries":   {"created_at": "INTEGER"},
+	}
+	for table, columns := range required {
+		rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+		if err != nil {
+			return err
+		}
+		found := make(map[string]string, len(columns))
+		for rows.Next() {
+			var cid, notNull, primaryKey int
+			var name, declaredType string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &declaredType, &notNull, &defaultValue, &primaryKey); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if _, ok := columns[name]; ok {
+				found[name] = strings.ToUpper(declaredType)
+			}
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		for column, want := range columns {
+			if found[column] != want {
+				return fmt.Errorf("incompatible SQLite schema: %s.%s must be %s (run the one-time migration)", table, column, want)
+			}
+		}
+	}
+	return nil
+}
+
+func parseDiscordSnowflakeID(field, id string) (int64, error) {
+	value, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s must be a positive decimal int64: %q", field, id)
+	}
+	return value, nil
 }
 
 func (s *Store) CreateGroupWithChannel(ctx context.Context, g TranslationGroup, ch GroupChannel) error {
@@ -135,7 +199,7 @@ func (s *Store) CreateGroupWithChannel(ctx context.Context, g TranslationGroup, 
 		g.CreatedAt = time.Now().UTC()
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO translation_groups(id,guild_id,display_name,created_by,created_at) VALUES(?,?,?,?,?)`,
-		g.ID, g.GuildID, g.DisplayName, g.CreatedBy, g.CreatedAt.Format(time.RFC3339Nano))
+		g.ID, g.GuildID, g.DisplayName, g.CreatedBy, g.CreatedAt.UnixMilli())
 	if err != nil {
 		if strings.Contains(err.Error(), "constraint") {
 			return ErrDuplicateGroup
@@ -254,11 +318,11 @@ func (s *Store) Groups(ctx context.Context, guildID, query string, limit int) ([
 	var out []TranslationGroup
 	for rows.Next() {
 		var g TranslationGroup
-		var ts string
+		var ts int64
 		if err := rows.Scan(&g.ID, &g.GuildID, &g.DisplayName, &g.CreatedBy, &ts, &g.StylePreset, &g.StyleCustom); err != nil {
 			return nil, err
 		}
-		g.CreatedAt, _ = time.Parse(time.RFC3339Nano, ts)
+		g.CreatedAt = time.UnixMilli(ts).UTC()
 		out = append(out, g)
 	}
 	return out, rows.Err()
@@ -294,7 +358,11 @@ func scanChannels(rows *sql.Rows) ([]GroupChannel, error) {
 }
 
 func (s *Store) GetPinState(ctx context.Context, channelID, messageID string) (pinned bool, known bool, err error) {
-	row := s.db.QueryRowContext(ctx, `SELECT pinned FROM pin_states WHERE channel_id=? AND message_id=?`, channelID, messageID)
+	messageIDValue, err := parseDiscordSnowflakeID("message_id", messageID)
+	if err != nil {
+		return false, false, err
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT pinned FROM pin_states WHERE channel_id=? AND message_id=?`, channelID, messageIDValue)
 	var value int
 	err = row.Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -307,17 +375,25 @@ func (s *Store) GetPinState(ctx context.Context, channelID, messageID string) (p
 }
 
 func (s *Store) SavePinState(ctx context.Context, channelID, messageID string, pinned bool) error {
+	messageIDValue, err := parseDiscordSnowflakeID("message_id", messageID)
+	if err != nil {
+		return err
+	}
 	value := 0
 	if pinned {
 		value = 1
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO pin_states(channel_id,message_id,pinned) VALUES(?,?,?)`, channelID, messageID, value)
+	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO pin_states(channel_id,message_id,pinned) VALUES(?,?,?)`, channelID, messageIDValue, value)
 	return err
 }
 
 func (s *Store) UpdateMessageLinkSnapshot(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID, snapshot string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE message_links SET source_content_snapshot=? WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=?`,
-		snapshot, sourceChannelID, sourceMessageID, targetChannelID)
+	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE message_links SET source_content_snapshot=? WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=?`,
+		snapshot, sourceChannelID, sourceMessageIDValue, targetChannelID)
 	return err
 }
 
@@ -325,13 +401,21 @@ func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
 	if s.saveMessageLinkErr != nil {
 		return s.saveMessageLinkErr
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
-		l.SourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot)
+	sourceMessageID, err := parseDiscordSnowflakeID("source_message_id", l.SourceMessageID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot)
 	return err
 }
 
 func (s *Store) DeleteMessageLinksBySource(ctx context.Context, sourceChannelID, sourceMessageID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
+	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
 	return err
 }
 
@@ -341,7 +425,11 @@ func (s *Store) DeleteMessageLinksByChannel(ctx context.Context, channelID strin
 }
 
 func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessageID string) ([]MessageLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
+	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
 	if err != nil {
 		return nil, err
 	}
@@ -486,13 +574,17 @@ func (s *Store) RecentMessageHistory(ctx context.Context, channelIDs []string, e
 	if limit <= 0 || len(channelIDs) == 0 {
 		return nil, nil
 	}
+	excludeMessageIDValue, err := parseDiscordSnowflakeID("exclude_message_id", excludeMessageID)
+	if err != nil {
+		return nil, err
+	}
 	placeholders := strings.Repeat("?,", len(channelIDs))
 	placeholders = placeholders[:len(placeholders)-1]
 	args := make([]any, 0, len(channelIDs)+2)
 	for _, channelID := range channelIDs {
 		args = append(args, channelID)
 	}
-	args = append(args, excludeMessageID, limit)
+	args = append(args, excludeMessageIDValue, limit)
 	query := `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot
 		FROM message_links
 		WHERE source_channel_id IN (` + placeholders + `) AND source_message_id<>?
@@ -610,12 +702,12 @@ func (s *Store) DeleteThreadLinks(ctx context.Context, threadID string) error {
 
 func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
 	maxID := snowflakeIDBefore(cutoff.UTC())
-	res, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE CAST(source_message_id AS INTEGER) < ?`, maxID)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_message_id < ?`, maxID)
 	if err != nil {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM pin_states WHERE CAST(message_id AS INTEGER) < ?`, maxID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM pin_states WHERE message_id < ?`, maxID); err != nil {
 		return n, err
 	}
 	return n, nil
@@ -635,8 +727,9 @@ func scanThreadLinks(rows *sql.Rows) ([]ThreadLink, error) {
 }
 
 func (s *Store) MarkProcessed(ctx context.Context, id string) (bool, error) {
-	_, _ = s.db.ExecContext(ctx, `DELETE FROM processed_events WHERE created_at < ?`, time.Now().Add(-10*time.Minute).UTC().Format(time.RFC3339Nano))
-	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO processed_events(event_id,created_at) VALUES(?,?)`, id, time.Now().UTC().Format(time.RFC3339Nano))
+	now := time.Now().UTC()
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM processed_events WHERE created_at < ?`, now.Add(-10*time.Minute).UnixMilli())
+	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO processed_events(event_id,created_at) VALUES(?,?)`, id, now.UnixMilli())
 	if err != nil {
 		return false, err
 	}
@@ -690,7 +783,7 @@ func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translat
 			always_include=excluded.always_include,
 			created_by=excluded.created_by,
 			created_at=excluded.created_at`,
-		guildID, term, key, translation, attribute, alwaysInclude, createdBy, time.Now().UTC().Format(time.RFC3339Nano))
+		guildID, term, key, translation, attribute, alwaysInclude, createdBy, time.Now().UTC().UnixMilli())
 	return err
 }
 
