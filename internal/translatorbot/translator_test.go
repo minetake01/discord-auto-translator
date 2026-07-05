@@ -132,7 +132,7 @@ func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) 
 
 func TestBuildMultiTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
 	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, true)
-	if !strings.Contains(withStyle, "Apply the tone and register in <style_instructions>") {
+	if !strings.Contains(withStyle, "Use <style_instructions> as the default for choices the source leaves open") {
 		t.Fatal(withStyle)
 	}
 

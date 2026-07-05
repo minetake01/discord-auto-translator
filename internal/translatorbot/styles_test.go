@@ -19,7 +19,7 @@ func TestResolveStyleInstructions(t *testing.T) {
 	if got := ResolveStyleInstructions("netslang", ""); !strings.Contains(got, "2ch/5ch-style") {
 		t.Fatalf("netslang = %q", got)
 	}
-	if got := ResolveStyleInstructions("tweet", ""); !strings.Contains(got, "social media post") {
+	if got := ResolveStyleInstructions("tweet", ""); !strings.Contains(got, "social media phrasing") {
 		t.Fatalf("tweet = %q", got)
 	}
 }
