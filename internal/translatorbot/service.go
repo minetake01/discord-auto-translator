@@ -5,22 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 )
 
 const translationHistoryLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
-const discordEpochMillis = 1420070400000
-const discordMessageContentLimit = 2000
 
 var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 
+// Service implements the mirroring pipeline: it receives normalized Discord
+// events, translates content through the Translator, and fans the result out
+// to every peer channel of a translation group via webhooks.
 type Service struct {
 	store         *Store
 	discord       DiscordAPI
@@ -46,250 +43,62 @@ func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
 	s.rateLimiter = limiter
 }
 
+func (s *Service) SetPublicBaseURL(publicBaseURL string) {
+	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+}
+
+// postProcessContent applies target-language link rewriting to translated
+// content: hreflang alternate URLs first, then managed Discord references.
 func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetLanguage string) string {
 	text = ReplaceAlternateURLs(ctx, text, targetLanguage, s.httpClient)
 	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
 }
 
-func (s *Service) SetPublicBaseURL(publicBaseURL string) {
-	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
-}
-
-func messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID string) string {
-	return "msglink:" + sourceChannelID + ":" + sourceMessageID + ":" + targetChannelID
-}
-
-func (s *Service) lockMessage(channelID, messageID string) func() {
-	key := channelID + "\x00" + messageID
-	mu := &sync.Mutex{}
-	actual, _ := s.messageLocks.LoadOrStore(key, mu)
-	m := actual.(*sync.Mutex)
-	m.Lock()
-	return m.Unlock
-}
-
-func (s *Service) targetAlreadySynced(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string) (bool, error) {
-	key := messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID)
-	if processed, err := s.store.IsEventProcessed(ctx, key); err != nil {
-		return false, err
-	} else if processed {
-		return true, nil
+// notifyTranslationIssue posts a localized notice to the source channel when
+// a message could not be mirrored. The language is the source channel's
+// registered language, since that is where the notice is shown.
+func (s *Service) notifyTranslationIssue(channelID, language string, err error) {
+	key := uiKeyTranslationFailedNotice
+	if errors.Is(err, errTranslationRateLimited) {
+		key = uiKeyRateLimitNotice
 	}
-	links, err := s.store.MessageTargets(ctx, sourceChannelID, sourceMessageID)
+	_ = s.discord.SendChannelMessage(channelID, localizedUIString(language, key))
+}
+
+// translateWithLimit translates content into every requested language while
+// enforcing the per-guild token rate limit. Content without translatable text
+// is returned as-is for every language without calling the translator, in
+// which case contextFn is never invoked (it may perform Discord API calls).
+// Returns errTranslationRateLimited when the guild is over budget.
+func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, languages []string, contextFn func() TranslationContext) (map[string]string, error) {
+	translations := make(map[string]string, len(languages))
+	if strings.TrimSpace(content) == "" || !hasTranslatableText(content) {
+		for _, language := range languages {
+			translations[language] = content
+		}
+		return translations, nil
+	}
+	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	for _, link := range links {
-		if link.TargetChannelID == targetChannelID {
-			return true, nil
-		}
+	translationContext := contextFn()
+	if err := s.checkTranslationRateLimit(guildID, languages, content, translationContext, glossary); err != nil {
+		return nil, err
 	}
-	return false, nil
-}
-
-func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink) error {
-	msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
+	result, err := s.translator.TranslateMulti(ctx, languages, content, translationContext, glossary)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	link.TargetMessageID = msgID
-	if err := s.store.SaveMessageLink(ctx, link); err != nil {
-		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, msgID, threadID)
-		return err
-	}
-	_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(link.SourceChannelID, link.SourceMessageID, link.TargetChannelID))
-	return nil
-}
-
-func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" {
-		return nil
-	}
-	unlock := s.lockMessage(m.ChannelID, m.ID)
-	defer unlock()
-
-	if m.ThreadStarterMessage {
-		_, err := s.ensureThreadSynced(ctx, m)
-		return err
-	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil) {
-		return nil
-	}
-	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
-	if err != nil {
-		return err
-	}
-	if threadCreatedWithInitialMessage {
-		return nil
-	}
-	if err := s.handleThreadMessageCreate(ctx, m); err != nil {
-		return err
-	}
-	groups, err := s.store.ChannelsByChannel(ctx, m.GuildID, m.ChannelID)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, source := range groups {
-		if err := s.mirrorMessageToGroup(ctx, m, source); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, source GroupChannel) error {
-	channels, err := s.store.ChannelsInGroup(ctx, m.GuildID, source.GroupID)
-	if err != nil {
-		return err
-	}
-	var targets []GroupChannel
-	targetLanguages := make([]string, 0, len(channels))
-	for _, target := range channels {
-		if target.ChannelID == m.ChannelID {
-			continue
-		}
-		synced, err := s.targetAlreadySynced(ctx, m.ChannelID, m.ID, target.ChannelID)
-		if err != nil {
-			return fmt.Errorf("target %s: %w", target.ChannelID, err)
-		}
-		if synced {
-			continue
-		}
-		targets = append(targets, target)
-		targetLanguages = append(targetLanguages, target.Language)
-	}
-	if len(targets) == 0 {
-		return nil
-	}
-	if m.ForwardedMessage != nil {
-		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
-		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, source.GroupID)
-		contents, err := s.forwardedContents(ctx, m, targets, translationContext)
-		if err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-				return nil
-			}
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return err
-		}
-		var errs []error
-		for _, target := range targets {
-			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
-			err := s.sendAndSaveLink(ctx, target, "", WebhookSend{
-				Content: contents[target.ChannelID], Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
-			}, MessageLink{
-				SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
-				TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-				SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.ForwardedMessage.Content,
-			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-			}
-		}
-		return errors.Join(errs...)
-	}
-
-	if strings.TrimSpace(m.Content) == "" {
-		return s.mirrorEmptyContent(ctx, m, source, targets)
-	}
-
-	translations := make(map[string]string, len(targetLanguages))
-	if hasTranslatableText(m.Content) {
-		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-		if err != nil {
-			return err
-		}
-		translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, source.Language, m.ID)
-		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, source.GroupID)
-		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-				return nil
-			}
-			return err
-		}
-
-		result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
-		if err != nil {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return err
-		}
-		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-		translations = result.Translations
-	} else {
-		for _, language := range targetLanguages {
-			translations[language] = m.Content
-		}
-	}
-
-	var errs []error
-	for _, target := range targets {
-		content, ok := translations[target.Language]
+	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
+	for _, language := range languages {
+		translated, ok := result.Translations[language]
 		if !ok {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return fmt.Errorf("missing translation for %q", target.Language)
+			return nil, fmt.Errorf("missing translation for %q", language)
 		}
-		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-			continue
-		}
-		if quote != "" {
-			content = quote + "\n\n" + content
-		}
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-			continue
-		}
-		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
-		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
-		}, MessageLink{
-			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
-			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-		}
+		translations[language] = translated
 	}
-	return errors.Join(errs...)
-}
-
-func (s *Service) mirrorEmptyContent(ctx context.Context, m DiscordMessage, source GroupChannel, targets []GroupChannel) error {
-	var errs []error
-	for _, target := range targets {
-		quote, err := s.replyQuote(ctx, m, target.ChannelID, target.Language)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-			continue
-		}
-		content := ""
-		if quote != "" {
-			content = quote
-		}
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-			continue
-		}
-		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
-		err = s.sendAndSaveLink(ctx, target, "", WebhookSend{
-			Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS,
-		}, MessageLink{
-			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: source.GroupID,
-			TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
-		})
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", target.ChannelID, err))
-		}
-	}
-	return errors.Join(errs...)
+	return translations, nil
 }
 
 func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) error {
@@ -311,806 +120,12 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 	}
 }
 
-func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessage) error {
-	threads, err := s.store.ThreadTargets(ctx, m.ChannelID)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, thread := range threads {
-		if err := s.mirrorThreadMessage(ctx, m, thread); err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thread ThreadLink) error {
-	targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, thread.GroupID)
-	if err != nil {
-		return err
-	}
-	target := findChannel(targets, thread.TargetChannelID)
-	if target == nil {
-		return nil
-	}
-	synced, err := s.targetAlreadySynced(ctx, m.ChannelID, m.ID, thread.TargetThreadID)
-	if err != nil {
-		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
-	}
-	if synced {
-		return nil
-	}
-	if m.ForwardedMessage != nil {
-		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
-		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID)
-		forwardTarget := *target
-		forwardTarget.ChannelID = thread.TargetThreadID
-		contents, err := s.forwardedContents(ctx, m, []GroupChannel{forwardTarget}, translationContext)
-		if err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-				return nil
-			}
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return err
-		}
-		avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
-		err = s.sendAndSaveLink(ctx, *target, thread.TargetThreadID, WebhookSend{
-			Content: contents[thread.TargetThreadID], Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID,
-		}, MessageLink{
-			SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
-			TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
-			SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.ForwardedMessage.Content,
-		})
-		if err != nil {
-			return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
-		}
-		return nil
-	}
-
-	content := ""
-	if strings.TrimSpace(m.Content) != "" && hasTranslatableText(m.Content) {
-		glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-		if err != nil {
-			return err
-		}
-		translationContext := s.translationContext(ctx, m.GuildID, thread.SourceChannelID, m.ChannelID, languageForChannel(targets, thread.SourceChannelID), m.ID)
-		translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, thread.GroupID)
-		targetLanguages := []string{target.Language}
-		if err := s.checkTranslationRateLimit(m.GuildID, targetLanguages, m.Content, translationContext, glossary); err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。")
-				return nil
-			}
-			return err
-		}
-		result, err := s.translator.TranslateMulti(ctx, targetLanguages, m.Content, translationContext, glossary)
-		if err != nil {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return err
-		}
-		s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-		translated, ok := result.Translations[target.Language]
-		if !ok {
-			_ = s.discord.SendChannelMessage(m.ChannelID, "翻訳に失敗したため、このメッセージはミラーリングされませんでした。")
-			return fmt.Errorf("missing translation for %q", target.Language)
-		}
-		content = translated
-	} else if strings.TrimSpace(m.Content) != "" {
-		content = m.Content
-	}
-	content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-	quote, err := s.replyQuote(ctx, m, thread.TargetThreadID, target.Language)
-	if err != nil {
-		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
-	}
-	if quote != "" {
-		content = quote + "\n\n" + content
-	}
-	content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
-	if err != nil {
-		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
-	}
-	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, target.Language)
-	err = s.sendAndSaveLink(ctx, *target, thread.TargetThreadID, WebhookSend{
-		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: thread.TargetThreadID,
-	}, MessageLink{
-		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: thread.GroupID,
-		TargetChannelID: thread.TargetThreadID, TargetLanguage: target.Language,
-		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: m.Content,
-	})
-	if err != nil {
-		return fmt.Errorf("thread target %s: %w", thread.TargetThreadID, err)
-	}
-	return nil
-}
-
-func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" {
-		return nil
-	}
-	links, err := s.store.MessageTargets(ctx, m.ChannelID, m.ID)
-	if err != nil {
-		return err
-	}
-	for _, link := range links {
-		if link.SourceContentSnapshot == m.Content {
-			continue
-		}
-		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, link.GroupID)
-		if err != nil {
-			return err
-		}
-		target := findChannel(targets, link.TargetChannelID)
-		if target == nil {
-			if parentID, ok, err := s.store.ThreadParentChannel(ctx, link.GroupID, link.TargetChannelID); err != nil {
-				return err
-			} else if ok {
-				target = findChannel(targets, parentID)
-			}
-		}
-		if target == nil {
-			continue
-		}
-		content := m.Content
-		if hasTranslatableText(m.Content) {
-			translationContext := s.translationContext(ctx, m.GuildID, m.ChannelID, m.ChannelID, languageForChannel(targets, m.ChannelID), m.ID)
-			translationContext.StyleInstructions = s.groupStyleInstructions(ctx, m.GuildID, link.GroupID)
-			glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-			if err != nil {
-				return err
-			}
-			if err := s.checkTranslationRateLimit(m.GuildID, []string{target.Language}, m.Content, translationContext, glossary); err != nil {
-				if errors.Is(err, errTranslationRateLimited) {
-					continue
-				}
-				return err
-			}
-			result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, m.Content, translationContext, glossary)
-			if err != nil {
-				return err
-			}
-			s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-			var ok bool
-			content, ok = result.Translations[target.Language]
-			if !ok {
-				return fmt.Errorf("missing translation for %q", target.Language)
-			}
-		}
-		content = s.postProcessContent(ctx, m.GuildID, content, target.Language)
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
-		if err != nil {
-			return err
-		}
-		if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
-			return err
-		}
-		if err := s.store.UpdateMessageLinkSnapshot(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, m.Content); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) HandleMessagePinUpdate(ctx context.Context, channelID, messageID string, pinned bool) error {
-	prevPinned, known, err := s.store.GetPinState(ctx, channelID, messageID)
-	if err != nil {
-		return err
-	}
-	if known && prevPinned == pinned {
-		return nil
-	}
-	if err := s.SyncPin(ctx, channelID, messageID, pinned); err != nil {
-		return err
-	}
-	return s.savePinStatesForPeers(ctx, channelID, messageID, pinned)
-}
-
-func (s *Service) savePinStatesForPeers(ctx context.Context, channelID, messageID string, pinned bool) error {
-	if err := s.store.SavePinState(ctx, channelID, messageID, pinned); err != nil {
-		return err
-	}
-	peers, err := s.store.MessagePeers(ctx, channelID, messageID)
-	if err != nil {
-		return err
-	}
-	for _, link := range peers {
-		if link.TargetChannelID == channelID && link.TargetMessageID == messageID {
-			if err := s.store.SavePinState(ctx, link.SourceChannelID, link.SourceMessageID, pinned); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := s.store.SavePinState(ctx, link.TargetChannelID, link.TargetMessageID, pinned); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, messageID string) error {
-	links, err := s.store.MessageTargets(ctx, channelID, messageID)
-	if err != nil {
-		return err
-	}
-	for _, link := range links {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, link.GroupID)
-		if err != nil {
-			return err
-		}
-		target := findChannel(targets, link.TargetChannelID)
-		if target == nil {
-			if parentID, ok, err := s.store.ThreadParentChannel(ctx, link.GroupID, link.TargetChannelID); err != nil {
-				return err
-			} else if ok {
-				target = findChannel(targets, parentID)
-			}
-		}
-		if target == nil {
-			continue
-		}
-		if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target)); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) SyncReaction(ctx context.Context, guildID, sourceChannelID, sourceMessageID, emoji string, add bool) error {
-	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceMessageID)
-	if err != nil {
-		return err
-	}
-	for _, link := range links {
-		if add {
-			err = s.discord.AddReaction(link.TargetChannelID, link.TargetMessageID, emoji)
-		} else {
-			err = s.discord.RemoveOwnReaction(link.TargetChannelID, link.TargetMessageID, emoji)
-		}
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) SyncPin(ctx context.Context, sourceChannelID, sourceMessageID string, pinned bool) error {
-	links, err := s.store.MessagePeers(ctx, sourceChannelID, sourceMessageID)
-	if err != nil {
-		return err
-	}
-	var errs []error
-	for _, link := range links {
-		if pinned {
-			err = s.discord.PinMessage(link.TargetChannelID, link.TargetMessageID)
-		} else {
-			err = s.discord.UnpinMessage(link.TargetChannelID, link.TargetMessageID)
-		}
-		if err != nil {
-			errs = append(errs, err)
-		}
-	}
-	return errors.Join(errs...)
-}
-
-func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
-	if m.ReferencedMessageID == "" {
-		return "", nil
-	}
-	content := m.ReferencedMessageContent
-	quoteChannelID := m.ReferencedMessageChannelID
-	quoteMessageID := m.ReferencedMessageID
-	if quoteChannelID == "" {
-		quoteChannelID = m.ChannelID
-	}
-
-	dbOriginalContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
-	if err != nil {
-		return "", err
-	}
-	if ok {
-		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
-			quoteChannelID = dbQuoteChannelID
-			quoteMessageID = dbQuoteMessageID
-			if transferredContent, fetchErr := s.discord.MessageContent(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferredContent) != "" {
-				content = transferredContent
-			} else {
-				content = dbOriginalContent
-			}
-		} else {
-			content = dbOriginalContent
-		}
-	}
-	snippet := firstLineWithoutPseudoReply(content)
-	if snippet == "" {
-		return "", nil
-	}
-	if len([]rune(snippet)) > 40 {
-		snippet = string([]rune(snippet)[:40]) + "..."
-	}
-	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
-	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
-	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
-}
-
-type forwardedTargetContent struct {
-	body        string
-	jumpURL     string
-	needsAssets bool
-}
-
-func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, targets []GroupChannel, translationContext TranslationContext) (map[string]string, error) {
-	forwarded := m.ForwardedMessage
-	if forwarded == nil {
-		return nil, errors.New("forwarded message is required")
-	}
-
-	prepared := make(map[string]forwardedTargetContent, len(targets))
-	translateTargets := make([]GroupChannel, 0, len(targets))
-	for _, target := range targets {
-		_, mirrorChannelID, mirrorMessageID, ok, err := s.store.MessageQuoteTarget(ctx, forwarded.ChannelID, forwarded.MessageID, target.ChannelID)
-		if err != nil {
-			return nil, err
-		}
-		if ok && mirrorChannelID == target.ChannelID && mirrorMessageID != "" {
-			body := forwarded.Content
-			needsAssets := mirrorChannelID == forwarded.ChannelID && mirrorMessageID == forwarded.MessageID
-			if mirrorChannelID != forwarded.ChannelID || mirrorMessageID != forwarded.MessageID {
-				body, err = s.discord.MessageContent(mirrorChannelID, mirrorMessageID)
-				if err != nil {
-					return nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, err)
-				}
-			}
-			prepared[target.ChannelID] = forwardedTargetContent{
-				body: mirroredMessageBody(body), jumpURL: MessageJumpURL(m.GuildID, mirrorChannelID, mirrorMessageID),
-				needsAssets: needsAssets,
-			}
-			continue
-		}
-		translateTargets = append(translateTargets, target)
-	}
-
-	translations := make(map[string]string, len(translateTargets))
-	if len(translateTargets) > 0 {
-		if strings.TrimSpace(forwarded.Content) == "" || !hasTranslatableText(forwarded.Content) {
-			for _, target := range translateTargets {
-				translations[target.Language] = forwarded.Content
-			}
-		} else {
-			glossary, err := s.store.ListGlossaryEntries(ctx, m.GuildID)
-			if err != nil {
-				return nil, err
-			}
-			languages := make([]string, 0, len(translateTargets))
-			for _, target := range translateTargets {
-				languages = append(languages, target.Language)
-			}
-			if err := s.checkTranslationRateLimit(m.GuildID, languages, forwarded.Content, translationContext, glossary); err != nil {
-				return nil, err
-			}
-			result, err := s.translator.TranslateMulti(ctx, languages, forwarded.Content, translationContext, glossary)
-			if err != nil {
-				return nil, err
-			}
-			s.recordTranslationUsage(m.GuildID, result.InputTokens, result.OutputTokens)
-			translations = result.Translations
-		}
-		for _, target := range translateTargets {
-			body, ok := translations[target.Language]
-			if !ok {
-				return nil, fmt.Errorf("missing translation for %q", target.Language)
-			}
-			jumpGuildID := forwarded.GuildID
-			if jumpGuildID == "" {
-				jumpGuildID = m.GuildID
-			}
-			prepared[target.ChannelID] = forwardedTargetContent{
-				body:        s.postProcessContent(ctx, m.GuildID, body, target.Language),
-				jumpURL:     MessageJumpURL(jumpGuildID, forwarded.ChannelID, forwarded.MessageID),
-				needsAssets: true,
-			}
-		}
-	}
-
-	contents := make(map[string]string, len(targets))
-	for _, target := range targets {
-		item := prepared[target.ChannelID]
-		body := item.body
-		var err error
-		if item.needsAssets {
-			body, err = messageContentWithAssetURLs(body, forwarded.Attachments, forwarded.Stickers)
-			if err != nil {
-				return nil, err
-			}
-		}
-		header := fmt.Sprintf("-# %s · %s", localizedUIString(target.Language, uiKeyForwarded), item.jumpURL)
-		if strings.TrimSpace(body) == "" {
-			contents[target.ChannelID] = header
-		} else {
-			contents[target.ChannelID] = header + "\n" + body
-		}
-	}
-	return contents, nil
-}
-
-func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
-	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
-		GuildID:         guildID,
-		SourceChannelID: sourceChannelID,
-		SourceThreadID:  sourceThreadID,
-		SourceMessageID: sourceThreadID,
-		Name:            name,
-	})
-	return err
-}
-
-func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
-	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
-		GuildID:               guildID,
-		SourceChannelID:       sourceChannelID,
-		SourceThreadID:        sourceThreadID,
-		SourceMessageID:       sourceThreadID,
-		Name:                  name,
-		DeferWithoutSourceMsg: true,
-	})
-	return err
-}
-
-type threadCreateRequest struct {
-	GuildID                string
-	SourceChannelID        string
-	SourceThreadID         string
-	SourceMessageID        string
-	Name                   string
-	InitialMessageID       string
-	InitialMessageAuthor   string
-	InitialMessageUsername string
-	InitialMessageAvatar   string
-	InitialMessageText     string
-	InitialMessageFiles    []DiscordAttachment
-	InitialMessageStickers []DiscordSticker
-	InitialMessageTTS      bool
-	DeferWithoutSourceMsg  bool
-}
-
-func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest) (bool, error) {
-	s.threadMu.Lock()
-	defer s.threadMu.Unlock()
-
-	groups, err := s.store.ChannelsByChannel(ctx, req.GuildID, req.SourceChannelID)
-	if err != nil {
-		return false, err
-	}
-	existing, err := s.store.SourceThreadTargets(ctx, req.SourceThreadID)
-	if err != nil {
-		return false, err
-	}
-	createdWithInitialMessage := false
-	for _, source := range groups {
-		channels, err := s.store.ChannelsInGroup(ctx, req.GuildID, source.GroupID)
-		if err != nil {
-			return false, err
-		}
-		for _, target := range channels {
-			if target.ChannelID == source.ChannelID {
-				continue
-			}
-			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
-				continue
-			}
-			targetLanguages := []string{target.Language}
-			glossary, err := s.store.ListGlossaryEntries(ctx, req.GuildID)
-			if err != nil {
-				return false, err
-			}
-			translationContext := s.translationContext(ctx, req.GuildID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID)
-			translationContext.StyleInstructions = s.groupStyleInstructions(ctx, req.GuildID, source.GroupID)
-			if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.Name, translationContext, glossary); err != nil {
-				return false, err
-			}
-			nameResult, err := s.translator.TranslateMulti(ctx, targetLanguages, req.Name, translationContext, glossary)
-			if err != nil {
-				return false, err
-			}
-			s.recordTranslationUsage(req.GuildID, nameResult.InputTokens, nameResult.OutputTokens)
-			translatedName, ok := nameResult.Translations[target.Language]
-			if !ok {
-				return false, fmt.Errorf("missing translation for %q", target.Language)
-			}
-			translatedInitial := ""
-			if strings.TrimSpace(req.InitialMessageText) != "" && hasTranslatableText(req.InitialMessageText) {
-				if err := s.checkTranslationRateLimit(req.GuildID, targetLanguages, req.InitialMessageText, translationContext, glossary); err != nil {
-					return false, err
-				}
-				initialResult, err := s.translator.TranslateMulti(ctx, targetLanguages, req.InitialMessageText, translationContext, glossary)
-				if err != nil {
-					return false, err
-				}
-				s.recordTranslationUsage(req.GuildID, initialResult.InputTokens, initialResult.OutputTokens)
-				translatedInitial, ok = initialResult.Translations[target.Language]
-				if !ok {
-					return false, fmt.Errorf("missing translation for %q", target.Language)
-				}
-			} else if strings.TrimSpace(req.InitialMessageText) != "" {
-				translatedInitial = req.InitialMessageText
-			}
-			translatedInitial = s.postProcessContent(ctx, req.GuildID, translatedInitial, target.Language)
-			threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
-			if err != nil {
-				return false, err
-			}
-			if threadID == "" {
-				continue
-			}
-			err = s.store.SaveThreadLink(ctx, ThreadLink{
-				GroupID: source.GroupID, SourceThreadID: req.SourceThreadID, SourceChannelID: req.SourceChannelID,
-				TargetThreadID: threadID, TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
-			})
-			if err != nil {
-				return false, err
-			}
-			if req.InitialMessageID != "" && initialMessageID == "" && (translatedInitial != "" || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0) {
-				synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
-				if err != nil {
-					return false, err
-				}
-				if !synced {
-					content, err := messageContentWithAssetURLs(translatedInitial, req.InitialMessageFiles, req.InitialMessageStickers)
-					if err != nil {
-						return false, err
-					}
-					avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
-					if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
-						Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID,
-					}, MessageLink{
-						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
-						TargetChannelID: threadID, TargetLanguage: target.Language,
-						SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
-					}); err != nil {
-						return false, err
-					}
-				}
-				createdWithInitialMessage = true
-			}
-			if req.InitialMessageID != "" && initialMessageID != "" {
-				synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
-				if err != nil {
-					return false, err
-				}
-				if !synced {
-					if err := s.store.SaveMessageLink(ctx, MessageLink{
-						SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
-						TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
-						SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
-					}); err != nil {
-						return false, err
-					}
-					_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(req.SourceThreadID, req.InitialMessageID, threadID))
-				}
-				createdWithInitialMessage = true
-			}
-		}
-	}
-	return createdWithInitialMessage, nil
-}
-
-func existingThreadTarget(links []ThreadLink, groupID, targetChannelID string) bool {
-	for _, link := range links {
-		if link.GroupID == groupID && link.TargetChannelID == targetChannelID {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (bool, error) {
-	if m.ParentChannelID == "" || m.ThreadName == "" {
-		return false, nil
-	}
-	if existing, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err != nil {
-		return false, err
-	} else if len(existing) > 0 {
-		return false, nil
-	}
-	req := threadCreateRequest{
-		GuildID:         m.GuildID,
-		SourceChannelID: m.ParentChannelID,
-		SourceThreadID:  m.ChannelID,
-		Name:            m.ThreadName,
-	}
-	if m.ThreadStarterMessage {
-		req.SourceMessageID = m.ReferencedMessageID
-		req.DeferWithoutSourceMsg = true
-	} else if isThreadOnlySourceMessage(ctx, s.store, m.GuildID, m.ParentChannelID, m.ID, m.ChannelID) {
-		req.InitialMessageID = m.ID
-		req.InitialMessageAuthor = m.AuthorID
-		req.InitialMessageUsername = m.AuthorDisplayName
-		req.InitialMessageAvatar = m.AuthorAvatarURL
-		req.InitialMessageText = m.Content
-		req.InitialMessageFiles = m.Attachments
-		req.InitialMessageStickers = m.Stickers
-		req.InitialMessageTTS = m.TTS
-	} else {
-		req.SourceMessageID = m.ChannelID
-	}
-	return s.syncThreadCreate(ctx, req)
-}
-
-func (s *Service) translateMessageContent(ctx context.Context, guildID, targetLanguage, content string, translationContext TranslationContext) (string, error) {
-	if strings.TrimSpace(content) == "" {
-		return "", nil
-	}
-	if !hasTranslatableText(content) {
-		return s.postProcessContent(ctx, guildID, content, targetLanguage), nil
-	}
-	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
-	if err != nil {
-		return "", err
-	}
-	result, err := s.translator.TranslateMulti(ctx, []string{targetLanguage}, content, translationContext, glossary)
-	if err != nil {
-		return "", err
-	}
-	translated, ok := result.Translations[targetLanguage]
-	if !ok {
-		return "", fmt.Errorf("missing translation for %q", targetLanguage)
-	}
-	return s.postProcessContent(ctx, guildID, translated, targetLanguage), nil
-}
-
-const (
-	stickerFormatPNG    = 1
-	stickerFormatAPNG   = 2
-	stickerFormatLottie = 3
-	stickerFormatGIF    = 4
-)
-
-func stickerAssetURL(sticker DiscordSticker) string {
-	switch sticker.FormatType {
-	case stickerFormatGIF:
-		return fmt.Sprintf("https://media.discordapp.net/stickers/%s.gif", sticker.ID)
-	default:
-		return fmt.Sprintf("https://cdn.discordapp.com/stickers/%s.png", sticker.ID)
-	}
-}
-
-func messageContentWithAssetURLs(content string, attachments []DiscordAttachment, stickers []DiscordSticker) (string, error) {
-	assetURLs := make([]string, 0, len(attachments)+len(stickers))
-	for _, attachment := range attachments {
-		unsignedURL, err := unsignedAssetURL(attachment.URL)
-		if err != nil {
-			return "", fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)
-		}
-		assetURLs = append(assetURLs, unsignedURL)
-	}
-	for _, sticker := range stickers {
-		if strings.TrimSpace(sticker.ID) == "" {
-			return "", errors.New("sticker ID is required")
-		}
-		assetURLs = append(assetURLs, stickerAssetURL(sticker))
-	}
-	if len(assetURLs) > 0 {
-		if strings.TrimSpace(content) != "" {
-			content += "\n"
-		}
-		content += strings.Join(assetURLs, "\n")
-	}
-	if utf8.RuneCountInString(content) > discordMessageContentLimit {
-		return "", fmt.Errorf("message content has %d characters; Discord limit is %d", utf8.RuneCountInString(content), discordMessageContentLimit)
-	}
-	return content, nil
-}
-
-func unsignedAssetURL(rawURL string) (string, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	u, err := url.Parse(rawURL)
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", fmt.Errorf("invalid HTTP URL %q", rawURL)
-	}
-	u.RawQuery = ""
-	u.ForceQuery = false
-	u.Fragment = ""
-	return u.String(), nil
-}
-
-func attachmentFileName(attachment DiscordAttachment) string {
-	if name := filepath.Base(strings.TrimSpace(attachment.Filename)); name != "." && name != "/" && name != "\\" {
-		return name
-	}
-	if u, err := url.Parse(strings.TrimSpace(attachment.URL)); err == nil {
-		if name := filepath.Base(u.Path); name != "." && name != "/" && name != "\\" {
-			return name
-		}
-	}
-	return "attachment"
-}
-
-func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {
-	threads, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
-	if err != nil {
-		return err
-	}
-	for _, thread := range threads {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, thread.GroupID)
-		if err != nil {
-			return err
-		}
-		target := findChannel(targets, thread.TargetChannelID)
-		if target == nil {
-			continue
-		}
-		glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
-		if err != nil {
-			return err
-		}
-		translationContext := TranslationContext{StyleInstructions: s.groupStyleInstructions(ctx, guildID, thread.GroupID)}
-		if err := s.checkTranslationRateLimit(guildID, []string{target.Language}, name, translationContext, glossary); err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				continue
-			}
-			return err
-		}
-		result, err := s.translator.TranslateMulti(ctx, []string{target.Language}, name, translationContext, glossary)
-		if err != nil {
-			return err
-		}
-		s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
-		translatedName, ok := result.Translations[target.Language]
-		if !ok {
-			return fmt.Errorf("missing translation for %q", target.Language)
-		}
-		if err := s.discord.EditThread(thread.TargetThreadID, translatedName); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) error {
-	threads, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
-	if err != nil {
-		return err
-	}
-	for _, thread := range threads {
-		if err := s.discord.DeleteThread(thread.TargetThreadID); err != nil {
-			return err
-		}
-	}
-	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
-}
-
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
-	if isThreadOnlyChannelType(target.ChannelType) {
-		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
-		if err != nil {
-			return "", "", err
-		}
-		if content == "" {
-			if req.DeferWithoutSourceMsg {
-				return "", "", nil
-			}
-			content = name
-		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content)
-	}
-	if req.SourceMessageID != "" {
-		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
-		if err != nil {
-			return "", "", err
-		}
-		for _, link := range links {
-			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
-				threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
-				return threadID, "", err
-			}
-		}
-		if req.DeferWithoutSourceMsg {
-			return "", "", nil
-		}
-	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
-	return threadID, "", err
+// groupTranslationContext gathers server/channel context, recent history, and
+// the group's style instructions for a translation request.
+func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID string) TranslationContext {
+	translationContext := s.translationContext(ctx, guildID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID)
+	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
+	return translationContext
 }
 
 func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID string) string {
@@ -1160,16 +175,55 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID, hi
 	return translationContext
 }
 
-func discordSnowflakeTime(id string) (time.Time, bool) {
-	if len(id) < 17 {
-		return time.Time{}, false
+// lockMessage serializes concurrent handling of the same (channel, message).
+func (s *Service) lockMessage(channelID, messageID string) func() {
+	key := channelID + "\x00" + messageID
+	mu := &sync.Mutex{}
+	actual, _ := s.messageLocks.LoadOrStore(key, mu)
+	m := actual.(*sync.Mutex)
+	m.Lock()
+	return m.Unlock
+}
+
+func messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID string) string {
+	return "msglink:" + sourceChannelID + ":" + sourceMessageID + ":" + targetChannelID
+}
+
+// targetAlreadySynced reports whether a source message already has a mirror
+// in the target channel, checking both processed-event markers and links.
+func (s *Service) targetAlreadySynced(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string) (bool, error) {
+	key := messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID)
+	if processed, err := s.store.IsEventProcessed(ctx, key); err != nil {
+		return false, err
+	} else if processed {
+		return true, nil
 	}
-	snowflake, err := strconv.ParseUint(id, 10, 64)
+	links, err := s.store.MessageTargets(ctx, sourceChannelID, sourceMessageID)
 	if err != nil {
-		return time.Time{}, false
+		return false, err
 	}
-	timestampMillis := int64(snowflake>>22) + discordEpochMillis
-	return time.UnixMilli(timestampMillis).UTC(), true
+	for _, link := range links {
+		if link.TargetChannelID == targetChannelID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// sendAndSaveLink posts a webhook message and persists its link. When the
+// link cannot be saved, the just-posted message is deleted as compensation.
+func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink) error {
+	msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
+	if err != nil {
+		return err
+	}
+	link.TargetMessageID = msgID
+	if err := s.store.SaveMessageLink(ctx, link); err != nil {
+		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, msgID, threadID)
+		return err
+	}
+	_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(link.SourceChannelID, link.SourceMessageID, link.TargetChannelID))
+	return nil
 }
 
 func bestEffortString(fn func() (string, error)) string {
@@ -1201,65 +255,4 @@ func threadIDForWebhook(link MessageLink, target *GroupChannel) string {
 		return ""
 	}
 	return link.TargetChannelID
-}
-
-func firstLine(s string) string {
-	line, _, _ := strings.Cut(s, "\n")
-	return strings.TrimSpace(line)
-}
-
-func firstLineWithoutPseudoReply(content string) string {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	start := 0
-	if len(lines) >= 1 && isPseudoReplyLine(lines[0]) {
-		start = 1
-	}
-	for _, line := range lines[start:] {
-		if line = strings.TrimSpace(line); line != "" {
-			return line
-		}
-	}
-	return ""
-}
-
-func mirroredMessageBody(content string) string {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	for len(lines) > 0 && (isPseudoReplyLine(lines[0]) || isForwardedHeaderLine(lines[0])) {
-		lines = lines[1:]
-		for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
-			lines = lines[1:]
-		}
-	}
-	return strings.TrimSpace(strings.Join(lines, "\n"))
-}
-
-func isForwardedHeaderLine(line string) bool {
-	line = strings.TrimSpace(line)
-	return strings.HasPrefix(line, "-# ") && strings.Contains(line, " · https://discord.com/channels/")
-}
-
-func isPseudoReplyLine(line string) bool {
-	line = strings.TrimSpace(line)
-	separator := strings.LastIndex(line, " · [")
-	if !strings.HasPrefix(line, "> ") || separator < 2 || !strings.HasSuffix(line, ")") {
-		return false
-	}
-	linkStart := strings.LastIndex(line[separator:], "](https://discord.com/channels/")
-	return linkStart > 0
-}
-
-func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {
-	if messageID == "" || messageID != threadID {
-		return false
-	}
-	groups, err := store.ChannelsByChannel(ctx, guildID, parentChannelID)
-	if err != nil {
-		return false
-	}
-	for _, group := range groups {
-		if isThreadOnlyChannelType(group.ChannelType) {
-			return true
-		}
-	}
-	return false
 }
