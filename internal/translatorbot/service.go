@@ -123,12 +123,13 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 
 // groupTranslationContext gathers server/channel context, recent history, reply
 // chain, and the group's style instructions for a translation request.
-func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID string) TranslationContext {
-	channelIDs, languageByChannel := s.conversationLocations(ctx, guildID, groupID, historyChannelID, sourceLanguage)
-	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID, languageByChannel)
-	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, languageByChannel, excludeMessageID, replyKeys)
+func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author string) TranslationContext {
+	channelIDs := s.conversationLocations(ctx, guildID, groupID, historyChannelID, sourceLanguage)
+	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID)
+	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, excludeMessageID, replyKeys)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
+	translationContext.Author = strings.TrimSpace(author)
 	return translationContext
 }
 
@@ -140,46 +141,41 @@ func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID s
 	return ResolveStyleInstructions(preset, custom)
 }
 
-func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, historyChannelID, sourceLanguage string) ([]string, map[string]string) {
-	languageByChannel := make(map[string]string)
+func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, historyChannelID, sourceLanguage string) []string {
 	channels, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
 	if err != nil {
-		return nil, languageByChannel
+		return nil
 	}
 	if findChannel(channels, historyChannelID) != nil {
 		channelIDs := make([]string, len(channels))
 		for i, ch := range channels {
 			channelIDs[i] = ch.ChannelID
-			languageByChannel[ch.ChannelID] = ch.Language
 		}
-		return channelIDs, languageByChannel
+		return channelIDs
 	}
 	if historyChannelID == "" {
-		return nil, languageByChannel
+		return nil
 	}
 	channelIDs := []string{historyChannelID}
-	languageByChannel[historyChannelID] = sourceLanguage
 	threads, err := s.store.ThreadTargets(ctx, historyChannelID)
 	if err != nil {
-		return channelIDs, languageByChannel
+		return channelIDs
 	}
 	seen := map[string]bool{historyChannelID: true}
 	for _, thread := range threads {
 		if thread.SourceThreadID != "" && !seen[thread.SourceThreadID] {
 			seen[thread.SourceThreadID] = true
 			channelIDs = append(channelIDs, thread.SourceThreadID)
-			languageByChannel[thread.SourceThreadID] = languageForChannel(channels, thread.SourceChannelID)
 		}
 		if thread.TargetThreadID != "" && !seen[thread.TargetThreadID] {
 			seen[thread.TargetThreadID] = true
 			channelIDs = append(channelIDs, thread.TargetThreadID)
-			languageByChannel[thread.TargetThreadID] = thread.TargetLanguage
 		}
 	}
-	return channelIDs, languageByChannel
+	return channelIDs
 }
 
-func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, languageByChannel map[string]string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
+func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
 	translationContext := TranslationContext{
 		ServerName: bestEffortString(func() (string, error) {
 			return s.discord.GuildName(guildID)
@@ -213,9 +209,8 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID str
 			continue
 		}
 		translationContext.History = append(translationContext.History, ChatContextMessage{
-			Author:   strings.TrimSpace(link.SourceAuthorDisplayName),
-			Language: languageByChannel[link.SourceChannelID],
-			Content:  link.SourceContentSnapshot,
+			Author:  strings.TrimSpace(link.SourceAuthorDisplayName),
+			Content: link.SourceContentSnapshot,
 		})
 	}
 	return translationContext
@@ -230,7 +225,7 @@ func messageRefKey(channelID, messageID string) string {
 	return channelID + "\x00" + messageID
 }
 
-func (s *Service) replyChainContext(ctx context.Context, refChannelID, refMessageID string, languageByChannel map[string]string) ([]ChatContextMessage, map[string]bool) {
+func (s *Service) replyChainContext(ctx context.Context, refChannelID, refMessageID string) ([]ChatContextMessage, map[string]bool) {
 	sourceKeys := make(map[string]bool)
 	if refMessageID == "" || refChannelID == "" {
 		return nil, sourceKeys
@@ -239,7 +234,7 @@ func (s *Service) replyChainContext(ctx context.Context, refChannelID, refMessag
 	currentChannelID := refChannelID
 	currentMessageID := refMessageID
 	for len(collected) < translationReplyChainLimit {
-		entry, sourceChannelID, sourceMessageID, nextRef, ok := s.resolveReplyChainEntry(ctx, currentChannelID, currentMessageID, languageByChannel)
+		entry, sourceChannelID, sourceMessageID, nextRef, ok := s.resolveReplyChainEntry(ctx, currentChannelID, currentMessageID)
 		if !ok {
 			break
 		}
@@ -260,7 +255,7 @@ func (s *Service) replyChainContext(ctx context.Context, refChannelID, refMessag
 	return collected, sourceKeys
 }
 
-func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, messageID string, languageByChannel map[string]string) (entry ChatContextMessage, sourceChannelID, sourceMessageID string, nextRef messageRef, ok bool) {
+func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, messageID string) (entry ChatContextMessage, sourceChannelID, sourceMessageID string, nextRef messageRef, ok bool) {
 	original, tracked, err := s.store.MessageOriginal(ctx, channelID, messageID)
 	if err != nil {
 		return entry, "", "", nextRef, false
@@ -274,7 +269,6 @@ func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, message
 		fetchMessageID = sourceMessageID
 		entry.Content = original.Snapshot
 		entry.Author = strings.TrimSpace(original.SourceAuthorDisplayName)
-		entry.Language = languageByChannel[sourceChannelID]
 	}
 	fetched, fetchErr := s.discord.Message(fetchChannelID, fetchMessageID)
 	if fetchErr != nil {
@@ -286,7 +280,6 @@ func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, message
 	if !tracked {
 		entry.Content = fetched.Content
 		entry.Author = strings.TrimSpace(fetched.AuthorDisplayName)
-		entry.Language = languageByChannel[channelID]
 		sourceChannelID = channelID
 		sourceMessageID = messageID
 	} else if entry.Author == "" {
