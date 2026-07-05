@@ -16,6 +16,30 @@ func adminCommandMember() *discordgo.Member {
 	}
 }
 
+// captureResponses replaces the handler's responder and returns a pointer to
+// the slice that collects every response message.
+func captureResponses(handler *CommandHandler) *[]string {
+	responses := &[]string{}
+	handler.respond = func(_ *discordgo.Session, _ *discordgo.InteractionCreate, msg string, _ bool) {
+		*responses = append(*responses, msg)
+	}
+	return responses
+}
+
+func slashCommandInteraction(guildID, name string, options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.InteractionCreate {
+	return &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			Type:    discordgo.InteractionApplicationCommand,
+			GuildID: guildID,
+			Member:  adminCommandMember(),
+			Data: discordgo.ApplicationCommandInteractionData{
+				Name:    name,
+				Options: options,
+			},
+		},
+	}
+}
+
 func TestCommandDefaultPermissions(t *testing.T) {
 	for _, command := range Commands() {
 		if command.Name == viewOriginalCommandName {
@@ -97,35 +121,16 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
+	responses := captureResponses(handler)
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
-	member := adminCommandMember()
-	handler.Handle(nil, &discordgo.InteractionCreate{
-		Interaction: &discordgo.Interaction{
-			Type:    discordgo.InteractionApplicationCommand,
-			GuildID: "g1",
-			Member:  member,
-			Data: discordgo.ApplicationCommandInteractionData{
-				Name: "add-glossary",
-				Options: []*discordgo.ApplicationCommandInteractionDataOption{
-					{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
-					{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
-					{Name: "attribute", Type: discordgo.ApplicationCommandOptionString, Value: "略語"},
-					{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
-				},
-			},
-		},
-	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "NPC") {
-		t.Fatalf("add response = %#v", responses)
+	handler.Handle(nil, slashCommandInteraction("g1", "add-glossary", []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
+		{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
+		{Name: "attribute", Type: discordgo.ApplicationCommandOptionString, Value: "略語"},
+		{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
+	}))
+	if len(*responses) != 1 || !strings.Contains((*responses)[0], "NPC") {
+		t.Fatalf("add response = %#v", *responses)
 	}
 
 	entries, err := store.ListGlossaryEntries(ctx, "g1")
@@ -133,37 +138,20 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 		t.Fatalf("entries = %#v, err = %v", entries, err)
 	}
 
-	responses = nil
-	handler.Handle(nil, &discordgo.InteractionCreate{
-		Interaction: &discordgo.Interaction{
-			Type:    discordgo.InteractionApplicationCommand,
-			GuildID: "g1",
-			Member:  member,
-			Data: discordgo.ApplicationCommandInteractionData{
-				Name: "list-glossary",
-			},
-		},
-	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "Non-Player Character") || !strings.Contains(responses[0], "略語") || !strings.Contains(responses[0], "常時") {
-		t.Fatalf("list response = %#v", responses)
+	*responses = nil
+	handler.Handle(nil, slashCommandInteraction("g1", "list-glossary", nil))
+	alwaysLabel := localizedUIString("en", uiKeyGlossaryModeAlways)
+	if len(*responses) != 1 || !strings.Contains((*responses)[0], "Non-Player Character") || !strings.Contains((*responses)[0], "略語") || !strings.Contains((*responses)[0], alwaysLabel) {
+		t.Fatalf("list response = %#v", *responses)
 	}
 
-	responses = nil
-	handler.Handle(nil, &discordgo.InteractionCreate{
-		Interaction: &discordgo.Interaction{
-			Type:    discordgo.InteractionApplicationCommand,
-			GuildID: "g1",
-			Member:  member,
-			Data: discordgo.ApplicationCommandInteractionData{
-				Name: "remove-glossary",
-				Options: []*discordgo.ApplicationCommandInteractionDataOption{
-					{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
-				},
-			},
-		},
-	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "削除しました") {
-		t.Fatalf("remove response = %#v", responses)
+	*responses = nil
+	handler.Handle(nil, slashCommandInteraction("g1", "remove-glossary", []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
+	}))
+	want := localizedUIStringf("en", uiKeyGlossaryRemoved, "NPC")
+	if len(*responses) != 1 || (*responses)[0] != want {
+		t.Fatalf("remove response = %#v, want %q", *responses, want)
 	}
 
 	entries, err = store.ListGlossaryEntries(ctx, "g1")
@@ -172,6 +160,23 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("entries = %#v, want empty", entries)
+	}
+}
+
+func TestHandleCommandRespondsInInteractionLocale(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	responses := captureResponses(handler)
+
+	interaction := slashCommandInteraction("g1", "delete-group", []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "missing"},
+	})
+	interaction.Locale = discordgo.Japanese
+	handler.Handle(nil, interaction)
+
+	want := localizedUIStringf("ja", uiKeyGroupNotFound, "missing")
+	if len(*responses) != 1 || (*responses)[0] != want {
+		t.Fatalf("response = %#v, want %q", *responses, want)
 	}
 }
 
@@ -186,20 +191,16 @@ func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
 		}
 	}
 
-	var response string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) { response = msg }
-	t.Cleanup(func() { interactionResponseHook = oldHook })
-	handler.Handle(nil, &discordgo.InteractionCreate{Interaction: &discordgo.Interaction{
-		Type:    discordgo.InteractionApplicationCommand,
-		GuildID: "g1",
-		Member:  adminCommandMember(),
-		Data:    discordgo.ApplicationCommandInteractionData{Name: "list-glossary"},
-	}})
-	if len(response) > discordMessageMaxLen {
+	responses := captureResponses(handler)
+	handler.Handle(nil, slashCommandInteraction("g1", "list-glossary", nil))
+	if len(*responses) != 1 {
+		t.Fatalf("responses = %#v", *responses)
+	}
+	response := (*responses)[0]
+	if len(response) > discordMessageContentLimit {
 		t.Fatalf("response length = %d", len(response))
 	}
-	if !strings.Contains(response, listGlossaryTruncatedSuffix) {
+	if !strings.Contains(response, localizedUIString("en", uiKeyGlossaryTruncated)) {
 		t.Fatalf("response was not marked truncated: %q", response)
 	}
 }
@@ -208,33 +209,15 @@ func TestHandleListGroups(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
+	responses := captureResponses(handler)
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
-	member := adminCommandMember()
 	invoke := func() {
-		handler.Handle(nil, &discordgo.InteractionCreate{
-			Interaction: &discordgo.Interaction{
-				Type:    discordgo.InteractionApplicationCommand,
-				GuildID: "g1",
-				Member:  member,
-				Data: discordgo.ApplicationCommandInteractionData{
-					Name: "list-groups",
-				},
-			},
-		})
+		handler.Handle(nil, slashCommandInteraction("g1", "list-groups", nil))
 	}
 
 	invoke()
-	if len(responses) != 1 || !strings.Contains(responses[0], "翻訳グループが登録されていません") {
-		t.Fatalf("empty response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != localizedUIString("en", uiKeyNoGroups) {
+		t.Fatalf("empty response = %#v", *responses)
 	}
 
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "g1", DisplayName: "general", CreatedBy: "u1"}, GroupChannel{
@@ -253,13 +236,14 @@ func TestHandleListGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	responses = nil
+	*responses = nil
 	invoke()
-	if len(responses) != 1 {
-		t.Fatalf("list response count = %d, want 1", len(responses))
+	if len(*responses) != 1 {
+		t.Fatalf("list response count = %d, want 1", len(*responses))
 	}
-	msg := responses[0]
-	for _, want := range []string{"翻訳グループ (2)", "**general**", "<#ch-ja>", "(ja)", "<#ch-en>", "(en)", "**support**", "<#ch-support>"} {
+	msg := (*responses)[0]
+	header := localizedUIStringf("en", uiKeyGroupsHeader, 2)
+	for _, want := range []string{header, "**general**", "<#ch-ja>", "(ja)", "<#ch-en>", "(en)", "**support**", "<#ch-support>"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("response missing %q: %s", want, msg)
 		}
@@ -289,20 +273,12 @@ func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
+	responses := captureResponses(handler)
 	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "translated", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
-	if len(responses) != 1 {
-		t.Fatalf("response count = %d, want 1", len(responses))
+	if len(*responses) != 1 {
+		t.Fatalf("response count = %d, want 1", len(*responses))
 	}
-	msg := responses[0]
+	msg := (*responses)[0]
 	for _, want := range []string{
 		"Go to original message",
 		"https://discord.com/channels/g1/ch-ja/orig",
@@ -337,21 +313,13 @@ func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
+	responses := captureResponses(handler)
 	handler.Handle(nil, viewOriginalInteraction("g1", "ch-ja", "translated-ja", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
-	if len(responses) != 1 {
-		t.Fatalf("response count = %d, want 1", len(responses))
+	if len(*responses) != 1 {
+		t.Fatalf("response count = %d, want 1", len(*responses))
 	}
-	if !strings.Contains(responses[0], "原文メッセージへ移動") {
-		t.Fatalf("response = %q", responses[0])
+	if !strings.Contains((*responses)[0], "原文メッセージへ移動") {
+		t.Fatalf("response = %q", (*responses)[0])
 	}
 }
 
@@ -373,18 +341,10 @@ func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
+	responses := captureResponses(handler)
 	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "orig", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
-	if len(responses) != 1 || responses[0] != uiStrings["en"][uiKeyAlreadyOriginal] {
-		t.Fatalf("response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != uiStrings["en"][uiKeyAlreadyOriginal] {
+		t.Fatalf("response = %#v", *responses)
 	}
 }
 
@@ -392,18 +352,10 @@ func TestHandleViewOriginalNotManaged(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
+	responses := captureResponses(handler)
 	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "unknown", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
-	if len(responses) != 1 || responses[0] != uiStrings["en"][uiKeyNotManaged] {
-		t.Fatalf("response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != uiStrings["en"][uiKeyNotManaged] {
+		t.Fatalf("response = %#v", *responses)
 	}
 }
 
@@ -418,54 +370,35 @@ func TestHandleSetStyle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var responses []string
-	oldHook := interactionResponseHook
-	interactionResponseHook = func(msg string, _ bool) {
-		responses = append(responses, msg)
-	}
-	t.Cleanup(func() {
-		interactionResponseHook = oldHook
-	})
-
-	member := adminCommandMember()
+	responses := captureResponses(handler)
 	invoke := func(options []*discordgo.ApplicationCommandInteractionDataOption) {
-		handler.Handle(nil, &discordgo.InteractionCreate{
-			Interaction: &discordgo.Interaction{
-				Type:    discordgo.InteractionApplicationCommand,
-				GuildID: "g1",
-				Member:  member,
-				Data: discordgo.ApplicationCommandInteractionData{
-					Name:    "set-style",
-					Options: options,
-				},
-			},
-		})
+		handler.Handle(nil, slashCommandInteraction("g1", "set-style", options))
 	}
 
 	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
 		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "どちらかを指定") {
-		t.Fatalf("missing options response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != localizedUIString("en", uiKeyStyleNoneSpecified) {
+		t.Fatalf("missing options response = %#v", *responses)
 	}
 
-	responses = nil
+	*responses = nil
 	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
 		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
 		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: "formal"},
 		{Name: "custom", Type: discordgo.ApplicationCommandOptionString, Value: "短く"},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "同時に指定できません") {
-		t.Fatalf("both options response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != localizedUIString("en", uiKeyStyleBothSpecified) {
+		t.Fatalf("both options response = %#v", *responses)
 	}
 
-	responses = nil
+	*responses = nil
 	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
 		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
 		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: "netslang"},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "プリセット `netslang`") {
-		t.Fatalf("preset response = %#v", responses)
+	if len(*responses) != 1 || !strings.Contains((*responses)[0], "`netslang`") {
+		t.Fatalf("preset response = %#v", *responses)
 	}
 	preset, custom, err := store.GroupStyle(ctx, "g1", "general")
 	if err != nil {
@@ -475,13 +408,13 @@ func TestHandleSetStyle(t *testing.T) {
 		t.Fatalf("stored preset = %q custom = %q", preset, custom)
 	}
 
-	responses = nil
+	*responses = nil
 	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
 		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
 		{Name: "custom", Type: discordgo.ApplicationCommandOptionString, Value: "敬語を使わないで"},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "カスタム指示") {
-		t.Fatalf("custom response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != localizedUIStringf("en", uiKeyStyleCustomSet, "general", "敬語を使わないで") {
+		t.Fatalf("custom response = %#v", *responses)
 	}
 	preset, custom, err = store.GroupStyle(ctx, "g1", "general")
 	if err != nil {
@@ -491,13 +424,13 @@ func TestHandleSetStyle(t *testing.T) {
 		t.Fatalf("stored custom = preset %q custom %q", preset, custom)
 	}
 
-	responses = nil
+	*responses = nil
 	invoke([]*discordgo.ApplicationCommandInteractionDataOption{
 		{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "general"},
 		{Name: "preset", Type: discordgo.ApplicationCommandOptionString, Value: StylePresetDefault},
 	})
-	if len(responses) != 1 || !strings.Contains(responses[0], "リセット") {
-		t.Fatalf("reset response = %#v", responses)
+	if len(*responses) != 1 || (*responses)[0] != localizedUIStringf("en", uiKeyStyleReset, "general") {
+		t.Fatalf("reset response = %#v", *responses)
 	}
 	preset, custom, err = store.GroupStyle(ctx, "g1", "general")
 	if err != nil {

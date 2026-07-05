@@ -13,13 +13,14 @@ import (
 const glossaryMaxEntries = 50
 
 var (
-	ErrDuplicateGroup    = errors.New("translation group already exists in this guild")
-	ErrDuplicateChannel  = errors.New("channel already exists in this group")
-	ErrDuplicateLanguage = errors.New("language already exists in this group")
-	ErrGroupNotFound     = errors.New("translation group not found in this guild")
-	ErrChannelNotFound   = errors.New("channel is not joined to this group")
-	ErrGlossaryFull      = errors.New("glossary is full for this server (max 50 entries)")
-	ErrGlossaryNotFound  = errors.New("glossary entry not found")
+	ErrDuplicateGroup       = errors.New("translation group already exists in this guild")
+	ErrDuplicateChannel     = errors.New("channel already exists in this group")
+	ErrDuplicateLanguage    = errors.New("language already exists in this group")
+	ErrGroupNotFound        = errors.New("translation group not found in this guild")
+	ErrChannelNotFound      = errors.New("channel is not joined to this group")
+	ErrGlossaryFull         = errors.New("glossary is full for this server")
+	ErrGlossaryNotFound     = errors.New("glossary entry not found")
+	ErrGlossaryTermRequired = errors.New("glossary term and translation are required")
 )
 
 type Store struct {
@@ -382,25 +383,6 @@ func (s *Store) MessagePeers(ctx context.Context, channelID, messageID string) (
 	return peers, nil
 }
 
-func (s *Store) MessageSnapshot(ctx context.Context, channelID, messageID string) (authorID, content string, ok bool, err error) {
-	links, err := s.MessageTargets(ctx, channelID, messageID)
-	if err != nil {
-		return "", "", false, err
-	}
-	if len(links) > 0 {
-		return links[0].SourceAuthorID, links[0].SourceContentSnapshot, true, nil
-	}
-	row := s.db.QueryRowContext(ctx, `SELECT source_author_id,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
-	err = row.Scan(&authorID, &content)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", false, nil
-	}
-	if err != nil {
-		return "", "", false, err
-	}
-	return authorID, content, true, nil
-}
-
 type MessageOriginalResult struct {
 	SourceChannelID string
 	SourceMessageID string
@@ -650,7 +632,7 @@ func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translat
 	translation = strings.TrimSpace(translation)
 	attribute = strings.TrimSpace(attribute)
 	if term == "" || translation == "" {
-		return errors.New("term and translation are required")
+		return ErrGlossaryTermRequired
 	}
 	key := glossaryTermKey(term)
 	var count int
@@ -681,7 +663,7 @@ func (s *Store) UpsertGlossaryEntry(ctx context.Context, guildID, term, translat
 func (s *Store) RemoveGlossaryEntry(ctx context.Context, guildID, term string) error {
 	key := glossaryTermKey(term)
 	if key == "" {
-		return errors.New("term is required")
+		return ErrGlossaryTermRequired
 	}
 	res, err := s.db.ExecContext(ctx, `DELETE FROM glossary_entries WHERE guild_id=? AND source_term_key=?`, guildID, key)
 	if err != nil {

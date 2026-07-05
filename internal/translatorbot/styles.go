@@ -2,7 +2,6 @@ package translatorbot
 
 import (
 	"errors"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
@@ -13,15 +12,20 @@ const StylePresetDefault = "default"
 
 const styleCustomMaxRunes = 200
 
+var (
+	ErrStyleCustomEmpty   = errors.New("custom style instruction is empty")
+	ErrStyleCustomTooLong = errors.New("custom style instruction is too long")
+)
+
 var stylePresetInstructions = map[string]string{
-	"formal": `Use formal, polite, and respectful language. In languages with politeness levels (e.g. Japanese keigo, French vous), use the polite register consistently. Avoid slang, contractions, and casual interjections.`,
-	"casual": `Use relaxed, conversational, everyday language, like friends chatting. Prefer contractions and common colloquial expressions. Avoid stiff or bookish phrasing.`,
+	"formal":   `Use formal, polite, and respectful language. In languages with politeness levels (e.g. Japanese keigo, French vous), use the polite register consistently. Avoid slang, contractions, and casual interjections.`,
+	"casual":   `Use relaxed, conversational, everyday language, like friends chatting. Prefer contractions and common colloquial expressions. Avoid stiff or bookish phrasing.`,
 	"business": `Use professional business language suitable for workplace communication. Be concise, clear, and courteous. Prefer standard business terminology and avoid slang or overly emotional expressions.`,
-	"literal": `Translate as literally as possible while staying grammatical. Preserve the original sentence structure, word choice, and nuances even if the result sounds slightly unnatural. Do not paraphrase, embellish, or omit anything.`,
-	"gaming": `Use the casual voice of online gaming communities. Prefer gaming slang and abbreviations natural to the target language (e.g. gg, nerf, buff, grind) and keep hype or banter energetic. Keep game titles, character names, and technical game terms recognizable to players.`,
+	"literal":  `Translate as literally as possible while staying grammatical. Preserve the original sentence structure, word choice, and nuances even if the result sounds slightly unnatural. Do not paraphrase, embellish, or omit anything.`,
+	"gaming":   `Use the casual voice of online gaming communities. Prefer gaming slang and abbreviations natural to the target language (e.g. gg, nerf, buff, grind) and keep hype or banter energetic. Keep game titles, character names, and technical game terms recognizable to players.`,
 	"friendly": `Use warm, friendly, and approachable language, like talking to a good friend. Keep a positive and welcoming tone, and soften harsh-sounding phrasing where the meaning allows.`,
 	"netslang": `Use the voice of anonymous internet forums and message boards in the target language (e.g. 2ch/5ch-style for Japanese, imageboard/Reddit-style for English). Prefer net slang, abbreviations, and meme-ish phrasing natural to that community. Short, punchy, low-formality sentences are fine; dropping subjects and particles is fine where natural.`,
-	"tweet": `Write like a casual social media post (a tweet). Keep it short, punchy, and colloquial, with the loose grammar and rhythm typical of the target language's social media. Do not add hashtags, emoji, or mentions that are not in the source text.`,
+	"tweet":    `Write like a casual social media post (a tweet). Keep it short, punchy, and colloquial, with the loose grammar and rhythm typical of the target language's social media. Do not add hashtags, emoji, or mentions that are not in the source text.`,
 }
 
 func StylePresetChoices() []*discordgo.ApplicationCommandOptionChoice {
@@ -50,10 +54,10 @@ func IsValidStylePreset(preset string) bool {
 func ValidateStyleCustom(custom string) error {
 	custom = strings.TrimSpace(custom)
 	if custom == "" {
-		return errors.New("カスタム指示は空にできません。")
+		return ErrStyleCustomEmpty
 	}
 	if utf8.RuneCountInString(custom) > styleCustomMaxRunes {
-		return fmt.Errorf("カスタム指示は%d文字以内で指定してください。", styleCustomMaxRunes)
+		return ErrStyleCustomTooLong
 	}
 	return nil
 }
