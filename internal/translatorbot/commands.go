@@ -103,10 +103,23 @@ func Commands() []*discordgo.ApplicationCommand {
 type CommandHandler struct {
 	store *Store
 	api   DiscordAPI
+	// respond delivers the interaction response; replaced in tests.
+	respond func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
 }
 
 func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
-	return &CommandHandler{store: store, api: api}
+	return &CommandHandler{store: store, api: api, respond: respondInteraction}
+}
+
+// commandLocale resolves the invoking user's Discord client locale to a
+// supported catalog language for ephemeral command responses.
+func commandLocale(i *discordgo.InteractionCreate) string {
+	return resolveUILanguage(string(i.Locale))
+}
+
+// reply sends a localized catalog message as the interaction response.
+func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCreate, key uiKey, args ...any) {
+	h.respond(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
 }
 
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -173,91 +186,102 @@ func (h *CommandHandler) handleAutocomplete(s *discordgo.Session, i *discordgo.I
 	})
 }
 
+// resolveCommandChannel fetches the target channel of a command and verifies
+// its type is supported, replying with a localized error otherwise.
+func (h *CommandHandler) resolveCommandChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) (*discordgo.Channel, bool) {
+	channelID := optionChannel(data.Options, "channel", i.ChannelID)
+	ch, err := s.Channel(channelID)
+	if err != nil {
+		log.Printf("%s fetch channel %s: %v", data.Name, channelID, err)
+		h.reply(s, i, uiKeyChannelFetchFailed)
+		return nil, false
+	}
+	if !allowedChannelType(ch.Type) {
+		h.reply(s, i, uiKeyUnsupportedChannelType)
+		return nil, false
+	}
+	return ch, true
+}
+
 func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	language := normalizeLanguage(optionString(data.Options, "language"))
 	if !IsValidLanguageCode(language) {
-		respond(s, i, "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。", true)
+		h.reply(s, i, uiKeyInvalidLanguage)
 		return
 	}
-	channelID := optionChannel(data.Options, "channel", i.ChannelID)
-	groupID := optionString(data.Options, "group")
-	ch, err := s.Channel(channelID)
-	if err != nil {
-		respond(s, i, "チャンネルを取得できませんでした: "+err.Error(), true)
+	ch, ok := h.resolveCommandChannel(s, i, data)
+	if !ok {
 		return
 	}
-	if !allowedChannelType(ch.Type) {
-		respond(s, i, "テキスト、ニュース、フォーラムチャンネルだけ登録できます。", true)
-		return
-	}
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	if groupID == "" {
 		groupID = ch.Name
 	}
-	groupID = strings.TrimSpace(groupID)
-	webhookID, token, err := h.api.CreateWebhook(channelID, "Gemini Auto Translator")
+	webhookID, token, err := h.api.CreateWebhook(ch.ID, defaultWebhookName)
 	if err != nil {
-		respond(s, i, "Webhookを作成できませんでした: "+err.Error(), true)
+		log.Printf("new-channel create webhook: %v", err)
+		h.reply(s, i, uiKeyWebhookCreateFailed)
 		return
 	}
 	err = h.store.CreateGroupWithChannel(ctx, TranslationGroup{
 		ID: groupID, GuildID: i.GuildID, DisplayName: groupID, CreatedBy: i.Member.User.ID,
 	}, GroupChannel{
-		GroupID: groupID, GuildID: i.GuildID, ChannelID: channelID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
+		GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
 	})
 	if err != nil {
-		respond(s, i, err.Error(), true)
+		h.replyGroupError(s, i, "new-channel", groupID, err)
 		return
 	}
-	respond(s, i, fmt.Sprintf("翻訳グループ `%s` に <#%s> (%s) を登録しました。", groupID, channelID, language), true)
+	h.reply(s, i, uiKeyChannelRegistered, groupID, ch.ID, language)
 }
 
 func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	if groupID == "" {
-		respond(s, i, "グループ名を指定してください。", true)
+		h.reply(s, i, uiKeyGroupRequired)
 		return
 	}
 	language := normalizeLanguage(optionString(data.Options, "language"))
 	if !IsValidLanguageCode(language) {
-		respond(s, i, "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。", true)
+		h.reply(s, i, uiKeyInvalidLanguage)
 		return
 	}
+	// The group is checked before creating the webhook so a typo does not
+	// leave an orphaned webhook behind.
 	exists, err := h.store.GroupExists(ctx, i.GuildID, groupID)
 	if err != nil {
 		log.Printf("join-channel group exists check: %v", err)
-		respond(s, i, "チャンネルを参加させられませんでした。", true)
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
 	if !exists {
-		respond(s, i, joinChannelErrorMessage(groupID, ErrGroupNotFound), true)
+		h.reply(s, i, uiKeyJoinGroupNotFound, groupID)
 		return
 	}
-	channelID := optionChannel(data.Options, "channel", i.ChannelID)
-	ch, err := s.Channel(channelID)
+	ch, ok := h.resolveCommandChannel(s, i, data)
+	if !ok {
+		return
+	}
+	webhookID, token, err := h.api.CreateWebhook(ch.ID, defaultWebhookName)
 	if err != nil {
-		respond(s, i, "チャンネルを取得できませんでした: "+err.Error(), true)
-		return
-	}
-	if !allowedChannelType(ch.Type) {
-		respond(s, i, "テキスト、ニュース、フォーラムチャンネルだけ参加できます。", true)
-		return
-	}
-	webhookID, token, err := h.api.CreateWebhook(channelID, "Gemini Auto Translator")
-	if err != nil {
-		respond(s, i, "Webhookを作成できませんでした: "+err.Error(), true)
+		log.Printf("join-channel create webhook: %v", err)
+		h.reply(s, i, uiKeyWebhookCreateFailed)
 		return
 	}
 	err = h.store.JoinChannel(ctx, GroupChannel{
-		GroupID: groupID, GuildID: i.GuildID, ChannelID: channelID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
+		GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
 	})
 	if err != nil {
-		log.Printf("join-channel store: %v", err)
-		respond(s, i, joinChannelErrorMessage(groupID, err), true)
+		if errors.Is(err, ErrGroupNotFound) {
+			h.reply(s, i, uiKeyJoinGroupNotFound, groupID)
+			return
+		}
+		h.replyGroupError(s, i, "join-channel", groupID, err)
 		return
 	}
-	respond(s, i, fmt.Sprintf("翻訳グループ `%s` に <#%s> (%s) を参加させました。", groupID, channelID, language), true)
+	h.reply(s, i, uiKeyChannelJoined, groupID, ch.ID, language)
 }
 
 func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -265,79 +289,106 @@ func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.I
 	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	channelID := optionChannel(data.Options, "channel", i.ChannelID)
 	if err := h.store.LeaveChannel(ctx, i.GuildID, groupID, channelID); err != nil {
-		respond(s, i, err.Error(), true)
+		h.replyGroupError(s, i, "leave-channel", groupID, err)
 		return
 	}
-	respond(s, i, fmt.Sprintf("翻訳グループ `%s` から <#%s> を退出させました。", groupID, channelID), true)
+	h.reply(s, i, uiKeyChannelLeft, groupID, channelID)
 }
 
 func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	if err := h.store.DeleteGroup(ctx, i.GuildID, groupID); err != nil {
-		respond(s, i, err.Error(), true)
+		h.replyGroupError(s, i, "delete-group", groupID, err)
 		return
 	}
-	respond(s, i, fmt.Sprintf("翻訳グループ `%s` を削除しました。", groupID), true)
+	h.reply(s, i, uiKeyGroupDeleted, groupID)
+}
+
+// replyGroupError maps store errors about groups and channels to localized
+// messages; unexpected errors are logged and reported generically.
+func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.InteractionCreate, command, groupID string, err error) {
+	switch {
+	case errors.Is(err, ErrGroupNotFound):
+		h.reply(s, i, uiKeyGroupNotFound, groupID)
+	case errors.Is(err, ErrDuplicateGroup):
+		h.reply(s, i, uiKeyDuplicateGroup, groupID)
+	case errors.Is(err, ErrDuplicateChannel):
+		h.reply(s, i, uiKeyDuplicateChannel, groupID)
+	case errors.Is(err, ErrDuplicateLanguage):
+		h.reply(s, i, uiKeyDuplicateLanguage, groupID)
+	case errors.Is(err, ErrChannelNotFound):
+		h.reply(s, i, uiKeyChannelNotJoined, groupID)
+	default:
+		log.Printf("%s store: %v", command, err)
+		h.reply(s, i, uiKeyUnexpectedError)
+	}
 }
 
 func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
+	lang := commandLocale(i)
 	term := optionString(data.Options, "term")
 	translation := optionString(data.Options, "translation")
 	attribute := optionString(data.Options, "attribute")
 	alwaysInclude := optionBool(data.Options, "always_include")
 	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, i.Member.User.ID, alwaysInclude); err != nil {
-		respond(s, i, err.Error(), true)
+		switch {
+		case errors.Is(err, ErrGlossaryTermRequired):
+			h.reply(s, i, uiKeyGlossaryTermRequired)
+		case errors.Is(err, ErrGlossaryFull):
+			h.reply(s, i, uiKeyGlossaryFull, glossaryMaxEntries)
+		default:
+			log.Printf("add-glossary store: %v", err)
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
 		return
 	}
-	mode := "本文に含まれる場合のみ使用"
+	mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
 	if alwaysInclude {
-		mode = "常に使用"
+		mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
 	}
-	attributeLabel := "属性なし"
+	attributeLabel := localizedUIString(lang, uiKeyGlossaryAttributeNone)
 	if strings.TrimSpace(attribute) != "" {
-		attributeLabel = "属性: " + strings.TrimSpace(attribute)
+		attributeLabel = localizedUIStringf(lang, uiKeyGlossaryAttributeLabel, strings.TrimSpace(attribute))
 	}
-	respond(s, i, fmt.Sprintf("用語 `%s` を `%s` として登録しました（%s、%s）。", strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode), true)
+	h.reply(s, i, uiKeyGlossaryAdded, strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode)
 }
-
-const (
-	discordMessageMaxLen        = 2000
-	listGroupsTruncatedSuffix   = "\n（表示を省略しました）"
-	listGlossaryTruncatedSuffix = "\n（残りの用語は表示を省略しました）"
-)
 
 func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groups, err := h.store.Groups(ctx, i.GuildID, "", 100)
 	if err != nil {
-		respond(s, i, err.Error(), true)
+		log.Printf("list-groups store: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
 	if len(groups) == 0 {
-		respond(s, i, "このサーバーには翻訳グループが登録されていません。", true)
+		h.reply(s, i, uiKeyNoGroups)
 		return
 	}
-	msg, err := formatListGroupsMessage(ctx, h.store, i.GuildID, groups)
+	msg, err := formatListGroupsMessage(ctx, h.store, i.GuildID, commandLocale(i), groups)
 	if err != nil {
-		respond(s, i, err.Error(), true)
+		log.Printf("list-groups store: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
-	respond(s, i, msg, true)
+	h.respond(s, i, msg, true)
 }
 
-func formatListGroupsMessage(ctx context.Context, store *Store, guildID string, groups []TranslationGroup) (string, error) {
+func formatListGroupsMessage(ctx context.Context, store *Store, guildID, lang string, groups []TranslationGroup) (string, error) {
+	truncatedSuffix := localizedUIString(lang, uiKeyGroupsTruncated)
 	var b strings.Builder
-	fmt.Fprintf(&b, "翻訳グループ (%d):\n", len(groups))
+	b.WriteString(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)))
+	b.WriteString("\n")
 	truncated := false
 	for _, g := range groups {
 		channels, err := store.ChannelsInGroup(ctx, guildID, g.ID)
 		if err != nil {
 			return "", err
 		}
-		groupBlock := formatGroupBlock(g, channels)
-		if b.Len()+len(groupBlock)+len(listGroupsTruncatedSuffix) > discordMessageMaxLen {
+		groupBlock := formatGroupBlock(g, channels, lang)
+		if b.Len()+len(groupBlock)+len(truncatedSuffix) > discordMessageContentLimit {
 			truncated = true
 			break
 		}
@@ -345,16 +396,17 @@ func formatListGroupsMessage(ctx context.Context, store *Store, guildID string, 
 	}
 	result := strings.TrimSpace(b.String())
 	if truncated {
-		result += listGroupsTruncatedSuffix
+		result += truncatedSuffix
 	}
 	return result, nil
 }
 
-func formatGroupBlock(g TranslationGroup, channels []GroupChannel) string {
+func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n**%s** (style: %s)\n", g.DisplayName, FormatGroupStyle(g))
 	if len(channels) == 0 {
-		b.WriteString("  （チャンネルなし）\n")
+		b.WriteString(localizedUIString(lang, uiKeyGroupNoChannels))
+		b.WriteString("\n")
 		return b.String()
 	}
 	for _, ch := range channels {
@@ -365,29 +417,33 @@ func formatGroupBlock(g TranslationGroup, channels []GroupChannel) string {
 
 func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
+	lang := commandLocale(i)
 	entries, err := h.store.ListGlossaryEntries(ctx, i.GuildID)
 	if err != nil {
-		respond(s, i, err.Error(), true)
+		log.Printf("list-glossary store: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
 	if len(entries) == 0 {
-		respond(s, i, "このサーバーにはグロッサリー登録がありません。", true)
+		h.reply(s, i, uiKeyNoGlossary)
 		return
 	}
+	truncatedSuffix := localizedUIString(lang, uiKeyGlossaryTruncated)
 	var b strings.Builder
-	fmt.Fprintf(&b, "グロッサリー (%d):\n", len(entries))
+	b.WriteString(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)))
+	b.WriteString("\n")
 	truncated := false
 	for _, entry := range entries {
-		mode := "一致時"
+		mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
 		if entry.AlwaysInclude {
-			mode = "常時"
+			mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
 		}
-		attribute := "属性なし"
+		attribute := localizedUIString(lang, uiKeyGlossaryAttributeNone)
 		if entry.Attribute != "" {
 			attribute = entry.Attribute
 		}
-		line := fmt.Sprintf("- `%s` → `%s`（%s、%s）\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)
-		if b.Len()+len(line)+len(listGlossaryTruncatedSuffix) > discordMessageMaxLen {
+		line := fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)
+		if b.Len()+len(line)+len(truncatedSuffix) > discordMessageContentLimit {
 			truncated = true
 			break
 		}
@@ -395,37 +451,43 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 	}
 	msg := strings.TrimSpace(b.String())
 	if truncated {
-		msg += listGlossaryTruncatedSuffix
+		msg += truncatedSuffix
 	}
-	respond(s, i, msg, true)
+	h.respond(s, i, msg, true)
 }
 
 func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
-	term := optionString(data.Options, "term")
+	term := strings.TrimSpace(optionString(data.Options, "term"))
 	if err := h.store.RemoveGlossaryEntry(ctx, i.GuildID, term); err != nil {
-		respond(s, i, err.Error(), true)
+		switch {
+		case errors.Is(err, ErrGlossaryNotFound), errors.Is(err, ErrGlossaryTermRequired):
+			h.reply(s, i, uiKeyGlossaryNotFound, term)
+		default:
+			log.Printf("remove-glossary store: %v", err)
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
 		return
 	}
-	respond(s, i, fmt.Sprintf("用語 `%s` を削除しました。", strings.TrimSpace(term)), true)
+	h.reply(s, i, uiKeyGlossaryRemoved, term)
 }
 
 func (h *CommandHandler) handleSetStyle(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groupID := strings.TrimSpace(optionString(data.Options, "group"))
 	if groupID == "" {
-		respond(s, i, "グループ名を指定してください。", true)
+		h.reply(s, i, uiKeyGroupRequired)
 		return
 	}
 	preset := strings.TrimSpace(optionString(data.Options, "preset"))
 	custom := strings.TrimSpace(optionString(data.Options, "custom"))
 
 	if preset != "" && custom != "" {
-		respond(s, i, "プリセットとカスタム指示は同時に指定できません。どちらか一方だけ指定してください。", true)
+		h.reply(s, i, uiKeyStyleBothSpecified)
 		return
 	}
 	if preset == "" && custom == "" {
-		respond(s, i, "プリセットまたはカスタム指示のどちらかを指定してください。スタイルをリセットする場合は `preset:default` を指定してください。", true)
+		h.reply(s, i, uiKeyStyleNoneSpecified)
 		return
 	}
 
@@ -435,34 +497,38 @@ func (h *CommandHandler) handleSetStyle(s *discordgo.Session, i *discordgo.Inter
 		storePreset, storeCustom = "", ""
 	case preset != "":
 		if !IsValidStylePreset(preset) {
-			respond(s, i, "不明なプリセットです。コマンドの選択肢から指定してください。", true)
+			h.reply(s, i, uiKeyStyleUnknownPreset)
 			return
 		}
 		storePreset, storeCustom = preset, ""
 	default:
 		if err := ValidateStyleCustom(custom); err != nil {
-			respond(s, i, err.Error(), true)
+			switch {
+			case errors.Is(err, ErrStyleCustomEmpty):
+				h.reply(s, i, uiKeyStyleCustomEmpty)
+			case errors.Is(err, ErrStyleCustomTooLong):
+				h.reply(s, i, uiKeyStyleCustomTooLong, styleCustomMaxRunes)
+			default:
+				log.Printf("set-style validate: %v", err)
+				h.reply(s, i, uiKeyUnexpectedError)
+			}
 			return
 		}
 		storePreset, storeCustom = "", custom
 	}
 
 	if err := h.store.SetGroupStyle(ctx, i.GuildID, groupID, storePreset, storeCustom); err != nil {
-		if errors.Is(err, ErrGroupNotFound) {
-			respond(s, i, fmt.Sprintf("翻訳グループ `%s` がこのサーバーに見つかりません。", groupID), true)
-			return
-		}
-		respond(s, i, err.Error(), true)
+		h.replyGroupError(s, i, "set-style", groupID, err)
 		return
 	}
 
 	switch {
 	case storeCustom != "":
-		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをカスタム指示に設定しました: `%s`", groupID, storeCustom), true)
+		h.reply(s, i, uiKeyStyleCustomSet, groupID, storeCustom)
 	case storePreset != "":
-		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをプリセット `%s` に設定しました。", groupID, storePreset), true)
+		h.reply(s, i, uiKeyStylePresetSet, groupID, storePreset)
 	default:
-		respond(s, i, fmt.Sprintf("翻訳グループ `%s` のスタイルをリセットしました。", groupID), true)
+		h.reply(s, i, uiKeyStyleReset, groupID)
 	}
 }
 
@@ -475,26 +541,28 @@ func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.I
 	result, ok, err := h.store.MessageOriginal(ctx, channelID, messageID)
 	if err != nil {
 		log.Printf("view-original lookup: %v", err)
-		respond(s, i, localizedUIString("en", uiKeyNotManaged), true)
+		h.respond(s, i, localizedUIString(commandLocale(i), uiKeyNotManaged), true)
 		return
 	}
+	// View Original follows the channel's registered language so the reply
+	// matches the language of the surrounding conversation.
 	lang := h.uiLanguageForChannel(ctx, guildID, channelID, result)
 	if !ok {
-		respond(s, i, localizedUIString(lang, uiKeyNotManaged), true)
+		h.respond(s, i, localizedUIString(lang, uiKeyNotManaged), true)
 		return
 	}
 	if result.IsSource {
-		respond(s, i, localizedUIString(lang, uiKeyAlreadyOriginal), true)
+		h.respond(s, i, localizedUIString(lang, uiKeyAlreadyOriginal), true)
 		return
 	}
 
-	url := messageJumpURL(guildID, result.SourceChannelID, result.SourceMessageID)
+	url := MessageJumpURL(guildID, result.SourceChannelID, result.SourceMessageID)
 	linkLabel := localizedUIString(lang, uiKeyViewOriginalLink)
 	msg := fmt.Sprintf("[%s](%s)", linkLabel, url)
-	if snippet := truncateSnapshot(result.Snapshot, 100); snippet != "" {
-		msg += "\n\n> " + snippet
+	if snippet := strings.TrimSpace(result.Snapshot); snippet != "" {
+		msg += "\n\n> " + truncateRunes(snippet, 100, "…")
 	}
-	respond(s, i, msg, true)
+	h.respond(s, i, msg, true)
 }
 
 func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, channelID string, result MessageOriginalResult) string {
@@ -523,22 +591,6 @@ func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, chan
 	return "en"
 }
 
-func messageJumpURL(guildID, channelID, messageID string) string {
-	return MessageJumpURL(guildID, channelID, messageID)
-}
-
-func truncateSnapshot(text string, maxRunes int) string {
-	text = strings.TrimSpace(text)
-	if text == "" || maxRunes <= 0 {
-		return ""
-	}
-	runes := []rune(text)
-	if len(runes) <= maxRunes {
-		return text
-	}
-	return string(runes[:maxRunes]) + "…"
-}
-
 func RegisterGuildCommands(s *discordgo.Session, appID string) {
 	for _, g := range s.State.Guilds {
 		if err := RegisterGuildCommandsForGuild(s, appID, g.ID); err != nil {
@@ -550,19 +602,6 @@ func RegisterGuildCommands(s *discordgo.Session, appID string) {
 func RegisterGuildCommandsForGuild(s *discordgo.Session, appID, guildID string) error {
 	_, err := s.ApplicationCommandBulkOverwrite(appID, guildID, Commands())
 	return err
-}
-
-func joinChannelErrorMessage(groupID string, err error) string {
-	switch {
-	case errors.Is(err, ErrGroupNotFound):
-		return fmt.Sprintf("翻訳グループ `%s` がこのサーバーに見つかりません。`/new-channel` で作成したグループ名と一致しているか確認してください。", groupID)
-	case errors.Is(err, ErrDuplicateChannel):
-		return fmt.Sprintf("このチャンネルは既にグループ `%s` に参加しています。", groupID)
-	case errors.Is(err, ErrDuplicateLanguage):
-		return fmt.Sprintf("グループ `%s` には既に同じ言語のチャンネルがあります。別の言語を指定してください。", groupID)
-	default:
-		return "チャンネルを参加させられませんでした。"
-	}
 }
 
 func focusedOption(options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.ApplicationCommandInteractionDataOption {
@@ -625,13 +664,7 @@ func allowedChannelType(t discordgo.ChannelType) bool {
 	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum || t == discordgo.ChannelTypeGuildMedia
 }
 
-var interactionResponseHook func(msg string, ephemeral bool)
-
-func respond(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
-	if interactionResponseHook != nil {
-		interactionResponseHook(msg, ephemeral)
-		return
-	}
+func respondInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
 	flags := discordgo.MessageFlags(0)
 	if ephemeral {
 		flags = discordgo.MessageFlagsEphemeral
