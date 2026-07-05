@@ -618,7 +618,7 @@ func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].History
-	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "ja" || got[0].Content != "前の発言" {
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Content != "前の発言" {
 		t.Fatalf("unexpected history: %#v", got)
 	}
 }
@@ -1937,7 +1937,7 @@ func TestHandleMessageCreateIncludesCrossChannelOriginalHistory(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].History
-	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "en" || got[0].Content != "Hello from English" {
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Content != "Hello from English" {
 		t.Fatalf("unexpected history: %#v", got)
 	}
 }
@@ -1975,7 +1975,7 @@ func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].ReplyChain
-	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "ja" || got[0].Content != "こんにちは" {
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Content != "こんにちは" {
 		t.Fatalf("unexpected reply chain: %#v", got)
 	}
 }
@@ -2019,9 +2019,9 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 		t.Fatalf("unexpected reply chain length: %#v", got)
 	}
 	want := []ChatContextMessage{
-		{Author: "B", Language: "ja", Content: "second"},
-		{Author: "C", Language: "ja", Content: "third"},
-		{Author: "D", Language: "ja", Content: "fourth"},
+		{Author: "B", Content: "second"},
+		{Author: "C", Content: "third"},
+		{Author: "D", Content: "fourth"},
 	}
 	for i, entry := range want {
 		if got[i] != entry {
@@ -2103,7 +2103,7 @@ func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testin
 	}
 
 	got := translator.contexts[0].ReplyChain
-	if len(got) != 1 || got[0].Language != "en" || got[0].Content != "Hello" {
+	if len(got) != 1 || got[0].Content != "Hello" {
 		t.Fatalf("unexpected reply chain: %#v", got)
 	}
 }

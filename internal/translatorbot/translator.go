@@ -15,9 +15,8 @@ import (
 const geminiModel = "gemini-3.1-flash-lite"
 
 type ChatContextMessage struct {
-	Author   string
-	Language string
-	Content  string
+	Author  string
+	Content string
 }
 
 type TranslationContext struct {
@@ -28,6 +27,7 @@ type TranslationContext struct {
 	History           []ChatContextMessage
 	ReplyChain        []ChatContextMessage
 	StyleInstructions string
+	Author            string
 }
 
 type GlossaryEntry struct {
@@ -257,7 +257,7 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 	if len(translationContext.ReplyChain) > 0 {
 		writeContextSection(&b, "reply_context", translationContext.ReplyChain)
 	}
-	writeXMLElement(&b, "final_message", content)
+	writeAttributedElement(&b, "final_message", translationContext.Author, content)
 	b.WriteString("</translation_request>")
 	return b.String()
 }
@@ -265,15 +265,21 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 func writeContextSection(b *strings.Builder, section string, messages []ChatContextMessage) {
 	b.WriteString("<" + section + ">")
 	for _, h := range messages {
-		b.WriteString(`<message author="`)
-		writeXMLAttributeValue(b, h.Author)
-		b.WriteString(`" lang="`)
-		writeXMLAttributeValue(b, h.Language)
-		b.WriteString(`">`)
-		_ = xml.EscapeText(b, []byte(h.Content))
-		b.WriteString("</message>")
+		writeAttributedElement(b, "message", h.Author, h.Content)
 	}
 	b.WriteString("</" + section + ">")
+}
+
+func writeAttributedElement(b *strings.Builder, tag, author, content string) {
+	b.WriteString("<" + tag)
+	if strings.TrimSpace(author) != "" {
+		b.WriteString(` author="`)
+		writeXMLAttributeValue(b, author)
+		b.WriteString(`"`)
+	}
+	b.WriteString(">")
+	_ = xml.EscapeText(b, []byte(content))
+	b.WriteString("</" + tag + ">")
 }
 
 func writeXMLAttributeValue(b *strings.Builder, text string) {

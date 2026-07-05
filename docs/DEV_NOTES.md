@@ -150,18 +150,20 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
     <channel_topic>...</channel_topic>
   </discord_context>
   <recent_context>
-    <message author="123456789" lang="en">Hello!</message>
+    <message author="Alice">Hello!</message>
   </recent_context>
   <reply_context>
-    <message author="456789012" lang="en">Earlier reply target</message>
+    <message author="Bob">Earlier reply target</message>
   </reply_context>
-  <final_message>How are you?</final_message>
+  <final_message author="Carol">How are you?</final_message>
 </translation_request>
 ```
 
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から最大3件の原文を収集します。
 - `<reply_context>` はリプライ先を最大3件遡った引用チェイン（古い順）です。`<recent_context>` より優先して解釈に使います。引用チェインに含まれるメッセージは `<recent_context>` から除外されます。
+- 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
+- `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。
 - Gemini の temperature は `0.2`（低め）に設定して一貫性を優先しています。
 
