@@ -265,13 +265,32 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 func writeContextSection(b *strings.Builder, section string, messages []ChatContextMessage) {
 	b.WriteString("<" + section + ">")
 	for _, h := range messages {
-		b.WriteString("<message>")
-		writeXMLElement(b, "author", h.Author)
-		writeXMLElement(b, "language", h.Language)
-		writeXMLElement(b, "content", h.Content)
+		b.WriteString(`<message author="`)
+		writeXMLAttributeValue(b, h.Author)
+		b.WriteString(`" lang="`)
+		writeXMLAttributeValue(b, h.Language)
+		b.WriteString(`">`)
+		_ = xml.EscapeText(b, []byte(h.Content))
 		b.WriteString("</message>")
 	}
 	b.WriteString("</" + section + ">")
+}
+
+func writeXMLAttributeValue(b *strings.Builder, text string) {
+	for _, r := range text {
+		switch r {
+		case '&':
+			b.WriteString("&amp;")
+		case '"':
+			b.WriteString("&quot;")
+		case '<':
+			b.WriteString("&lt;")
+		case '>':
+			b.WriteString("&gt;")
+		default:
+			b.WriteRune(r)
+		}
+	}
 }
 
 func EstimateTranslationTokens(prompt, response string) int {
