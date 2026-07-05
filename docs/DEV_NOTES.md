@@ -9,16 +9,37 @@ cmd/discord-auto-translator/
 internal/translatorbot/
 ├── config.go               # 環境変数・.env の読み込み
 ├── models.go               # データ構造体の定義
-├── store.go                # SQLite CRUD（唯一の永続化レイヤー）
+├── store.go                # SQLite CRUD（唯一の永続化レイヤー）+ sentinel エラー定義
 ├── translator.go           # Gemini API 呼び出し・プロンプト構築
 ├── placeholders.go         # 翻訳前後のプレースホルダー保護・復元
-├── service.go              # ビジネスロジック全体（最も重要なファイル）
-├── commands.go             # スラッシュコマンドの定義・ハンドラ
+├── service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・通知
+├── service_message.go      # 通常メッセージのミラー・編集・削除・リプライ引用
+├── service_forward.go      # 転送メッセージ（FORWARD）のミラー
+├── service_thread.go       # スレッド作成・更新・削除・スレッド内メッセージ同期
+├── service_sync.go         # リアクション・ピン留め同期
+├── content.go              # 本文加工の純粋関数（添付URL化・疑似リプライ解析・切り詰め等）
+├── ui_strings.go           # 全ユーザー向け文言の多言語カタログ（13言語 + 英語フォールバック）
+├── commands.go             # スラッシュコマンドの定義・ロケール対応ハンドラ
+├── styles.go               # 翻訳スタイルプリセット定義・検証
 ├── discord_client.go       # DiscordAPI インターフェース + discordgo 実装
+├── discord_links.go        # 翻訳後テキスト内の Discord リンク・メンション置換
+├── discord_retry.go        # Discord API のレート制限リトライ
+├── ratelimit.go            # ギルド単位の翻訳トークンレートリミッター
 ├── languages.go            # 言語コード検証・オートコンプリート候補
 ├── avatar.go               # アバター画像バッジ（オレンジリング）
 └── url_alt.go              # hreflang 代替 URL への置換
 ```
+
+### ユーザー向け文言の多言語化 (i18n)
+
+ユーザーに表示されるすべての文言（コマンド応答・エラー・通知・疑似リプライのラベル等）は `ui_strings.go` の `uiStrings` カタログで管理されます。
+
+- 文言は `uiKey` 定数で識別し、`localizedUIString` / `localizedUIStringf` で取得します。ハードコードされた日本語・英語文字列をコードに直接書かないでください。
+- **スラッシュコマンド応答**は Discord の `interaction.Locale` を `resolveUILanguage` で解決した言語で返します。
+- **チャンネルへの通知**（レート制限・翻訳失敗）と**疑似リプライ・転送見出し**は、対象チャンネルに登録された言語を使用します。
+- 未対応言語は英語にフォールバックします。`zh-CN` / `zh-TW` / `pt-BR` は地域付きで解決し、その他は基本言語（`de-AT` → `de`）に縮約します。
+- キーの追加時は**全言語**にエントリを追加してください。`TestUIStringCatalogIsComplete` がキーの網羅性とフォーマット動詞（`%[1]s` 等）の一致を検証します。
+- ストア層・検証層は文言を持たず sentinel エラー（`ErrGroupNotFound`, `ErrGlossaryFull`, `ErrStyleCustomTooLong` 等）を返し、`commands.go` の `replyGroupError` などがカタログの文言へマップします。予期しないエラーはログに記録し、ユーザーには汎用メッセージ（`uiKeyUnexpectedError`）のみを表示します。
 
 ---
 
@@ -161,11 +182,11 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 |---|---|
 | Discord API | `service_test.go` の `fakeDiscordAPI` |
 | 翻訳エンジン | `service_test.go` の `echoTranslator` |
+| コマンド応答 | `commands_test.go` の `captureResponses`（`CommandHandler.respond` を差し替え） |
 | HTTP クライアント | `url_alt_test.go` / `avatar_test.go` のインライン `httptest` |
 
 ### テストで確認されていないこと
 
-- スラッシュコマンド応答の完全なフロー（`commands_test.go` はオプション解析のみ）
 - 実際の Gemini API レスポンス
 - 実際の Discord API との通信
 
@@ -232,6 +253,7 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 - `Store` はシングルトン。`sql.DB` は内部でコネクションプールを持ちゴルーチンセーフです。
 - `Service.threadMu` はスレッド作成処理のみをシリアライズします。
+- `Service.messageLocks` は同一 `(channelID, messageID)` のメッセージ処理を直列化します。
 - `Service.httpClient` は `http.DefaultClient` を共有します。
 - それ以外に共有状態はなく、各イベントハンドラは独立して実行されます。
 
