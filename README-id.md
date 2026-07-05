@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | Variabel | Wajib | Deskripsi |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | Ya | Kunci API Gemini |
 | `DB_PATH` | Tidak | Jalur ke file SQLite (default: `./translator.db`) |
 | `HTTP_ADDR` | Tidak | Alamat server badge avatar (default: `:8080`) |
-| `PUBLIC_BASE_URL` | Tidak | URL dasar untuk menambahkan badge cincin oranye ke avatar |
+| `PUBLIC_BASE_URL` | Tidak | URL dasar publik untuk badge cincin avatar. Jika tidak diatur, pesan yang dicerminkan menggunakan URL avatar Discord asli dan server badge tidak digunakan |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | Batas token Gemini per server per menit (default: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | Batas permintaan per IP per menit untuk endpoint badge `/avatar` (default: `120`) |
 
 ### 4. Jalankan
 

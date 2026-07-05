@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | ตัวแปร | จำเป็น | คำอธิบาย |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | ใช่ | Gemini API key |
 | `DB_PATH` | ไม่ | เส้นทางไฟล์ SQLite (ค่าเริ่มต้น: `./translator.db`) |
 | `HTTP_ADDR` | ไม่ | ที่อยู่เซิร์ฟเวอร์แบดจ์อวาตาร์ (ค่าเริ่มต้น: `:8080`) |
-| `PUBLIC_BASE_URL` | ไม่ | URL พื้นฐานสำหรับเพิ่มแบดจ์วงแหวนสีส้มให้อวาตาร์ |
+| `PUBLIC_BASE_URL` | ไม่ | URL พื้นฐานสาธารณะสำหรับแบดจ์วงแหวนอวาตาร์ หากไม่ตั้งค่า ข้อความที่สะท้อนจะใช้ URL อวาตาร์ Discord เดิม และเซิร์ฟเวอร์แบดจ์จะไม่ถูกใช้งาน |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | ไม่ | จำกัดโทเค็น Gemini ต่อเซิร์ฟเวอร์ต่อนาที (ค่าเริ่มต้น: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | ไม่ | จำกัดคำขอต่อ IP ต่อนาทีสำหรับ endpoint แบดจ์ `/avatar` (ค่าเริ่มต้น: `120`) |
 
 ### 4. เรียกใช้
 

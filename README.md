@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | Variable | Required | Description |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | Yes | Gemini API key |
 | `DB_PATH` | No | Path to the SQLite file (default: `./translator.db`) |
 | `HTTP_ADDR` | No | Address of the avatar badge server (default: `:8080`) |
-| `PUBLIC_BASE_URL` | No | Base URL for adding an orange ring badge to avatars |
+| `PUBLIC_BASE_URL` | No | Public base URL for avatar ring badges. If unset, mirrored messages use the original Discord avatar URL and the badge server is not used |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Per-guild Gemini token limit per minute (default: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Per-IP request limit per minute for the `/avatar` badge endpoint (default: `120`) |
 
 ### 4. Run
 

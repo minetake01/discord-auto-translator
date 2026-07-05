@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | Variável | Obrigatório | Descrição |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | Sim | Chave de API do Gemini |
 | `DB_PATH` | Não | Caminho para o arquivo SQLite (padrão: `./translator.db`) |
 | `HTTP_ADDR` | Não | Endereço do servidor de badge de avatar (padrão: `:8080`) |
-| `PUBLIC_BASE_URL` | Não | URL base para adicionar um badge de anel laranja aos avatares |
+| `PUBLIC_BASE_URL` | Não | URL base pública para badges de anel em avatares. Se não definida, mensagens espelhadas usam a URL de avatar original do Discord e o servidor de badge não é utilizado |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Não | Limite de tokens do Gemini por servidor por minuto (padrão: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Não | Limite de requisições por IP por minuto para o endpoint de badge `/avatar` (padrão: `120`) |
 
 ### 4. Executar
 

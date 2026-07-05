@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | 變數 | 必要 | 說明 |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | 必要 | Gemini API 金鑰 |
 | `DB_PATH` | 選用 | SQLite 檔案路徑（預設: `./translator.db`） |
 | `HTTP_ADDR` | 選用 | 頭像徽章伺服器位址（預設: `:8080`） |
-| `PUBLIC_BASE_URL` | 選用 | 為頭像加上橘色圓環徽章時的基礎 URL |
+| `PUBLIC_BASE_URL` | 選用 | 頭像環徽章的公開基礎 URL。未設定時，鏡像訊息使用 Discord 原始頭像 URL，不會使用徽章伺服器 |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 選用 | 每個伺服器每分鐘的 Gemini 權杖上限（預設: `100000`） |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 選用 | `/avatar` 徽章端點的每 IP 每分鐘請求上限（預設: `120`） |
 
 ### 4. 啟動
 
