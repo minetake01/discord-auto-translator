@@ -18,14 +18,14 @@ var (
 )
 
 var stylePresetInstructions = map[string]string{
-	"formal":   `Use formal, polite, and respectful language. In languages with politeness levels (e.g. Japanese keigo, French vous), use the polite register consistently. Avoid slang, contractions, and casual interjections.`,
-	"casual":   `Use relaxed, conversational, everyday language, like friends chatting. Prefer contractions and common colloquial expressions. Avoid stiff or bookish phrasing.`,
-	"business": `Use professional business language suitable for workplace communication. Be concise, clear, and courteous. Prefer standard business terminology and avoid slang or overly emotional expressions.`,
-	"literal":  `Translate as literally as possible while staying grammatical. Preserve the original sentence structure, word choice, and nuances even if the result sounds slightly unnatural. Do not paraphrase, embellish, or omit anything.`,
-	"gaming":   `Use the casual voice of online gaming communities. Prefer gaming slang and abbreviations natural to the target language (e.g. gg, nerf, buff, grind) and keep hype or banter energetic. Keep game titles, character names, and technical game terms recognizable to players.`,
-	"friendly": `Use warm, friendly, and approachable language, like talking to a good friend. Keep a positive and welcoming tone, and soften harsh-sounding phrasing where the meaning allows.`,
-	"netslang": `Use the voice of anonymous internet forums and message boards in the target language (e.g. 2ch/5ch-style for Japanese, imageboard/Reddit-style for English). Prefer net slang, abbreviations, and meme-ish phrasing natural to that community. Short, punchy, low-formality sentences are fine; dropping subjects and particles is fine where natural.`,
-	"tweet":    `Write like a casual social media post (a tweet). Keep it short, punchy, and colloquial, with the loose grammar and rhythm typical of the target language's social media. Do not add hashtags, emoji, or mentions that are not in the source text.`,
+	"formal":   `Default to a formal, polite register. In languages with politeness levels (e.g. Japanese keigo, French vous), prefer the polite form.`,
+	"casual":   `Default to relaxed, everyday conversational language, like friends chatting.`,
+	"business": `Default to professional workplace language: concise, clear, and courteous.`,
+	"literal":  `When several renderings are possible, choose the most literal one: keep the original sentence structure and word choice even if slightly unnatural, and do not paraphrase, embellish, or omit.`,
+	"gaming":   `Default to the casual voice of online gaming communities, with gaming slang and abbreviations natural to the target language (e.g. gg, nerf, buff). Keep game titles, character names, and technical game terms recognizable to players.`,
+	"friendly": `Default to warm, friendly, and approachable language, like talking to a good friend.`,
+	"netslang": `Default to the voice of anonymous message boards in the target language (e.g. 2ch/5ch-style for Japanese, imageboard/Reddit-style for English): net slang, abbreviations, and short low-formality sentences; dropping subjects and particles is fine where natural.`,
+	"tweet":    `Default to casual social media phrasing (a tweet): short, punchy, and colloquial. Do not add hashtags, emoji, or mentions that are not in the source text.`,
 }
 
 func StylePresetChoices() []*discordgo.ApplicationCommandOptionChoice {

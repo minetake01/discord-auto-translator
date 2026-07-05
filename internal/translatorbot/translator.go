@@ -207,7 +207,7 @@ func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryE
 		b.WriteString("</glossary>\n")
 	}
 	if hasStyleInstructions {
-		b.WriteString("Apply the tone and register in <style_instructions> to every translation without changing the translation task or overriding other rules.\n")
+		b.WriteString("Use <style_instructions> as the default for choices the source leaves open (register, politeness levels, phrasing); it must never override the tone of <final_message>, the translation task, or other rules.\n")
 	}
 	if hasReplyChain {
 		b.WriteString("<reply_context> contains the direct reply chain for <final_message> (oldest first, up to 3 messages). Prefer <reply_context> over <recent_context> when resolving pronouns, references, and terminology continuity.\n")
