@@ -276,7 +276,7 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 			}
 		}
 	}
-	return nil
+	return s.store.DeleteMessageLinksBySource(ctx, channelID, messageID)
 }
 
 // replyQuote builds the pseudo-reply quote line for a reply message,

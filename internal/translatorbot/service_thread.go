@@ -317,6 +317,14 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 			return err
 		}
 	}
+	if err := s.store.DeleteMessageLinksByChannel(ctx, sourceThreadID); err != nil {
+		return err
+	}
+	for _, thread := range threads {
+		if err := s.store.DeleteMessageLinksByChannel(ctx, thread.TargetThreadID); err != nil {
+			return err
+		}
+	}
 	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
 }
 

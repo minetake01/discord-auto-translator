@@ -905,6 +905,47 @@ func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) 
 	if got := discord.webhookDeletes[0]; got.messageID != "translated-msg" || got.threadID != "thread-en" {
 		t.Fatalf("unexpected webhook delete: %#v", got)
 	}
+	links, err := store.MessageTargets(ctx, "thread-ja", "source-msg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("message links were not deleted: %#v", links)
+	}
+}
+
+func TestHandleMessageDeleteExcludesDeletedMessageFromTranslationContext(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前の発言",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageDelete(ctx, "guild", "ja", "100"); err != nil {
+		t.Fatal(err)
+	}
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "101", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "続きです",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if len(translator.contexts[0].History) != 0 {
+		t.Fatalf("deleted message still in history: %#v", translator.contexts[0].History)
+	}
 }
 
 func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing.T) {
@@ -1207,6 +1248,13 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	if err := service.SyncThreadCreate(ctx, "guild", "ja", "thread-ja", "topic"); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "msg-in-thread", SourceChannelID: "thread-ja", GroupID: "g",
+		TargetChannelID: "thread-1", TargetMessageID: "mirrored-msg", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "スレッド内メッセージ",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := service.SyncThreadDelete(ctx, "thread-ja"); err != nil {
 		t.Fatal(err)
@@ -1221,6 +1269,13 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	}
 	if len(threads) != 0 {
 		t.Fatalf("thread links were not deleted: %#v", threads)
+	}
+	links, err := store.MessageTargets(ctx, "thread-ja", "msg-in-thread")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("thread message links were not deleted: %#v", links)
 	}
 }
 
