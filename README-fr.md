@@ -124,13 +124,15 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 
 | Commande | Description |
 |---|---|
-| `/new-channel language:[langue]` | Créer un nouveau groupe de traduction |
-| `/join-channel group:[groupe] language:[langue]` | Ajouter un salon à un groupe |
-| `/leave-channel group:[groupe]` | Retirer un salon d'un groupe |
+| `/new-channel language:[langue] channel:<salon> group:<groupe>` | Créer un nouveau groupe de traduction. `channel` vaut le salon actuel par défaut ; `group` vaut le nom du salon par défaut |
+| `/join-channel group:[groupe] language:[langue] channel:<salon>` | Ajouter un salon à un groupe. `channel` vaut le salon actuel par défaut |
+| `/leave-channel group:[groupe] channel:<salon>` | Retirer un salon d'un groupe. `channel` vaut le salon actuel par défaut |
 | `/delete-group group:[groupe]` | Supprimer un groupe entier |
-| `/add-glossary term:[terme] translation:[traduction] attribute:[attribut] always_include:[bool]` | Enregistrer une traduction préférée dans le glossaire du serveur (`attribute` est libre avec suggestions ; `always_include` vaut `false` par défaut) |
+| `/list-groups` | Afficher les groupes de traduction et leurs salons sur ce serveur |
+| `/add-glossary term:[terme] translation:[traduction] attribute:<attribut> always_include:<bool>` | Enregistrer une traduction préférée dans le glossaire du serveur. `attribute` est libre avec suggestions ; `always_include` vaut `false` par défaut |
 | `/list-glossary` | Afficher le glossaire du serveur |
 | `/remove-glossary term:[terme]` | Supprimer une entrée du glossaire |
+| `/set-style group:[groupe] preset:<préréglage> custom:<instruction personnalisée>` | Définir le style de traduction d'un groupe. Spécifier `preset` ou `custom`, pas les deux |
 
 - `language` utilise des codes BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Maximum 50 entrées de glossaire par serveur

@@ -124,13 +124,15 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 
 | Comando | Descrizione |
 |---|---|
-| `/new-channel language:[lingua]` | Creare un nuovo gruppo di traduzione |
-| `/join-channel group:[gruppo] language:[lingua]` | Aggiungere un canale a un gruppo |
-| `/leave-channel group:[gruppo]` | Rimuovere un canale da un gruppo |
+| `/new-channel language:[lingua] channel:<canale> group:<gruppo>` | Creare un nuovo gruppo di traduzione. `channel` usa il canale corrente per impostazione predefinita; `group` usa il nome del canale per impostazione predefinita |
+| `/join-channel group:[gruppo] language:[lingua] channel:<canale>` | Aggiungere un canale a un gruppo. `channel` usa il canale corrente per impostazione predefinita |
+| `/leave-channel group:[gruppo] channel:<canale>` | Rimuovere un canale da un gruppo. `channel` usa il canale corrente per impostazione predefinita |
 | `/delete-group group:[gruppo]` | Eliminare un intero gruppo |
-| `/add-glossary term:[termine] translation:[traduzione] attribute:[attributo] always_include:[bool]` | Registrare una traduzione preferita nel glossario del server (`attribute` è testo libero con suggerimenti; `always_include` è `false` per impostazione predefinita) |
+| `/list-groups` | Elencare i gruppi di traduzione e i relativi canali in questo server |
+| `/add-glossary term:[termine] translation:[traduzione] attribute:<attributo> always_include:<bool>` | Registrare una traduzione preferita nel glossario del server. `attribute` è testo libero con suggerimenti; `always_include` è `false` per impostazione predefinita |
 | `/list-glossary` | Visualizzare il glossario del server |
 | `/remove-glossary term:[termine]` | Rimuovere una voce dal glossario |
+| `/set-style group:[gruppo] preset:<preset> custom:<istruzione personalizzata>` | Impostare lo stile di traduzione di un gruppo. Specificare `preset` o `custom`, non entrambi |
 
 - `language` usa codici BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, ecc.)
 - Massimo 50 voci nel glossario per server

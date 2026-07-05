@@ -124,13 +124,15 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 
 | Comando | Descrição |
 |---|---|
-| `/new-channel language:[idioma]` | Criar um novo grupo de tradução |
-| `/join-channel group:[grupo] language:[idioma]` | Adicionar um canal a um grupo |
-| `/leave-channel group:[grupo]` | Remover um canal de um grupo |
+| `/new-channel language:[idioma] channel:<canal> group:<grupo>` | Criar um novo grupo de tradução. `channel` usa o canal atual por padrão; `group` usa o nome do canal por padrão |
+| `/join-channel group:[grupo] language:[idioma] channel:<canal>` | Adicionar um canal a um grupo. `channel` usa o canal atual por padrão |
+| `/leave-channel group:[grupo] channel:<canal>` | Remover um canal de um grupo. `channel` usa o canal atual por padrão |
 | `/delete-group group:[grupo]` | Excluir um grupo inteiro |
-| `/add-glossary term:[termo] translation:[tradução] attribute:[atributo] always_include:[bool]` | Registrar uma tradução preferida no glossário do servidor (`attribute` é texto livre com sugestões; `always_include` tem padrão `false`) |
+| `/list-groups` | Listar os grupos de tradução e seus canais neste servidor |
+| `/add-glossary term:[termo] translation:[tradução] attribute:<atributo> always_include:<bool>` | Registrar uma tradução preferida no glossário do servidor. `attribute` é texto livre com sugestões; `always_include` tem padrão `false` |
 | `/list-glossary` | Listar o glossário do servidor |
 | `/remove-glossary term:[termo]` | Remover uma entrada do glossário |
+| `/set-style group:[grupo] preset:<predefinição> custom:<instrução personalizada>` | Definir o estilo de tradução de um grupo. Especifique `preset` ou `custom`, não ambos |
 
 - `language` usa códigos BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Máximo de 50 entradas de glossário por servidor
