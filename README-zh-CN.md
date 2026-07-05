@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | 变量 | 必需 | 说明 |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | 否 | 头像环徽章的公开基础 URL。未设置时，镜像消息使用 Discord 原始头像 URL，不会使用徽章服务器 |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 否 | 每个服务器每分钟的 Gemini 令牌上限（默认: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 否 | `/avatar` 徽章端点的每 IP 每分钟请求上限（默认: `120`） |
+| `MESSAGE_LINK_RETENTION_DAYS` | 否 | SQLite 中 `message_links` 的自动清理前保留天数。`0`（默认）禁用清理；例如 `60` 会在启动时及每 24 小时删除超过 60 天的链接 |
 
 ### 4. 启动
 

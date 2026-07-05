@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Variable | Erforderlich | Beschreibung |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | Nein | Öffentliche Basis-URL für Avatar-Ring-Badges. Wenn nicht gesetzt, verwenden gespiegelte Nachrichten die ursprüngliche Discord-Avatar-URL und der Badge-Server wird nicht genutzt |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Nein | Gemini-Token-Limit pro Server und Minute (Standard: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | Anfrage-Limit pro IP und Minute für den `/avatar`-Badge-Endpunkt (Standard: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | Nein | Aufbewahrungsdauer von `message_links` in SQLite in Tagen vor automatischer Bereinigung. `0` (Standard) deaktiviert die Bereinigung; z. B. `60` löscht Links älter als 60 Tage beim Start und alle 24 Stunden |
 
 ### 4. Starten
 

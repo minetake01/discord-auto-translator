@@ -161,9 +161,42 @@ func main() {
 	}
 	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 	log.Println("Discord Gemini Auto Translator is running")
+	var cancelRetention context.CancelFunc
+	if cfg.MessageLinkRetentionDays > 0 {
+		retentionCtx, cancel := context.WithCancel(context.Background())
+		cancelRetention = cancel
+		retention := time.Duration(cfg.MessageLinkRetentionDays) * 24 * time.Hour
+		days := cfg.MessageLinkRetentionDays
+		go func() {
+			purge := func() {
+				n, err := store.PurgeMessageLinksOlderThan(retentionCtx, time.Now().UTC().Add(-retention))
+				if err != nil {
+					log.Printf("message link purge: %v", err)
+					return
+				}
+				if n > 0 {
+					log.Printf("purged %d message_links older than %d days", n, days)
+				}
+			}
+			purge()
+			ticker := time.NewTicker(24 * time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-retentionCtx.Done():
+					return
+				case <-ticker.C:
+					purge()
+				}
+			}
+		}()
+	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
+	if cancelRetention != nil {
+		cancelRetention()
+	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {

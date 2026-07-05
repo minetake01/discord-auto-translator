@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | 変数 | 必須 | 説明 |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `/avatar` バッジエンドポイントの IP ごとのリクエスト上限/分（デフォルト: `120`） |
+| `MESSAGE_LINK_RETENTION_DAYS` | 任意 | SQLite の `message_links` を保持する日数。`0`（デフォルト）で自動削除を無効。例: `60` で 60 日より古いリンクを起動時および 24 時間ごとに削除 |
 
 ### 4. 起動
 

@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Variable | Required | Description |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | No | Public base URL for avatar ring badges. If unset, mirrored messages use the original Discord avatar URL and the badge server is not used |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Per-guild Gemini token limit per minute (default: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Per-IP request limit per minute for the `/avatar` badge endpoint (default: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | Days to retain `message_links` in SQLite before automatic purge. `0` (default) disables purging; set e.g. `60` to delete links older than 60 days at startup and every 24 hours |
 
 ### 4. Run
 

@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Variable | Obligatorio | Descripción |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | No | URL base pública para insignias de anillo en avatares. Si no se establece, los mensajes reflejados usan la URL de avatar original de Discord y el servidor de insignias no se utiliza |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Límite de tokens de Gemini por servidor y por minuto (predeterminado: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Límite de solicitudes por IP y por minuto para el endpoint de insignia `/avatar` (predeterminado: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | Días de retención de `message_links` en SQLite antes de la purga automática. `0` (predeterminado) desactiva la purga; p. ej. `60` elimina enlaces de más de 60 días al inicio y cada 24 horas |
 
 ### 4. Ejecutar
 

@@ -143,6 +143,10 @@ func discordSnowflakeTime(id string) (time.Time, bool) {
 	return time.UnixMilli(timestampMillis).UTC(), true
 }
 
+func snowflakeIDBefore(cutoff time.Time) string {
+	return strconv.FormatUint((uint64(cutoff.UnixMilli()-discordEpochMillis)<<22), 10)
+}
+
 func truncateRunes(text string, maxRunes int, ellipsis string) string {
 	runes := []rune(text)
 	if len(runes) <= maxRunes {

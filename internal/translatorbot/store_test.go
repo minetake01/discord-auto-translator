@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -472,5 +473,65 @@ func TestSetGroupStyleAndGroupStyle(t *testing.T) {
 	_, _, err = s.GroupStyle(ctx, "g1", "missing")
 	if !errors.Is(err, ErrGroupNotFound) {
 		t.Fatalf("GroupStyle missing group = %v, want ErrGroupNotFound", err)
+	}
+}
+
+func TestPurgeMessageLinksOlderThan(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	cutoff := now.Add(-30 * 24 * time.Hour)
+	oldID := snowflakeForTime(now.Add(-31*24*time.Hour), 1)
+	newID := snowflakeForTime(now.Add(-29*24*time.Hour), 2)
+
+	for _, link := range []struct {
+		id, target string
+	}{
+		{oldID, "target-old"},
+		{newID, "target-new"},
+	} {
+		if err := s.SaveMessageLink(ctx, MessageLink{
+			SourceMessageID: link.id, SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "en", TargetMessageID: link.target, TargetLanguage: "en",
+			SourceAuthorID: "u", SourceContentSnapshot: link.id,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{oldID, newID} {
+		if err := s.SavePinState(ctx, "ja", id, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := s.PurgeMessageLinksOlderThan(ctx, cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("purged %d links, want 1", n)
+	}
+
+	oldLinks, err := s.MessageTargets(ctx, "ja", oldID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(oldLinks) != 0 {
+		t.Fatalf("old link should be purged: %#v", oldLinks)
+	}
+	newLinks, err := s.MessageTargets(ctx, "ja", newID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(newLinks) != 1 {
+		t.Fatalf("new link should remain: %#v", newLinks)
+	}
+	_, oldKnown, err := s.GetPinState(ctx, "ja", oldID)
+	if err != nil || oldKnown {
+		t.Fatalf("old pin should be purged: known=%v err=%v", oldKnown, err)
+	}
+	_, newKnown, err := s.GetPinState(ctx, "ja", newID)
+	if err != nil || !newKnown {
+		t.Fatalf("new pin should remain: known=%v err=%v", newKnown, err)
 	}
 }

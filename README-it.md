@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Variabile | Obbligatorio | Descrizione |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | No | URL base pubblico per i badge ad anello degli avatar. Se non impostato, i messaggi rispecchiati usano l'URL avatar Discord originale e il server di badge non viene utilizzato |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Limite di token Gemini per server al minuto (predefinito: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Limite di richieste per IP al minuto per l'endpoint badge `/avatar` (predefinito: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | Giorni di conservazione di `message_links` in SQLite prima della purge automatica. `0` (predefinito) disabilita la purge; es. `60` elimina i link più vecchi di 60 giorni all'avvio e ogni 24 ore |
 
 ### 4. Avviare
 
