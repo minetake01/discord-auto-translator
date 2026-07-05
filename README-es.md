@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | Variable | Obligatorio | Descripción |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | Sí | Clave de API de Gemini |
 | `DB_PATH` | No | Ruta al archivo SQLite (predeterminado: `./translator.db`) |
 | `HTTP_ADDR` | No | Dirección del servidor de insignia de avatar (predeterminado: `:8080`) |
-| `PUBLIC_BASE_URL` | No | URL base para añadir una insignia de anillo naranja a los avatares |
+| `PUBLIC_BASE_URL` | No | URL base pública para insignias de anillo en avatares. Si no se establece, los mensajes reflejados usan la URL de avatar original de Discord y el servidor de insignias no se utiliza |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Límite de tokens de Gemini por servidor y por minuto (predeterminado: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Límite de solicitudes por IP y por minuto para el endpoint de insignia `/avatar` (predeterminado: `120`) |
 
 ### 4. Ejecutar
 

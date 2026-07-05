@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | 変数 | 必須 | 説明 |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | 必須 | Gemini API キー |
 | `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
-| `PUBLIC_BASE_URL` | 任意 | アバターにオレンジリングバッジを付ける場合のベース URL |
+| `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `/avatar` バッジエンドポイントの IP ごとのリクエスト上限/分（デフォルト: `120`） |
 
 ### 4. 起動
 

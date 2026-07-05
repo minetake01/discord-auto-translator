@@ -64,6 +64,7 @@ DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 ```
 
 | Biến | Bắt buộc | Mô tả |
@@ -72,8 +73,9 @@ GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 | `GEMINI_API_KEY` | Có | Khóa API Gemini |
 | `DB_PATH` | Không | Đường dẫn đến tệp SQLite (mặc định: `./translator.db`) |
 | `HTTP_ADDR` | Không | Địa chỉ máy chủ badge ảnh đại diện (mặc định: `:8080`) |
-| `PUBLIC_BASE_URL` | Không | URL cơ sở để thêm badge vòng màu cam vào ảnh đại diện |
+| `PUBLIC_BASE_URL` | Không | URL cơ sở công khai cho badge vòng ảnh đại diện. Nếu không đặt, tin nhắn phản chiếu dùng URL ảnh đại diện Discord gốc và máy chủ badge không được sử dụng |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token Gemini mỗi máy chủ mỗi phút (mặc định: `100000`) |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | Giới hạn yêu cầu mỗi IP mỗi phút cho endpoint badge `/avatar` (mặc định: `120`) |
 
 ### 4. Chạy
 
