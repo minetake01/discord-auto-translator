@@ -250,32 +250,54 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests)
 }
 
+type pendingThreadEdit struct {
+	thread ThreadLink
+	target GroupChannel
+}
+
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string) error {
 	threads, err := s.store.SourceThreadTargets(ctx, sourceThreadID)
 	if err != nil {
 		return err
 	}
+	byGroup := make(map[string][]ThreadLink)
 	for _, thread := range threads {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, thread.GroupID)
+		byGroup[thread.GroupID] = append(byGroup[thread.GroupID], thread)
+	}
+	for groupID, groupThreads := range byGroup {
+		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
 		if err != nil {
 			return err
 		}
-		target := findChannel(targets, thread.TargetChannelID)
-		if target == nil {
+		pending := make([]pendingThreadEdit, 0, len(groupThreads))
+		for _, thread := range groupThreads {
+			target := findChannel(targets, thread.TargetChannelID)
+			if target == nil {
+				continue
+			}
+			pending = append(pending, pendingThreadEdit{thread: thread, target: *target})
+		}
+		if len(pending) == 0 {
 			continue
 		}
 		contextFn := func() TranslationContext {
-			return TranslationContext{StyleInstructions: s.groupStyleInstructions(ctx, guildID, thread.GroupID)}
+			return TranslationContext{StyleInstructions: s.groupStyleInstructions(ctx, guildID, groupID)}
 		}
-		translations, err := s.translateWithLimit(ctx, guildID, name, []string{target.Language}, contextFn)
+		languages := make([]string, 0, len(pending))
+		for _, p := range pending {
+			languages = append(languages, p.target.Language)
+		}
+		translations, err := s.translateWithLimit(ctx, guildID, name, languages, contextFn)
 		if err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
 				continue
 			}
 			return err
 		}
-		if err := s.discord.EditThread(thread.TargetThreadID, translations[target.Language]); err != nil {
-			return err
+		for _, p := range pending {
+			if err := s.discord.EditThread(p.thread.TargetThreadID, translations[p.target.Language]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
