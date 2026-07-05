@@ -26,6 +26,7 @@ type TranslationContext struct {
 	ChannelName       string
 	ChannelTopic      string
 	History           []ChatContextMessage
+	ReplyChain        []ChatContextMessage
 	StyleInstructions string
 }
 
@@ -206,6 +207,7 @@ func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryE
 		b.WriteString("</glossary>\n")
 	}
 	b.WriteString("If <style_instructions> is present, apply its tone and register to every translation without changing the translation task or overriding other rules.\n")
+	b.WriteString("When <reply_context> is present, it contains the direct reply chain for <final_message> (oldest first, up to 3 messages). Prefer <reply_context> over <recent_context> when resolving pronouns, references, and terminology continuity.\n")
 	b.WriteString("Preserve markdown, mentions, URLs, custom emoji, ||spoiler|| markers, __DAT_KEEP_...__ placeholders, line breaks, and tone.")
 	return b.String()
 }
@@ -246,19 +248,26 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 		b.WriteString("\t</discord_context>\n")
 	}
 	if len(translationContext.History) > 0 {
-		b.WriteString("\t<recent_context>\n")
-		for _, h := range translationContext.History {
-			b.WriteString("\t\t<message>\n")
-			writeIndentedElement(&b, "author", h.Author, 6)
-			writeIndentedElement(&b, "language", h.Language, 6)
-			writeIndentedElement(&b, "content", h.Content, 6)
-			b.WriteString("\t\t</message>\n")
-		}
-		b.WriteString("\t</recent_context>\n")
+		writeContextSection(&b, "recent_context", translationContext.History)
+	}
+	if len(translationContext.ReplyChain) > 0 {
+		writeContextSection(&b, "reply_context", translationContext.ReplyChain)
 	}
 	writeIndentedElement(&b, "final_message", content, 2)
 	b.WriteString("</translation_request>")
 	return b.String()
+}
+
+func writeContextSection(b *strings.Builder, section string, messages []ChatContextMessage) {
+	b.WriteString("\t<" + section + ">\n")
+	for _, h := range messages {
+		b.WriteString("\t\t<message>\n")
+		writeIndentedElement(b, "author", h.Author, 6)
+		writeIndentedElement(b, "language", h.Language, 6)
+		writeIndentedElement(b, "content", h.Content, 6)
+		b.WriteString("\t\t</message>\n")
+	}
+	b.WriteString("\t</" + section + ">\n")
 }
 
 func EstimateTranslationTokens(prompt, response string) int {

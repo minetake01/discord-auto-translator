@@ -29,6 +29,7 @@ type fakeDiscordAPI struct {
 	channelNames      map[string]string
 	channelTopics     map[string]string
 	messageContents   map[string]string
+	messages          map[string]DiscordFetchedMessage
 	messageErrors     map[string]error
 	nextID            int
 }
@@ -85,16 +86,19 @@ func (f *fakeDiscordAPI) ChannelTopic(channelID string) (string, error) {
 	return f.channelTopics[channelID], nil
 }
 
-func (f *fakeDiscordAPI) MessageContent(channelID, messageID string) (string, error) {
+func (f *fakeDiscordAPI) Message(channelID, messageID string) (DiscordFetchedMessage, error) {
 	key := channelID + "\x00" + messageID
 	if err := f.messageErrors[key]; err != nil {
-		return "", err
+		return DiscordFetchedMessage{}, err
+	}
+	if msg, ok := f.messages[key]; ok {
+		return msg, nil
 	}
 	content, ok := f.messageContents[key]
 	if !ok {
-		return "", errors.New("message not found")
+		return DiscordFetchedMessage{}, errors.New("message not found")
 	}
-	return content, nil
+	return DiscordFetchedMessage{Content: content}, nil
 }
 
 func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string, err error) {
@@ -1848,5 +1852,203 @@ func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 	want := "[en] see " + MessageJumpURL("guild", "en", "linked-en")
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+}
+
+func TestHandleMessageCreateIncludesCrossChannelOriginalHistory(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100", SourceChannelID: "en", GroupID: "g",
+		TargetChannelID: "ja", TargetMessageID: "200", TargetLanguage: "ja",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "Hello from English",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "101", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "続きです",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	got := translator.contexts[0].History
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "en" || got[0].Content != "Hello from English" {
+		t.Fatalf("unexpected history: %#v", got)
+	}
+}
+
+func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		messages: map[string]DiscordFetchedMessage{
+			"ja\x00orig": {Content: "こんにちは", AuthorDisplayName: "Alice"},
+		},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "こんにちは",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "返信です",
+		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "こんにちは",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	got := translator.contexts[0].ReplyChain
+	if len(got) != 1 || got[0].Author != "Alice" || got[0].Language != "ja" || got[0].Content != "こんにちは" {
+		t.Fatalf("unexpected reply chain: %#v", got)
+	}
+}
+
+func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		messages: map[string]DiscordFetchedMessage{
+			"ja\x00one":   {Content: "first", AuthorDisplayName: "A"},
+			"ja\x00two":   {Content: "second", AuthorDisplayName: "B", ReferencedChannelID: "ja", ReferencedMessageID: "one"},
+			"ja\x00three": {Content: "third", AuthorDisplayName: "C", ReferencedChannelID: "ja", ReferencedMessageID: "two"},
+			"ja\x00four":  {Content: "fourth", AuthorDisplayName: "D", ReferencedChannelID: "ja", ReferencedMessageID: "three"},
+		},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	for _, link := range []MessageLink{
+		{SourceMessageID: "one", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t1", TargetLanguage: "en", SourceAuthorDisplayName: "A", SourceContentSnapshot: "first"},
+		{SourceMessageID: "two", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t2", TargetLanguage: "en", SourceAuthorDisplayName: "B", SourceContentSnapshot: "second"},
+		{SourceMessageID: "three", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t3", TargetLanguage: "en", SourceAuthorDisplayName: "C", SourceContentSnapshot: "third"},
+		{SourceMessageID: "four", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t4", TargetLanguage: "en", SourceAuthorDisplayName: "D", SourceContentSnapshot: "fourth"},
+	} {
+		if err := store.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "返信",
+		ReferencedMessageID: "four", ReferencedMessageChannelID: "ja",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := translator.contexts[0].ReplyChain
+	if len(got) != 3 {
+		t.Fatalf("unexpected reply chain length: %#v", got)
+	}
+	want := []ChatContextMessage{
+		{Author: "B", Language: "ja", Content: "second"},
+		{Author: "C", Language: "ja", Content: "third"},
+		{Author: "D", Language: "ja", Content: "fourth"},
+	}
+	for i, entry := range want {
+		if got[i] != entry {
+			t.Fatalf("reply chain[%d] = %#v, want %#v", i, got[i], entry)
+		}
+	}
+}
+
+func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		messages: map[string]DiscordFetchedMessage{
+			"ja\x00orig": {Content: "前の発言", AuthorDisplayName: "Alice"},
+		},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en",
+		SourceAuthorDisplayName: "Carol", SourceContentSnapshot: "別の発言",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前の発言",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "101", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "返信",
+		ReferencedMessageID: "orig", ReferencedMessageChannelID: "ja",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctxData := translator.contexts[0]
+	if len(ctxData.ReplyChain) != 1 || ctxData.ReplyChain[0].Content != "前の発言" {
+		t.Fatalf("unexpected reply chain: %#v", ctxData.ReplyChain)
+	}
+	if len(ctxData.History) != 1 || ctxData.History[0].Content != "別の発言" {
+		t.Fatalf("unexpected history: %#v", ctxData.History)
+	}
+}
+
+func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		messages: map[string]DiscordFetchedMessage{
+			"en\x00translated": {Content: "[en] Hello", AuthorDisplayName: "Alice"},
+		},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "orig", SourceChannelID: "en", GroupID: "g",
+		TargetChannelID: "ja", TargetMessageID: "translated", TargetLanguage: "ja",
+		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "Hello",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "reply", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "返信",
+		ReferencedMessageID: "translated", ReferencedMessageChannelID: "ja",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := translator.contexts[0].ReplyChain
+	if len(got) != 1 || got[0].Language != "en" || got[0].Content != "Hello" {
+		t.Fatalf("unexpected reply chain: %#v", got)
 	}
 }

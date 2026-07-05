@@ -156,11 +156,20 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
       <content>Hello!</content>
     </message>
   </recent_context>
+  <reply_context>
+    <message>
+      <author>456789012</author>
+      <language>en</language>
+      <content>Earlier reply target</content>
+    </message>
+  </reply_context>
   <final_message>How are you?</final_message>
 </translation_request>
 ```
 
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
+- `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から最大3件の原文を収集します。
+- `<reply_context>` はリプライ先を最大3件遡った引用チェイン（古い順）です。`<recent_context>` より優先して解釈に使います。引用チェインに含まれるメッセージは `<recent_context>` から除外されます。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。
 - Gemini の temperature は `0.2`（低め）に設定して一貫性を優先しています。
 
@@ -289,11 +298,12 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 Discord がスレッドをアーカイブした場合の挙動は考慮されていません。アーカイブ済みスレッドへのウェブフック送信は Discord API エラーになります。
 
-### `translationHistoryLimit` と `translationHistoryMaxAge`
+### `translationHistoryLimit` / `translationReplyChainLimit` / `translationHistoryMaxAge`
 
 ```go
 const translationHistoryLimit = 3
+const translationReplyChainLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
 ```
 
-翻訳文脈として使用する直近メッセージ数と時間窓はハードコードされています。必要に応じて設定可能にする余地があります。
+翻訳文脈として使用する直近メッセージ数、引用チェインの最大遡り件数、履歴の時間窓はハードコードされています。引用チェインには時間窓を適用しません。

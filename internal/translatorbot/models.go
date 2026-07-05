@@ -88,3 +88,10 @@ type DiscordSticker struct {
 	Name       string
 	FormatType int
 }
+
+type DiscordFetchedMessage struct {
+	Content             string
+	AuthorDisplayName   string
+	ReferencedChannelID string
+	ReferencedMessageID string
+}
