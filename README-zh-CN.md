@@ -124,13 +124,15 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 | 命令 | 说明 |
 |---|---|
-| `/new-channel language:[语言]` | 新建翻译组 |
-| `/join-channel group:[组] language:[语言]` | 向组中添加频道 |
-| `/leave-channel group:[组]` | 使频道退出组 |
+| `/new-channel language:[语言] channel:<频道> group:<组>` | 新建翻译组。省略 `channel` 时使用当前频道；省略 `group` 时使用频道名称 |
+| `/join-channel group:[组] language:[语言] channel:<频道>` | 向组中添加频道。省略 `channel` 时使用当前频道 |
+| `/leave-channel group:[组] channel:<频道>` | 使频道退出组。省略 `channel` 时使用当前频道 |
 | `/delete-group group:[组]` | 删除整个组 |
-| `/add-glossary term:[术语] translation:[译文] attribute:[属性] always_include:[布尔]` | 向服务器术语表注册优先译法（`attribute` 为带候选的自由输入，`always_include` 默认为 `false`） |
+| `/list-groups` | 列出此服务器的翻译组及其频道 |
+| `/add-glossary term:[术语] translation:[译文] attribute:<属性> always_include:<布尔>` | 向服务器术语表注册优先译法。`attribute` 为带候选的自由输入；`always_include` 默认为 `false` |
 | `/list-glossary` | 列出服务器的术语表 |
 | `/remove-glossary term:[术语]` | 删除术语表条目 |
+| `/set-style group:[组] preset:<预设> custom:<自定义指示>` | 设置组的翻译风格。指定 `preset` 或 `custom` 之一，不可同时指定 |
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每个服务器最多可注册 50 条术语

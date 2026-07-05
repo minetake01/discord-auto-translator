@@ -124,13 +124,15 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 
 | Perintah | Deskripsi |
 |---|---|
-| `/new-channel language:[bahasa]` | Buat grup terjemahan baru |
-| `/join-channel group:[grup] language:[bahasa]` | Tambahkan saluran ke grup |
-| `/leave-channel group:[grup]` | Hapus saluran dari grup |
+| `/new-channel language:[bahasa] channel:<saluran> group:<grup>` | Buat grup terjemahan baru. `channel` default ke saluran saat ini; `group` default ke nama saluran |
+| `/join-channel group:[grup] language:[bahasa] channel:<saluran>` | Tambahkan saluran ke grup. `channel` default ke saluran saat ini |
+| `/leave-channel group:[grup] channel:<saluran>` | Hapus saluran dari grup. `channel` default ke saluran saat ini |
 | `/delete-group group:[grup]` | Hapus seluruh grup |
-| `/add-glossary term:[istilah] translation:[terjemahan] attribute:[atribut] always_include:[bool]` | Daftarkan terjemahan pilihan di glosarium server (`attribute` adalah teks bebas dengan saran; `always_include` defaultnya `false`) |
+| `/list-groups` | Tampilkan grup terjemahan dan salurannya di server ini |
+| `/add-glossary term:[istilah] translation:[terjemahan] attribute:<atribut> always_include:<bool>` | Daftarkan terjemahan pilihan di glosarium server. `attribute` adalah teks bebas dengan saran; `always_include` defaultnya `false` |
 | `/list-glossary` | Tampilkan glosarium server |
 | `/remove-glossary term:[istilah]` | Hapus entri glosarium |
+| `/set-style group:[grup] preset:<preset> custom:<instruksi kustom>` | Atur gaya terjemahan untuk grup. Tentukan `preset` atau `custom`, bukan keduanya |
 
 - `language` menggunakan kode BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, dll.)
 - Maksimal 50 entri glosarium per server

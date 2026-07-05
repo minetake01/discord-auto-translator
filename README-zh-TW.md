@@ -124,13 +124,15 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 | 指令 | 說明 |
 |---|---|
-| `/new-channel language:[語言]` | 建立新的翻譯群組 |
-| `/join-channel group:[群組] language:[語言]` | 將頻道加入群組 |
-| `/leave-channel group:[群組]` | 使頻道退出群組 |
+| `/new-channel language:[語言] channel:<頻道> group:<群組>` | 建立新的翻譯群組。省略 `channel` 時使用目前頻道；省略 `group` 時使用頻道名稱 |
+| `/join-channel group:[群組] language:[語言] channel:<頻道>` | 將頻道加入群組。省略 `channel` 時使用目前頻道 |
+| `/leave-channel group:[群組] channel:<頻道>` | 使頻道退出群組。省略 `channel` 時使用目前頻道 |
 | `/delete-group group:[群組]` | 刪除整個群組 |
-| `/add-glossary term:[詞彙] translation:[譯文] attribute:[屬性] always_include:[布林]` | 在伺服器詞彙表註冊優先譯法（`attribute` 為附候選的自由輸入，`always_include` 預設為 `false`） |
+| `/list-groups` | 列出此伺服器的翻譯群組及其頻道 |
+| `/add-glossary term:[詞彙] translation:[譯文] attribute:<屬性> always_include:<布林>` | 在伺服器詞彙表註冊優先譯法。`attribute` 為附候選的自由輸入；`always_include` 預設為 `false` |
 | `/list-glossary` | 列出伺服器的詞彙表 |
 | `/remove-glossary term:[詞彙]` | 刪除詞彙表項目 |
+| `/set-style group:[群組] preset:<預設> custom:<自訂指示>` | 設定群組的翻譯風格。指定 `preset` 或 `custom` 其中之一，不可同時指定 |
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每個伺服器最多可註冊 50 筆詞彙

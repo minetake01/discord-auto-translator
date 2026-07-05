@@ -124,13 +124,15 @@ By default, the admin slash commands can only be run by **server administrators*
 
 | Command | Description |
 |---|---|
-| `/new-channel language:[lang]` | Create a new translation group |
-| `/join-channel group:[group] language:[lang]` | Add a channel to a group |
-| `/leave-channel group:[group]` | Remove a channel from a group |
+| `/new-channel language:[lang] channel:<channel> group:<group>` | Create a new translation group. `channel` defaults to the current channel; `group` defaults to the channel name |
+| `/join-channel group:[group] language:[lang] channel:<channel>` | Add a channel to a group. `channel` defaults to the current channel |
+| `/leave-channel group:[group] channel:<channel>` | Remove a channel from a group. `channel` defaults to the current channel |
 | `/delete-group group:[group]` | Delete an entire group |
-| `/add-glossary term:[term] translation:[translation] attribute:[attribute] always_include:[bool]` | Register a preferred translation in the server glossary (`attribute` is free-form with suggestions; `always_include` defaults to `false`) |
+| `/list-groups` | List translation groups and their channels for this server |
+| `/add-glossary term:[term] translation:[translation] attribute:<attribute> always_include:<bool>` | Register a preferred translation in the server glossary. `attribute` is free-form with suggestions; `always_include` defaults to `false` |
 | `/list-glossary` | List the server's glossary entries |
 | `/remove-glossary term:[term]` | Remove a glossary entry |
+| `/set-style group:[group] preset:<preset> custom:<custom>` | Set translation style for a group. Specify `preset` or `custom`, not both |
 
 - `language` uses BCP-47 codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Up to 50 glossary entries can be registered per server

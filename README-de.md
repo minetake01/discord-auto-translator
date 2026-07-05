@@ -124,13 +124,15 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 
 | Befehl | Beschreibung |
 |---|---|
-| `/new-channel language:[Sprache]` | Neue Übersetzungsgruppe erstellen |
-| `/join-channel group:[Gruppe] language:[Sprache]` | Channel zu einer Gruppe hinzufügen |
-| `/leave-channel group:[Gruppe]` | Channel aus einer Gruppe entfernen |
+| `/new-channel language:[Sprache] channel:<Channel> group:<Gruppe>` | Neue Übersetzungsgruppe erstellen. `channel` ist standardmäßig der aktuelle Channel; `group` ist standardmäßig der Channel-Name |
+| `/join-channel group:[Gruppe] language:[Sprache] channel:<Channel>` | Channel zu einer Gruppe hinzufügen. `channel` ist standardmäßig der aktuelle Channel |
+| `/leave-channel group:[Gruppe] channel:<Channel>` | Channel aus einer Gruppe entfernen. `channel` ist standardmäßig der aktuelle Channel |
 | `/delete-group group:[Gruppe]` | Gesamte Gruppe löschen |
-| `/add-glossary term:[Begriff] translation:[Übersetzung] attribute:[Attribut] always_include:[Bool]` | Bevorzugte Übersetzung im Server-Glossar registrieren (`attribute` ist Freitext mit Vorschlägen; `always_include` ist standardmäßig `false`) |
+| `/list-groups` | Übersetzungsgruppen und Channels dieses Servers anzeigen |
+| `/add-glossary term:[Begriff] translation:[Übersetzung] attribute:<Attribut> always_include:<Bool>` | Bevorzugte Übersetzung im Server-Glossar registrieren. `attribute` ist Freitext mit Vorschlägen; `always_include` ist standardmäßig `false` |
 | `/list-glossary` | Glossar des Servers anzeigen |
 | `/remove-glossary term:[Begriff]` | Glossareintrag entfernen |
+| `/set-style group:[Gruppe] preset:<Voreinstellung> custom:<eigene Anweisung>` | Übersetzungsstil für eine Gruppe festlegen. `preset` oder `custom` angeben, nicht beides |
 
 - `language` verwendet BCP-47-Codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` usw.)
 - Maximal 50 Glossareinträge pro Server

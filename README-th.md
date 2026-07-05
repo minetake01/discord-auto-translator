@@ -124,13 +124,15 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 | คำสั่ง | คำอธิบาย |
 |---|---|
-| `/new-channel language:[ภาษา]` | สร้างกลุ่มแปลภาษาใหม่ |
-| `/join-channel group:[กลุ่ม] language:[ภาษา]` | เพิ่มช่องทางเข้ากลุ่ม |
-| `/leave-channel group:[กลุ่ม]` | ลบช่องทางออกจากกลุ่ม |
+| `/new-channel language:[ภาษา] channel:<ช่อง> group:<กลุ่ม>` | สร้างกลุ่มแปลภาษาใหม่ หากไม่ระบุ `channel` จะใช้ช่องที่รันคำสั่ง หากไม่ระบุ `group` จะใช้ชื่อช่อง |
+| `/join-channel group:[กลุ่ม] language:[ภาษา] channel:<ช่อง>` | เพิ่มช่องทางเข้ากลุ่ม หากไม่ระบุ `channel` จะใช้ช่องที่รันคำสั่ง |
+| `/leave-channel group:[กลุ่ม] channel:<ช่อง>` | ลบช่องทางออกจากกลุ่ม หากไม่ระบุ `channel` จะใช้ช่องที่รันคำสั่ง |
 | `/delete-group group:[กลุ่ม]` | ลบทั้งกลุ่ม |
-| `/add-glossary term:[คำศัพท์] translation:[การแปล] attribute:[คุณลักษณะ] always_include:[บูลีน]` | ลงทะเบียนการแปลที่ต้องการในอภิธานศัพท์ของเซิร์ฟเวอร์ (`attribute` คือข้อความอิสระพร้อมคำแนะนำ ค่าเริ่มต้นของ `always_include` คือ `false`) |
+| `/list-groups` | แสดงกลุ่มแปลภาษาและช่องทางในเซิร์ฟเวอร์นี้ |
+| `/add-glossary term:[คำศัพท์] translation:[การแปล] attribute:<คุณลักษณะ> always_include:<บูลีน>` | ลงทะเบียนการแปลที่ต้องการในอภิธานศัพท์ของเซิร์ฟเวอร์ `attribute` คือข้อความอิสระพร้อมคำแนะนำ ค่าเริ่มต้นของ `always_include` คือ `false` |
 | `/list-glossary` | แสดงรายการอภิธานศัพท์ของเซิร์ฟเวอร์ |
 | `/remove-glossary term:[คำศัพท์]` | ลบรายการในอภิธานศัพท์ |
+| `/set-style group:[กลุ่ม] preset:<พรีเซ็ต> custom:<คำสั่งกำหนดเอง>` | ตั้งค่าสไตล์การแปลของกลุ่ม ระบุ `preset` หรือ `custom` อย่างใดอย่างหนึ่ง ไม่ใช่ทั้งสอง |
 
 - `language` ใช้รหัส BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` เป็นต้น)
 - สูงสุด 50 รายการอภิธานศัพท์ต่อเซิร์ฟเวอร์

@@ -124,16 +124,18 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 | 명령어 | 설명 |
 |---|---|
-| `/new-channel language:[언어]` | 번역 그룹 새로 만들기 |
-| `/join-channel group:[그룹] language:[언어]` | 그룹에 채널 추가 |
-| `/leave-channel group:[그룹]` | 그룹에서 채널 제외 |
+| `/new-channel language:[언어] channel:<채널> group:<그룹>` | 번역 그룹 새로 만들기. `channel`을 생략하면 명령을 실행한 채널, `group`을 생략하면 채널 이름이 사용됩니다 |
+| `/join-channel group:[그룹] language:[언어] channel:<채널>` | 그룹에 채널 추가. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
+| `/leave-channel group:[그룹] channel:<채널>` | 그룹에서 채널 제외. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
 | `/delete-group group:[그룹]` | 그룹 전체 삭제 |
-| `/add-glossary term:[용어] translation:[번역] attribute:[속성] always_include:[불리언]` | 서버 용어집에 우선 번역 등록(`attribute`는 후보가 표시되는 자유 입력, `always_include` 기본값은 `false`) |
+| `/list-groups` | 이 서버의 번역 그룹과 채널 목록 표시 |
+| `/add-glossary term:[용어] translation:[번역] attribute:<속성> always_include:<불리언>` | 서버 용어집에 우선 번역 등록. `attribute`는 후보가 표시되는 자유 입력입니다. `always_include` 기본값은 `false`입니다 |
 | `/list-glossary` | 서버의 용어집 목록 표시 |
 | `/remove-glossary term:[용어]` | 용어집 항목 삭제 |
+| `/set-style group:[그룹] preset:<프리셋> custom:<사용자 지정 지시>` | 그룹의 번역 스타일 설정. `preset` 또는 `custom` 중 하나만 지정하세요 |
 
 - `language`는 BCP-47 형식(`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` 등)
-- 용어집은 서버당 최대 50개까지 등록 가능
+- 용어집은 서버당 최대 50개까지 등록할 수 있습니다
 - `attribute`에는 "인명", "지명", "속어", "약어", "전문 용어" 등의 후보가 표시되며 임의의 속성도 자유롭게 입력할 수 있습니다. 지정한 속성은 Gemini가 용어의 의미를 판단하는 문맥으로 사용됩니다
 - 일반 용어는 번역 대상 본문에 `term`이 포함될 때만(대소문자 무시) 시스템 지시에 추가됩니다. `always_include:true`인 용어는 항상 추가됩니다
 - `channel` 옵션을 생략하면 명령어를 실행한 채널이 대상이 됩니다
