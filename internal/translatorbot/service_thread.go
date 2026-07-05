@@ -91,7 +91,7 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel) (bool, error) {
 	languages := []string{target.Language}
 	contextFn := func() TranslationContext {
-		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID, "", "", req.InitialMessageUsername)
+		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID, "", "", req.InitialMessageUsername, req.Name)
 	}
 	nameTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.Name, languages, contextFn)
 	if err != nil {
@@ -248,7 +248,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		if replyChannelID == "" {
 			replyChannelID = m.ChannelID
 		}
-		return s.groupTranslationContext(ctx, m.GuildID, thread.GroupID, thread.SourceChannelID, m.ChannelID, sourceLanguage, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName)
+		return s.groupTranslationContext(ctx, m.GuildID, thread.GroupID, thread.SourceChannelID, m.ChannelID, sourceLanguage, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, s.resolveThreadName(m))
 	}
 	dests := []mirrorDestination{destinationForThread(*target, thread.TargetThreadID)}
 	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests)

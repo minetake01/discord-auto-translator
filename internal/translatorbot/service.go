@@ -123,14 +123,24 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 
 // groupTranslationContext gathers server/channel context, recent history, reply
 // chain, and the group's style instructions for a translation request.
-func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author string) TranslationContext {
+func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author, threadName string) TranslationContext {
 	channelIDs := s.conversationLocations(ctx, guildID, groupID, historyChannelID, sourceLanguage)
 	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID)
 	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, excludeMessageID, replyKeys)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
 	translationContext.Author = strings.TrimSpace(author)
+	translationContext.ThreadName = strings.TrimSpace(threadName)
 	return translationContext
+}
+
+func (s *Service) resolveThreadName(m DiscordMessage) string {
+	if name := strings.TrimSpace(m.ThreadName); name != "" {
+		return name
+	}
+	return bestEffortString(func() (string, error) {
+		return s.discord.ChannelName(m.ChannelID)
+	})
 }
 
 func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID string) string {
