@@ -153,12 +153,16 @@ go test ./...
 
 Script triển khai cho Google Compute Engine được bao gồm tại `deploy/deploy-gce.ps1` (Windows PowerShell).
 
-```powershell
-# Thiết lập lần đầu (cài đặt Caddy + systemd)
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+Tạo `deploy/deploy.json` từ file mẫu cho cài đặt kết nối GCE. Cấu hình app và secret mặc định dùng `.env`; file khác có thể chỉ định qua `envFile` trong `deploy.json` hoặc `-EnvFile`.
 
-# Khi cập nhật code
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# Chỉnh sửa deploy.json và .env
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Thiết lập lần đầu
+.\deploy\deploy-gce.ps1                          # Chỉ cập nhật code
+.\deploy\deploy-gce.ps1 -UploadEnv               # Cập nhật secret
 ```
 
 ## Giấy phép

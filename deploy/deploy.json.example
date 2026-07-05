@@ -1,0 +1,8 @@
+{
+  "instanceName": "your-gce-instance",
+  "zone": "your-gce-zone",
+  "remoteUser": "your-ssh-user",
+  "appDir": "/opt/discord-auto-translator",
+  "serviceName": "discord-auto-translator",
+  "envFile": ".env"
+}

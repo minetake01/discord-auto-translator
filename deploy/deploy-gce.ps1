@@ -1,11 +1,6 @@
 param(
-    [string]$InstanceName = "discord-translate-bot",
-    [string]$Zone = "us-central1-a",
-    [string]$AppDir = "/opt/discord-auto-translator",
-    [string]$ServiceName = "discord-auto-translator",
-    [string]$Domain = "discord-translator.minetake.net",
-    [string]$PublicBaseUrl = "https://discord-translator.minetake.net",
-    [string]$RemoteUser = "minet",
+    [string]$ConfigFile = "deploy/deploy.json",
+    [string]$EnvFile,
     [switch]$Bootstrap,
     [switch]$UploadEnv,
     [switch]$UploadDb,
@@ -29,15 +24,6 @@ function Invoke-Checked {
     }
 }
 
-function Invoke-GcloudSsh {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$RemoteCommand
-    )
-
-    Invoke-Checked "gcloud" "compute", "ssh", $InstanceName, "--zone", $Zone, "--command", $RemoteCommand
-}
-
 function Assert-FileExists {
     param(
         [Parameter(Mandatory = $true)]
@@ -49,13 +35,133 @@ function Assert-FileExists {
     }
 }
 
+function Read-DeployConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    Assert-FileExists $Path
+    $raw = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+
+    foreach ($key in @("instanceName", "zone", "remoteUser")) {
+        if ([string]::IsNullOrWhiteSpace($raw.$key)) {
+            throw "$key is required in $Path"
+        }
+    }
+
+    return [PSCustomObject]@{
+        InstanceName = [string]$raw.instanceName
+        Zone         = [string]$raw.zone
+        RemoteUser   = [string]$raw.remoteUser
+        AppDir       = if ([string]::IsNullOrWhiteSpace($raw.appDir)) { "/opt/discord-auto-translator" } else { [string]$raw.appDir }
+        ServiceName  = if ([string]::IsNullOrWhiteSpace($raw.serviceName)) { "discord-auto-translator" } else { [string]$raw.serviceName }
+        EnvFile      = if ([string]::IsNullOrWhiteSpace($raw.envFile)) { ".env" } else { [string]$raw.envFile }
+    }
+}
+
+function Read-DotEnv {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $values = @{}
+    foreach ($rawLine in Get-Content -LiteralPath $Path) {
+        $line = $rawLine.Trim()
+        if ($line -eq "" -or $line.StartsWith("#")) {
+            continue
+        }
+        $parts = $line -split "=", 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+        $key = $parts[0].Trim()
+        $value = $parts[1].Trim().Trim('"').Trim("'")
+        if (-not $values.ContainsKey($key)) {
+            $values[$key] = $value
+        }
+    }
+    return $values
+}
+
+function Get-HttpListenPort {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$HttpAddr
+    )
+
+    if ($HttpAddr -match ':(\d+)$') {
+        return $Matches[1]
+    }
+    throw "HTTP_ADDR must include a port (e.g. :8080); got: $HttpAddr"
+}
+
+function Get-PublicBaseURLHost {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PublicBaseURL
+    )
+
+    try {
+        $uri = [Uri]$PublicBaseURL
+    } catch {
+        throw "PUBLIC_BASE_URL is invalid: $PublicBaseURL"
+    }
+    if ($uri.Scheme -notin @("http", "https")) {
+        throw "PUBLIC_BASE_URL must use http or https: $PublicBaseURL"
+    }
+    if ([string]::IsNullOrWhiteSpace($uri.Host)) {
+        throw "PUBLIC_BASE_URL must include a host: $PublicBaseURL"
+    }
+    return $uri.Host
+}
+
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 Set-Location $RepoRoot
 
+$configPath = if ([System.IO.Path]::IsPathRooted($ConfigFile)) {
+    $ConfigFile
+} else {
+    Join-Path $RepoRoot $ConfigFile
+}
+$config = Read-DeployConfig $configPath
+
+$resolvedEnvFile = if (-not [string]::IsNullOrWhiteSpace($EnvFile)) {
+    $EnvFile
+} else {
+    $config.EnvFile
+}
+$envPath = if ([System.IO.Path]::IsPathRooted($resolvedEnvFile)) {
+    $resolvedEnvFile
+} else {
+    Join-Path $RepoRoot $resolvedEnvFile
+}
+$envBaseName = Split-Path -Leaf $envPath
+
+$publicBaseUrl = ""
+$httpAddr = ":8080"
+
+if ($Bootstrap -or $UploadEnv) {
+    Assert-FileExists $envPath
+    $envVars = Read-DotEnv $envPath
+    $publicBaseUrl = $envVars["PUBLIC_BASE_URL"]
+    if ($envVars.ContainsKey("HTTP_ADDR") -and -not [string]::IsNullOrWhiteSpace($envVars["HTTP_ADDR"])) {
+        $httpAddr = $envVars["HTTP_ADDR"]
+    }
+}
+
+function Invoke-GcloudSsh {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RemoteCommand
+    )
+
+    Invoke-Checked "gcloud" "compute", "ssh", $config.InstanceName, "--zone", $config.Zone, "--command", $RemoteCommand
+}
+
 $BinaryName = "discord-auto-translator-linux-amd64"
 $BinaryPath = Join-Path $RepoRoot $BinaryName
-
-Assert-FileExists ".env"
 
 if (-not $SkipTests) {
     Invoke-Checked "go" "test", "./..."
@@ -78,12 +184,18 @@ finally {
 }
 
 if ($Bootstrap) {
+    if ([string]::IsNullOrWhiteSpace($publicBaseUrl)) {
+        throw "PUBLIC_BASE_URL must be set in $resolvedEnvFile for -Bootstrap (required for Caddy reverse proxy)"
+    }
+    $caddyDomain = Get-PublicBaseURLHost $publicBaseUrl
+    $proxyPort = Get-HttpListenPort $httpAddr
+
     $bootstrapCommand = @"
 sudo apt-get update
 sudo apt-get install -y caddy
-sudo mkdir -p '$AppDir'
-sudo chown '${RemoteUser}:${RemoteUser}' '$AppDir'
-sudo bash -lc "cat >/etc/systemd/system/$ServiceName.service <<'EOF'
+sudo mkdir -p '$($config.AppDir)'
+sudo chown '$($config.RemoteUser):$($config.RemoteUser)' '$($config.AppDir)'
+sudo bash -lc "cat >/etc/systemd/system/$($config.ServiceName).service <<'EOF'
 [Unit]
 Description=Discord Auto Translator
 After=network-online.target
@@ -91,13 +203,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=$AppDir
-EnvironmentFile=$AppDir/.env
-ExecStart=$AppDir/$BinaryName
+WorkingDirectory=$($config.AppDir)
+EnvironmentFile=$($config.AppDir)/.env
+ExecStart=$($config.AppDir)/$BinaryName
 Restart=always
 RestartSec=5
-User=$RemoteUser
-Group=$RemoteUser
+User=$($config.RemoteUser)
+Group=$($config.RemoteUser)
 
 [Install]
 WantedBy=multi-user.target
@@ -107,12 +219,12 @@ sudo bash -lc "cat >/etc/caddy/Caddyfile <<'EOF'
     auto_https disable_redirects
 }
 
-http://$Domain {
-    reverse_proxy 127.0.0.1:8080
+http://$caddyDomain {
+    reverse_proxy 127.0.0.1:$proxyPort
 }
 
-https://$Domain {
-    reverse_proxy 127.0.0.1:8080
+https://$caddyDomain {
+    reverse_proxy 127.0.0.1:$proxyPort
 }
 EOF"
 sudo caddy fmt --overwrite /etc/caddy/Caddyfile
@@ -125,65 +237,39 @@ sudo systemctl reload caddy || sudo systemctl restart caddy
 
 $FilesToUpload = @($BinaryPath)
 if ($UploadEnv) {
-    $FilesToUpload += (Join-Path $RepoRoot ".env")
+    $FilesToUpload += $envPath
 }
 if ($UploadDb) {
     Assert-FileExists "translator.db"
     $FilesToUpload += (Join-Path $RepoRoot "translator.db")
 }
 
-$RemoteStagingDir = "/tmp/discord-auto-translator-deploy-$RemoteUser"
+$RemoteStagingDir = "/tmp/discord-auto-translator-deploy-$($config.InstanceName)"
 Invoke-GcloudSsh "rm -rf '$RemoteStagingDir' && mkdir -p '$RemoteStagingDir'"
 
-$scpArgs = @("compute", "scp") + $FilesToUpload + @("${InstanceName}:${RemoteStagingDir}/", "--zone", $Zone)
+$scpArgs = @("compute", "scp") + $FilesToUpload + @("$($config.InstanceName):${RemoteStagingDir}/", "--zone", $config.Zone)
 Invoke-Checked "gcloud" @scpArgs
 
 $remoteDeployCommand = @"
 set -eu
-sudo mkdir -p '$AppDir'
-sudo install -m 755 '$RemoteStagingDir/$BinaryName' '$AppDir/$BinaryName'
-if [ -f '$RemoteStagingDir/.env' ]; then
-    sudo install -m 600 '$RemoteStagingDir/.env' '$AppDir/.env'
+sudo mkdir -p '$($config.AppDir)'
+sudo install -m 755 '$RemoteStagingDir/$BinaryName' '$($config.AppDir)/$BinaryName'
+if [ -f '$RemoteStagingDir/$envBaseName' ]; then
+    sudo install -m 600 '$RemoteStagingDir/$envBaseName' '$($config.AppDir)/.env'
 fi
 if [ -f '$RemoteStagingDir/translator.db' ]; then
-    sudo install -m 600 '$RemoteStagingDir/translator.db' '$AppDir/translator.db'
+    sudo install -m 600 '$RemoteStagingDir/translator.db' '$($config.AppDir)/translator.db'
 fi
-sudo chown -R '${RemoteUser}:${RemoteUser}' '$AppDir'
-if [ -f '$AppDir/.env' ]; then
-    python3 - <<'PY'
-from pathlib import Path
-
-path = Path("$AppDir/.env")
-text = path.read_text() if path.exists() else ""
-entries = []
-seen = set()
-for raw in text.splitlines():
-    line = raw.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        entries.append(raw)
-        continue
-    key = line.split("=", 1)[0]
-    if key in {"HTTP_ADDR", "PUBLIC_BASE_URL"}:
-        if key in seen:
-            continue
-    seen.add(key)
-    entries.append(raw)
-
-if not any(line.strip().startswith("HTTP_ADDR=") for line in entries):
-    entries.append("HTTP_ADDR=:8080")
-if not any(line.strip().startswith("PUBLIC_BASE_URL=") for line in entries):
-    entries.append("PUBLIC_BASE_URL=$PublicBaseUrl")
-
-path.write_text("\n".join(entries).rstrip() + "\n")
-PY
-    chmod 600 '$AppDir/.env'
-fi
-sudo chown -R '${RemoteUser}:${RemoteUser}' '$AppDir'
+sudo chown -R '$($config.RemoteUser):$($config.RemoteUser)' '$($config.AppDir)'
 rm -rf '$RemoteStagingDir'
-sudo systemctl restart '$ServiceName'
-sudo systemctl --no-pager --full status '$ServiceName'
+sudo systemctl restart '$($config.ServiceName)'
+sudo systemctl --no-pager --full status '$($config.ServiceName)'
 "@
 Invoke-GcloudSsh $remoteDeployCommand
 
 Write-Host ""
-Write-Host "Deployment complete: $PublicBaseUrl"
+if ([string]::IsNullOrWhiteSpace($publicBaseUrl)) {
+    Write-Host "Deployment complete."
+} else {
+    Write-Host "Deployment complete: $publicBaseUrl"
+}

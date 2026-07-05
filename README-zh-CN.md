@@ -153,12 +153,16 @@ go test ./...
 
 `deploy/deploy-gce.ps1` 中包含用于 Google Compute Engine 的部署脚本（Windows PowerShell）。
 
-```powershell
-# 首次设置（安装 Caddy + systemd）
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+从示例创建 `deploy/deploy.json` 以配置 GCE 连接。应用设置和密钥默认使用 `.env`；可通过 `deploy.json` 中的 `envFile` 或 `-EnvFile` 指定其他文件。
 
-# 更新代码时
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# 编辑 deploy.json 和 .env
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 首次设置
+.\deploy\deploy-gce.ps1                          # 仅更新代码
+.\deploy\deploy-gce.ps1 -UploadEnv               # 更新密钥
 ```
 
 ## 许可证

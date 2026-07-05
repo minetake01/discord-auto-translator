@@ -386,20 +386,33 @@ go run ./cmd/discord-auto-translator
 
 Windows PowerShell から実行するスクリプトで、以下の処理を行います：
 
-1. `go test ./...` を実行（`-SkipTests` で省略可）
-2. `linux/amd64` バイナリをクロスコンパイル（CGO_ENABLED=0）
-3. `-Bootstrap` フラグ時: GCE インスタンスに Caddy + systemd ユニットをセットアップ
-4. バイナリをインスタンスへ転送・配置
-5. `-UploadEnv` フラグ時: `.env` も転送
-6. `-UploadDb` フラグ時: `translator.db` も転送
-7. systemd サービスを再起動
+1. `deploy/deploy.json` から GCE 接続先を読み込む
+2. `go test ./...` を実行（`-SkipTests` で省略可）
+3. `linux/amd64` バイナリをクロスコンパイル（CGO_ENABLED=0）
+4. `-Bootstrap` フラグ時: 指定 env の `PUBLIC_BASE_URL` / `HTTP_ADDR` で Caddy + systemd をセットアップ
+5. バイナリをインスタンスへ転送・配置
+6. `-UploadEnv` フラグ時: 指定 env をサーバー上の `.env` として配置
+7. `-UploadDb` フラグ時: `translator.db` も転送
+8. systemd サービスを再起動
+
+設定は2ファイルに分離します：
+
+| ファイル | 内容 |
+|---|---|
+| `deploy/deploy.json` | インスタンス名・ゾーン・SSH ユーザー等のインフラ設定 |
+| `.env`（デフォルト） | `DISCORD_TOKEN`・`GEMINI_API_KEY`・`PUBLIC_BASE_URL` 等 |
+
+env ファイルの解決順序: `-EnvFile` 引数 > `deploy.json` の `envFile` > `.env`
 
 ```powershell
-# 初回（インフラセットアップ含む）
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# deploy.json と .env を編集
 
-# 以降のコード更新
-.\deploy\deploy-gce.ps1
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 初回
+.\deploy\deploy-gce.ps1                          # コード更新のみ
+.\deploy\deploy-gce.ps1 -UploadEnv               # シークレット更新
+.\deploy\deploy-gce.ps1 -EnvFile .env.staging -UploadEnv  # 一時的な上書き
 ```
 
-デフォルトのデプロイ先: `discord-translator.minetake.net`（`$Domain` パラメータで変更可）
+本番用に別 env を使う場合は `cp .env.example .env.production` のように作成し、`deploy.json` の `"envFile": ".env.production"` に設定します。`-UploadEnv` なしのデプロイではサーバー上の既存 `.env` がそのまま使われます。

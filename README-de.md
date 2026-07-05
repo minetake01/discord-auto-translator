@@ -153,12 +153,16 @@ go test ./...
 
 Ein Deployment-Skript für Google Compute Engine ist unter `deploy/deploy-gce.ps1` enthalten (Windows PowerShell).
 
-```powershell
-# Erstmalige Einrichtung (Caddy + systemd installieren)
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+Erstellen Sie `deploy/deploy.json` aus der Beispieldatei für die GCE-Verbindungseinstellungen. App-Einstellungen und Secrets verwenden standardmäßig `.env`; ein anderes File kann über `envFile` in `deploy.json` oder `-EnvFile` angegeben werden.
 
-# Bei Code-Updates
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# deploy.json und .env bearbeiten
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Ersteinrichtung
+.\deploy\deploy-gce.ps1                          # Nur Code-Updates
+.\deploy\deploy-gce.ps1 -UploadEnv               # Secrets aktualisieren
 ```
 
 ## Lizenz

@@ -153,12 +153,16 @@ go test ./...
 
 สคริปต์การปรับใช้สำหรับ Google Compute Engine รวมอยู่ใน `deploy/deploy-gce.ps1` (Windows PowerShell)
 
-```powershell
-# การตั้งค่าครั้งแรก (ติดตั้ง Caddy + systemd)
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+สร้าง `deploy/deploy.json` จากตัวอย่างสำหรับการตั้งค่าการเชื่อมต่อ GCE การตั้งค่าแอปและความลับใช้ `.env` เป็นค่าเริ่มต้น สามารถระบุไฟล์อื่นผ่าน `envFile` ใน `deploy.json` หรือ `-EnvFile`
 
-# เมื่ออัปเดตโค้ด
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# แก้ไข deploy.json และ .env
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # ตั้งค่าครั้งแรก
+.\deploy\deploy-gce.ps1                          # อัปเดตโค้ดเท่านั้น
+.\deploy\deploy-gce.ps1 -UploadEnv               # อัปเดตความลับ
 ```
 
 ## ใบอนุญาต

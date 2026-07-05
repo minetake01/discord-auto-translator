@@ -153,12 +153,16 @@ go test ./...
 
 Google Compute Engine へのデプロイスクリプトが `deploy/deploy-gce.ps1` に含まれています（Windows PowerShell 用）。
 
-```powershell
-# 初回セットアップ（Caddy + systemd のインストール）
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+`deploy/deploy.json.example` から `deploy/deploy.json` を作成し、GCE 接続先を設定します。アプリ設定とシークレットはデフォルトで `.env` を使います。別ファイルを使う場合は `deploy.json` の `envFile` または `-EnvFile` で指定できます。
 
-# コード更新時
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# deploy.json と .env を編集
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 初回セットアップ
+.\deploy\deploy-gce.ps1                          # コード更新のみ
+.\deploy\deploy-gce.ps1 -UploadEnv               # シークレット更新
 ```
 
 ## ライセンス
