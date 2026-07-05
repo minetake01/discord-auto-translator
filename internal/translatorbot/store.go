@@ -330,6 +330,16 @@ func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
 	return err
 }
 
+func (s *Store) DeleteMessageLinksBySource(ctx context.Context, sourceChannelID, sourceMessageID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
+	return err
+}
+
+func (s *Store) DeleteMessageLinksByChannel(ctx context.Context, channelID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? OR target_channel_id=?`, channelID, channelID)
+	return err
+}
+
 func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessageID string) ([]MessageLink, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageID)
 	if err != nil {

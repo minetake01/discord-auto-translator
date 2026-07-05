@@ -170,6 +170,39 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}
 }
 
+func TestDeleteMessageLinksBySourceRemovesAllTargetsForSource(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, link := range []MessageLink{
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "first"},
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "fr", TargetMessageID: "300", TargetLanguage: "fr", SourceAuthorID: "a", SourceContentSnapshot: "first"},
+		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "201", TargetLanguage: "en", SourceAuthorID: "b", SourceContentSnapshot: "second"},
+	} {
+		if err := s.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := s.DeleteMessageLinksBySource(ctx, "ja", "100"); err != nil {
+		t.Fatal(err)
+	}
+
+	links, err := s.MessageTargets(ctx, "ja", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 0 {
+		t.Fatalf("deleted source links remain: %#v", links)
+	}
+	remaining, err := s.MessageTargets(ctx, "ja", "101")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("other source links were removed: %#v", remaining)
+	}
+}
+
 func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
