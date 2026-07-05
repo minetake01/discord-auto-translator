@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil)
+	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "こんにちは", TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -58,13 +58,16 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if !strings.Contains(prompt, "<author>a</author>") || !strings.Contains(prompt, "<language>ja</language>") || !strings.Contains(prompt, "<content>前の発言</content>") {
 		t.Fatal(prompt)
 	}
+	if strings.Contains(systemInstruction, "Prefer <reply_context> over <recent_context>") {
+		t.Fatal(systemInstruction)
+	}
 	if !strings.Contains(prompt, "<final_message>こんにちは</final_message>") {
 		t.Fatal(prompt)
 	}
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil)
+	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, true)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{
 		ReplyChain: []ChatContextMessage{
 			{Author: "alice", Language: "en", Content: "original post"},
@@ -93,7 +96,7 @@ func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary)
+	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false)
 	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
 		t.Fatal(systemInstruction)
 	}
