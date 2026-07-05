@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Variabel | Wajib | Deskripsi |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | Tidak | URL dasar publik untuk badge cincin avatar. Jika tidak diatur, pesan yang dicerminkan menggunakan URL avatar Discord asli dan server badge tidak digunakan |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | Batas token Gemini per server per menit (default: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | Batas permintaan per IP per menit untuk endpoint badge `/avatar` (default: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | Tidak | Hari retensi `message_links` di SQLite sebelum pembersihan otomatis. `0` (default) menonaktifkan pembersihan; mis. `60` menghapus tautan lebih dari 60 hari saat startup dan setiap 24 jam |
 
 ### 4. Jalankan
 

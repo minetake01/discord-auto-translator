@@ -19,6 +19,7 @@ type Config struct {
 	PublicBaseURL                 string
 	GeminiRateLimitTokensPerMin   int
 	AvatarRateLimitRequestsPerMin int
+	MessageLinkRetentionDays      int
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -47,6 +48,16 @@ func LoadConfig(path string) (Config, error) {
 		cfg.AvatarRateLimitRequestsPerMin = limit
 	} else {
 		cfg.AvatarRateLimitRequestsPerMin = defaultAvatarRateLimitRequestsPerMinute
+	}
+	if raw := strings.TrimSpace(os.Getenv("MESSAGE_LINK_RETENTION_DAYS")); raw != "" {
+		days, err := strconv.Atoi(raw)
+		if err != nil {
+			return cfg, errors.New("MESSAGE_LINK_RETENTION_DAYS must be an integer")
+		}
+		if days < 0 {
+			return cfg, errors.New("MESSAGE_LINK_RETENTION_DAYS must be non-negative")
+		}
+		cfg.MessageLinkRetentionDays = days
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./translator.db"

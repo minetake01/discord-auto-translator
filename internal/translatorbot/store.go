@@ -608,6 +608,19 @@ func (s *Store) DeleteThreadLinks(ctx context.Context, threadID string) error {
 	return err
 }
 
+func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	maxID := snowflakeIDBefore(cutoff.UTC())
+	res, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE CAST(source_message_id AS INTEGER) < ?`, maxID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM pin_states WHERE CAST(message_id AS INTEGER) < ?`, maxID); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func scanThreadLinks(rows *sql.Rows) ([]ThreadLink, error) {
 	defer rows.Close()
 	var out []ThreadLink

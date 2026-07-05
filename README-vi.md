@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | Biến | Bắt buộc | Mô tả |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | Không | URL cơ sở công khai cho badge vòng ảnh đại diện. Nếu không đặt, tin nhắn phản chiếu dùng URL ảnh đại diện Discord gốc và máy chủ badge không được sử dụng |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token Gemini mỗi máy chủ mỗi phút (mặc định: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | Giới hạn yêu cầu mỗi IP mỗi phút cho endpoint badge `/avatar` (mặc định: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | Không | Số ngày giữ `message_links` trong SQLite trước khi dọn tự động. `0` (mặc định) tắt dọn; ví dụ `60` xóa liên kết cũ hơn 60 ngày khi khởi động và mỗi 24 giờ |
 
 ### 4. Chạy
 

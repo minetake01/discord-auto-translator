@@ -65,6 +65,7 @@ HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
+# MESSAGE_LINK_RETENTION_DAYS=60
 ```
 
 | 변수 | 필수 | 설명 |
@@ -76,6 +77,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `PUBLIC_BASE_URL` | 선택 | 아바타 링 배지용 공개 기본 URL. 미설정 시 미러링된 메시지는 Discord 원본 아바타 URL을 사용하며 배지 서버는 사용되지 않습니다 |
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 선택 | 서버(길드)별 분당 Gemini 토큰 상한(기본값: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 선택 | `/avatar` 배지 엔드포인트의 IP별 분당 요청 상한(기본값: `120`) |
+| `MESSAGE_LINK_RETENTION_DAYS` | 선택 | SQLite의 `message_links` 자동 정리 전 보관 일수. `0`(기본값)이면 정리 비활성화. 예: `60`이면 60일보다 오래된 링크를 시작 시 및 24시간마다 삭제 |
 
 ### 4. 실행
 
