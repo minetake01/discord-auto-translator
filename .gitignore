@@ -1,4 +1,6 @@
 .env
+.env.production
+deploy/deploy.json
 *.db
 *.db-shm
 *.db-wal

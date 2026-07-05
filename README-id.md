@@ -153,12 +153,16 @@ go test ./...
 
 Skrip deployment untuk Google Compute Engine disertakan di `deploy/deploy-gce.ps1` (Windows PowerShell).
 
-```powershell
-# Pengaturan pertama kali (instal Caddy + systemd)
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+Buat `deploy/deploy.json` dari contoh untuk pengaturan koneksi GCE. Pengaturan aplikasi dan rahasia menggunakan `.env` secara default; file lain dapat ditentukan melalui `envFile` di `deploy.json` atau `-EnvFile`.
 
-# Saat memperbarui kode
-.\deploy\deploy-gce.ps1
+```powershell
+cp deploy/deploy.json.example deploy/deploy.json
+cp .env.example .env
+# Edit deploy.json dan .env
+
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Penyiapan awal
+.\deploy\deploy-gce.ps1                          # Hanya pembaruan kode
+.\deploy\deploy-gce.ps1 -UploadEnv               # Perbarui rahasia
 ```
 
 ## Lisensi
