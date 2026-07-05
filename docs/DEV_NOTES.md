@@ -150,18 +150,10 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
     <channel_topic>...</channel_topic>
   </discord_context>
   <recent_context>
-    <message>
-      <author>123456789</author>
-      <language>en</language>
-      <content>Hello!</content>
-    </message>
+    <message author="123456789" lang="en">Hello!</message>
   </recent_context>
   <reply_context>
-    <message>
-      <author>456789012</author>
-      <language>en</language>
-      <content>Earlier reply target</content>
-    </message>
+    <message author="456789012" lang="en">Earlier reply target</message>
   </reply_context>
   <final_message>How are you?</final_message>
 </translation_request>
