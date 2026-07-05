@@ -52,6 +52,7 @@ type DiscordMessage struct {
 	AuthorID                   string
 	AuthorDisplayName          string
 	AuthorAvatarURL            string
+	AuthorRoleColor            int
 	Content                    string
 	Attachments                []DiscordAttachment
 	Stickers                   []DiscordSticker

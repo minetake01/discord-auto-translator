@@ -146,7 +146,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 // sendMirror posts the prepared content to one destination and records the
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content, snapshot string) error {
-	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language)
+	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
 	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
 		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(),
 	}, MessageLink{

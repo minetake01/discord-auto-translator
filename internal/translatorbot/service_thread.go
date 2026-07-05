@@ -16,6 +16,7 @@ type threadCreateRequest struct {
 	InitialMessageAuthor   string
 	InitialMessageUsername string
 	InitialMessageAvatar   string
+	InitialMessageRoleColor int
 	InitialMessageText     string
 	InitialMessageFiles    []DiscordAttachment
 	InitialMessageStickers []DiscordSticker
@@ -132,7 +133,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 			if err != nil {
 				return false, err
 			}
-			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language)
+			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language, req.InitialMessageRoleColor)
 			if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
 				Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID,
 			}, MessageLink{
@@ -200,6 +201,7 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageAuthor = m.AuthorID
 		req.InitialMessageUsername = m.AuthorDisplayName
 		req.InitialMessageAvatar = m.AuthorAvatarURL
+		req.InitialMessageRoleColor = m.AuthorRoleColor
 		req.InitialMessageText = m.Content
 		req.InitialMessageFiles = m.Attachments
 		req.InitialMessageStickers = m.Stickers

@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"fmt"
 	"image"
 	"image/color"
 	_ "image/gif"
@@ -9,6 +10,8 @@ import (
 	"image/png"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,9 +22,11 @@ const (
 	avatarMaxBytes    = 2 * 1024 * 1024
 )
 
-var avatarBorderColor = color.RGBA{R: 255, G: 128, B: 0, A: 255}
+var avatarDefaultRingColor = color.RGBA{R: 114, G: 118, B: 125, A: 255}
 
-func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, language string) string {
+var avatarHexColorPattern = regexp.MustCompile(`(?i)^[0-9a-f]{6}$`)
+
+func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, language string, roleColor int) string {
 	_ = ctx
 	_ = language
 	publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
@@ -30,6 +35,9 @@ func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, lang
 	}
 	v := url.Values{}
 	v.Set("url", avatarURL)
+	if roleColor > 0 {
+		v.Set("color", fmt.Sprintf("%06X", roleColor&0xFFFFFF))
+	}
 	return publicBaseURL + "/avatar?" + v.Encode()
 }
 
@@ -67,14 +75,34 @@ func NewAvatarHandler(client *http.Client) http.Handler {
 		}
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
-		if err := png.Encode(w, renderAvatarWithOrangeRing(img)); err != nil {
+		if err := png.Encode(w, renderAvatarWithRing(img, avatarRingColor(r.URL.Query().Get("color")))); err != nil {
 			http.Error(w, "failed to encode avatar", http.StatusInternalServerError)
 			return
 		}
 	})
 }
 
-func renderAvatarWithOrangeRing(src image.Image) image.Image {
+func avatarRingColor(raw string) color.Color {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return avatarDefaultRingColor
+	}
+	if !avatarHexColorPattern.MatchString(raw) {
+		return avatarDefaultRingColor
+	}
+	value, err := strconv.ParseUint(raw, 16, 24)
+	if err != nil {
+		return avatarDefaultRingColor
+	}
+	return color.RGBA{
+		R: uint8(value >> 16),
+		G: uint8(value >> 8),
+		B: uint8(value),
+		A: 255,
+	}
+}
+
+func renderAvatarWithRing(src image.Image, borderColor color.Color) image.Image {
 	out := image.NewNRGBA(image.Rect(0, 0, avatarSize, avatarSize))
 	bounds := src.Bounds()
 	cx := float64(avatarSize-1) / 2
@@ -91,7 +119,7 @@ func renderAvatarWithOrangeRing(src image.Image) image.Image {
 				continue
 			}
 			if dist2 >= inner*inner {
-				out.Set(x, y, avatarBorderColor)
+				out.Set(x, y, borderColor)
 				continue
 			}
 			sx := bounds.Min.X + x*bounds.Dx()/avatarSize
