@@ -197,10 +197,10 @@ func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryE
 		b.WriteString("<glossary>\n")
 		for _, entry := range selected {
 			b.WriteString("\t<entry>\n")
-			writeIndentedElement(&b, "source_term", entry.SourceTerm, 4)
-			writeIndentedElement(&b, "preferred_translation", entry.PreferredTranslation, 4)
+			writeIndentedElement(&b, "source_term", entry.SourceTerm, 2)
+			writeIndentedElement(&b, "preferred_translation", entry.PreferredTranslation, 2)
 			if strings.TrimSpace(entry.Attribute) != "" {
-				writeIndentedElement(&b, "attribute", entry.Attribute, 4)
+				writeIndentedElement(&b, "attribute", entry.Attribute, 2)
 			}
 			b.WriteString("\t</entry>\n")
 		}
@@ -231,21 +231,21 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 	b.WriteString("<translation_request>\n")
 	writeElement(&b, "target_languages", strings.Join(targetLanguages, ", "))
 	if strings.TrimSpace(translationContext.StyleInstructions) != "" {
-		writeIndentedElement(&b, "style_instructions", translationContext.StyleInstructions, 2)
+		writeIndentedElement(&b, "style_instructions", translationContext.StyleInstructions, 1)
 	}
 	if translationContext.ServerName != "" || translationContext.ServerDescription != "" || translationContext.ChannelName != "" || translationContext.ChannelTopic != "" {
 		b.WriteString("\t<discord_context>\n")
 		if translationContext.ServerName != "" {
-			writeIndentedElement(&b, "server_name", translationContext.ServerName, 4)
+			writeIndentedElement(&b, "server_name", translationContext.ServerName, 2)
 		}
 		if translationContext.ServerDescription != "" {
-			writeIndentedElement(&b, "server_overview", translationContext.ServerDescription, 4)
+			writeIndentedElement(&b, "server_overview", translationContext.ServerDescription, 2)
 		}
 		if translationContext.ChannelName != "" {
-			writeIndentedElement(&b, "channel_name", translationContext.ChannelName, 4)
+			writeIndentedElement(&b, "channel_name", translationContext.ChannelName, 2)
 		}
 		if translationContext.ChannelTopic != "" {
-			writeIndentedElement(&b, "channel_topic", translationContext.ChannelTopic, 4)
+			writeIndentedElement(&b, "channel_topic", translationContext.ChannelTopic, 2)
 		}
 		b.WriteString("\t</discord_context>\n")
 	}
@@ -255,7 +255,7 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 	if len(translationContext.ReplyChain) > 0 {
 		writeContextSection(&b, "reply_context", translationContext.ReplyChain)
 	}
-	writeIndentedElement(&b, "final_message", content, 2)
+	writeIndentedElement(&b, "final_message", content, 1)
 	b.WriteString("</translation_request>")
 	return b.String()
 }
@@ -264,9 +264,9 @@ func writeContextSection(b *strings.Builder, section string, messages []ChatCont
 	b.WriteString("\t<" + section + ">\n")
 	for _, h := range messages {
 		b.WriteString("\t\t<message>\n")
-		writeIndentedElement(b, "author", h.Author, 6)
-		writeIndentedElement(b, "language", h.Language, 6)
-		writeIndentedElement(b, "content", h.Content, 6)
+		writeIndentedElement(b, "author", h.Author, 3)
+		writeIndentedElement(b, "language", h.Language, 3)
+		writeIndentedElement(b, "content", h.Content, 3)
 		b.WriteString("\t\t</message>\n")
 	}
 	b.WriteString("\t</" + section + ">\n")
@@ -285,11 +285,11 @@ func EstimateTranslationTokens(prompt, response string) int {
 }
 
 func writeElement(b *strings.Builder, name, text string) {
-	writeIndentedElement(b, name, text, 2)
+	writeIndentedElement(b, name, text, 1)
 }
 
-func writeIndentedElement(b *strings.Builder, name, text string, spaces int) {
-	indent := strings.Repeat(" ", spaces)
+func writeIndentedElement(b *strings.Builder, name, text string, depth int) {
+	indent := strings.Repeat("\t", depth)
 	fmt.Fprintf(b, "%s<%s>", indent, name)
 	_ = xml.EscapeText(b, []byte(text))
 	fmt.Fprintf(b, "</%s>\n", name)
