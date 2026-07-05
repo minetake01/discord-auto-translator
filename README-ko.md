@@ -1,0 +1,162 @@
+# Discord Auto Translator
+
+[English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
+
+서로 다른 언어를 사용하는 사용자들이 같은 Discord 서버에서 함께 대화할 수 있게 해주는 봇입니다.
+
+언어별로 채널을 하나씩 만들어 **번역 그룹**으로 연결하면, 한 채널에 올라온 메시지가 Google Gemini로 즉시 번역되어 그룹 내 다른 모든 채널로 미러링됩니다. 원래 작성자의 이름과 아바타가 그대로 표시되므로, 각 채널은 해당 언어로 진행되는 자연스러운 대화처럼 보입니다.
+
+```
+#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-ko (한국어)
+```
+
+## 주요 기능
+
+- **모든 것이 동기화됩니다** — 새 메시지뿐만 아니라 수정, 삭제, 답장, 전달된 메시지, 반응(리액션), 고정(핀), 스레드(텍스트 / 포럼 / 미디어 채널), 첨부 파일만 있는 메시지까지 그룹 전체에 미러링됩니다.
+- **본인이 보낸 것처럼 보입니다** — 미러링된 메시지는 웹훅을 통해 원래 작성자의 이름과 아바타로 전송됩니다.
+- **자연스러운 번역** — Gemini는 채널 이름, 주제, 최근 대화 기록을 문맥으로 참고합니다. 서버별 용어집으로 인명이나 전문 용어의 번역을 고정할 수도 있습니다.
+- **스마트한 링크 처리** — 관리 대상 채널이나 메시지를 가리키는 링크와 멘션은 각 언어 채널의 대응 대상으로 재작성되며, `hreflang` 대체 버전이 있는 URL은 대상 언어 버전으로 교체됩니다.
+- **효율적이고 안전함** — 번역할 텍스트가 없는 메시지(URL, 멘션, 커스텀 이모지, 코드만 있는 경우)는 Gemini API를 호출하지 않고 미러링되며, 서버별 토큰 속도 제한이 적용됩니다. URL, 멘션, 코드 블록은 프롬프트 인젝션으로부터 보호됩니다.
+- **현지화된 UI** — 명령어 응답은 사용자의 Discord 클라이언트 언어를 따르고, 채널 알림은 채널에 설정된 언어로 표시됩니다(13개 언어 지원, 미지원 언어는 영어).
+
+## 요구 사항
+
+- Go 1.24 이상
+- `MESSAGE CONTENT` 특권 인텐트가 활성화된 Discord 봇 계정
+- Google Gemini API 키
+
+## 설정
+
+### 1. Discord 봇 준비
+
+1. [Discord Developer Portal](https://discord.com/developers/applications)에서 애플리케이션 생성
+2. **Bot** 페이지에서:
+   - `MESSAGE CONTENT INTENT` 활성화(필수)
+   - 봇 토큰 복사
+3. **OAuth2 → URL Generator**로 봇을 서버에 초대:
+   - Scopes: `bot`, `applications.commands`
+   - Permissions(Developer Portal에 표시되는 이름 기준):
+     - **일반**: `View Channel`, `Read Message History`
+     - **메시지**: `Send Messages`, `Send Messages in Threads`
+     - **관리**: `Pin Messages`
+     - **웹훅**: `Manage Webhooks`
+     - **스레드**: `Create Public Threads`, `Manage Threads`
+     - **반응**: `Add Reactions`
+   - 위 권한의 정수 값은 `2252126768139328`입니다
+   - 다른 서버의 커스텀 이모지 반응까지 동기화하려면 `Use External Emojis`를 추가로 허용하세요. 이 경우 권한 정수 값은 `2252126768401472`입니다
+
+### 2. Gemini API 키 발급
+
+[Google AI Studio](https://aistudio.google.com/)에서 API 키를 발급받으세요.
+
+### 3. 환경 변수 설정
+
+```sh
+cp .env.example .env
+```
+
+`.env`를 편집하여 다음을 설정합니다:
+
+```env
+DISCORD_TOKEN=your-discord-bot-token
+GEMINI_API_KEY=your-gemini-api-key
+DB_PATH=./translator.db
+HTTP_ADDR=:8080
+PUBLIC_BASE_URL=https://your-public-domain.example
+GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+```
+
+| 변수 | 필수 | 설명 |
+|---|---|---|
+| `DISCORD_TOKEN` | 필수 | Discord 봇 토큰 |
+| `GEMINI_API_KEY` | 필수 | Gemini API 키 |
+| `DB_PATH` | 선택 | SQLite 파일 경로(기본값: `./translator.db`) |
+| `HTTP_ADDR` | 선택 | 아바타 배지 서버 주소(기본값: `:8080`) |
+| `PUBLIC_BASE_URL` | 선택 | 아바타에 주황색 링 배지를 붙일 때의 기본 URL |
+| `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 선택 | 서버(길드)별 분당 Gemini 토큰 상한(기본값: `100000`) |
+
+### 4. 실행
+
+```sh
+go run ./cmd/discord-auto-translator
+```
+
+또는 빌드 후 실행:
+
+```sh
+go build -o discord-auto-translator ./cmd/discord-auto-translator
+./discord-auto-translator
+```
+
+## 사용 방법
+
+봇을 시작하면 슬래시 명령어가 각 서버에 등록됩니다.
+
+### 채널 설정
+
+#### 번역 그룹 만들기
+
+일본어 채널에서 `/new-channel`을 실행하여 번역 그룹을 만듭니다:
+
+```
+/new-channel language:ja
+```
+
+#### 다른 언어 채널 추가하기
+
+영어 채널에서 `/join-channel`을 실행하여 그룹에 추가합니다:
+
+```
+/join-channel group:general language:en
+```
+
+한국어 채널도 추가하려면:
+
+```
+/join-channel group:general language:ko
+```
+
+이제 `#general-ja`, `#general-en`, `#general-ko`가 연결됩니다.
+
+### 명령어 목록
+
+관리용 슬래시 명령어는 기본적으로 **서버 관리자**만 실행할 수 있습니다. 다른 역할에도 실행을 허용하려면 Discord의 "서버 설정" → "연동" → 해당 봇의 "관리" → "명령어 권한"에서 전체 또는 명령어별로 권한을 설정하세요. 봇은 역할이나 명령어 권한을 스스로 변경하지 않습니다.
+
+| 명령어 | 설명 |
+|---|---|
+| `/new-channel language:[언어]` | 번역 그룹 새로 만들기 |
+| `/join-channel group:[그룹] language:[언어]` | 그룹에 채널 추가 |
+| `/leave-channel group:[그룹]` | 그룹에서 채널 제외 |
+| `/delete-group group:[그룹]` | 그룹 전체 삭제 |
+| `/add-glossary term:[용어] translation:[번역] attribute:[속성] always_include:[불리언]` | 서버 용어집에 우선 번역 등록(`attribute`는 후보가 표시되는 자유 입력, `always_include` 기본값은 `false`) |
+| `/list-glossary` | 서버의 용어집 목록 표시 |
+| `/remove-glossary term:[용어]` | 용어집 항목 삭제 |
+
+- `language`는 BCP-47 형식(`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` 등)
+- 용어집은 서버당 최대 50개까지 등록 가능
+- `attribute`에는 "인명", "지명", "속어", "약어", "전문 용어" 등의 후보가 표시되며 임의의 속성도 자유롭게 입력할 수 있습니다. 지정한 속성은 Gemini가 용어의 의미를 판단하는 문맥으로 사용됩니다
+- 일반 용어는 번역 대상 본문에 `term`이 포함될 때만(대소문자 무시) 시스템 지시에 추가됩니다. `always_include:true`인 용어는 항상 추가됩니다
+- `channel` 옵션을 생략하면 명령어를 실행한 채널이 대상이 됩니다
+- 지원 채널 유형: 텍스트, 공지, 포럼, 미디어
+
+## 테스트
+
+```sh
+go test ./...
+```
+
+## GCE 배포
+
+Google Compute Engine용 배포 스크립트가 `deploy/deploy-gce.ps1`에 포함되어 있습니다(Windows PowerShell용).
+
+```powershell
+# 최초 설정(Caddy + systemd 설치)
+.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
+
+# 코드 업데이트 시
+.\deploy\deploy-gce.ps1
+```
+
+## 라이선스
+
+이 프로젝트의 라이선스는 [LICENSE](LICENSE) 파일을 참조하세요.
