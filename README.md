@@ -1,62 +1,61 @@
 # Discord Auto Translator
 
-Discord のチャンネル間でメッセージを自動翻訳・ミラーリングするボットです。  
-Google Gemini を使って、異なる言語を話すユーザーが同じサーバー内でシームレスに会話できるようにします。
+[English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
 
-## 特徴
+A Discord bot that lets people who speak different languages chat together in the same server.
 
-- **リアルタイム翻訳**: メッセージが投稿された瞬間に翻訳して別チャンネルへ転送
-- **送信者の偽装**: ウェブフックを使い、投稿者の名前とアバターをそのまま表示
-- **編集・削除の同期**: 元メッセージを編集・削除すると翻訳版も更新・削除
-- **リプライの同期**: 返信引用も翻訳されてリンク付きで表示
-- **転送メッセージの同期**: ミラー済み本文を再利用し、外部メッセージだけを翻訳して元メッセージURL付きで表示
-- **リアクションの同期**: 絵文字リアクションが全言語チャンネルに反映
-- **スレッドの同期**: スレッド作成・名前変更・削除も対応（テキスト・フォーラム・メディア）
-- **用語集**: サーバー単位で優先翻訳を登録し、翻訳品質を調整
-- **添付ファイルの共有**: 本文が空でも、署名なし Discord CDN URL を使って添付ファイルのみのメッセージをミラーリング
-- **API 呼び出しの節約**: URL・メンション・カスタム絵文字・コードなど、翻訳すべきテキストがない本文は Gemini API を使わずにミラーリング
-- **翻訳文脈の考慮**: チャンネル名・トピック・直近の会話履歴を踏まえて自然な翻訳
-- **Discord リンクの言語別置換**: 管理対象チャンネル・メッセージへの URL や `<#...>` メンションを、ミラー先言語の対応先に自動差し替え
-- **プロンプトインジェクション対策**: URL・メンション・コードブロック等を保護
-- **多言語 UI**: コマンド応答・エラーメッセージは実行者の Discord クライアント言語、チャンネル通知はチャンネルの登録言語で表示（13言語対応・未対応言語は英語）
+Link one channel per language into a **translation group**. Every message posted in one channel is instantly translated by Google Gemini and mirrored to all the other channels in the group — with the original sender's name and avatar — so each channel reads like a normal conversation in its own language.
 
-## 必要なもの
+```
+#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
+```
 
-- Go 1.24 以上
-- Discord ボットアカウント（`MESSAGE CONTENT` 特権インテントを有効化済み）
-- Google Gemini API キー
+## Features
 
-## セットアップ
+- **Everything stays in sync** — not just new messages: edits, deletions, replies, forwarded messages, reactions, pins, threads (text / forum / media channels), and attachment-only messages are all mirrored across the group.
+- **Messages look like they came from the sender** — mirrored messages are delivered via webhooks with the original author's name and avatar.
+- **Natural translations** — Gemini sees the channel name, topic, and recent conversation history as context, and a per-server glossary lets you enforce preferred translations for names and jargon.
+- **Smart link handling** — links and mentions pointing to managed channels or messages are rewritten to each language's counterpart, and URLs with `hreflang` alternates are swapped for the target-language version.
+- **Efficient and safe** — messages with nothing to translate (URLs, mentions, custom emojis, code) are mirrored without calling the Gemini API, per-server token rate limits apply, and URLs / mentions / code blocks are shielded against prompt injection.
+- **Localized UI** — command responses follow each user's Discord client language, and channel notifications use the channel's configured language (13 languages, English fallback).
 
-### 1. Discord ボットの準備
+## Requirements
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリケーションを作成
-2. **Bot** ページで:
-   - `MESSAGE CONTENT INTENT` を有効化（必須）
-   - ボットトークンをコピー
-3. **OAuth2 → URL Generator** でボットをサーバーに招待:
+- Go 1.24 or later
+- A Discord bot account with the `MESSAGE CONTENT` privileged intent enabled
+- A Google Gemini API key
+
+## Setup
+
+### 1. Prepare the Discord bot
+
+1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications)
+2. On the **Bot** page:
+   - Enable the `MESSAGE CONTENT INTENT` (required)
+   - Copy the bot token
+3. Invite the bot to your server via **OAuth2 → URL Generator**:
    - Scopes: `bot`, `applications.commands`
-   - Permissions（Developer Portal の表示名）:
-     - **基本**: `View Channel`, `Read Message History`
-     - **メッセージ**: `Send Messages`, `Send Messages in Threads`
-     - **モデレーション**: `Pin Messages`
-     - **ウェブフック**: `Manage Webhooks`
-     - **スレッド**: `Create Public Threads`, `Manage Threads`
-     - **リアクション**: `Add Reactions`
-   - 上記の permissions 整数は `2252126768139328` です
-   - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768401472` です
+   - Permissions (as shown in the Developer Portal):
+     - **General**: `View Channel`, `Read Message History`
+     - **Messages**: `Send Messages`, `Send Messages in Threads`
+     - **Moderation**: `Pin Messages`
+     - **Webhooks**: `Manage Webhooks`
+     - **Threads**: `Create Public Threads`, `Manage Threads`
+     - **Reactions**: `Add Reactions`
+   - The permissions integer for the above is `2252126768139328`
+   - To also sync custom emoji reactions from other servers, additionally allow `Use External Emojis`; the permissions integer then becomes `2252126768401472`
 
-### 2. Gemini API キーの取得
+### 2. Get a Gemini API key
 
-[Google AI Studio](https://aistudio.google.com/) で API キーを取得してください。
+Get an API key from [Google AI Studio](https://aistudio.google.com/).
 
-### 3. 環境変数の設定
+### 3. Configure environment variables
 
 ```sh
 cp .env.example .env
 ```
 
-`.env` を編集して以下を設定します：
+Edit `.env` and set the following:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -67,97 +66,97 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 ```
 
-| 変数 | 必須 | 説明 |
+| Variable | Required | Description |
 |---|---|---|
-| `DISCORD_TOKEN` | 必須 | Discord ボットトークン |
-| `GEMINI_API_KEY` | 必須 | Gemini API キー |
-| `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
-| `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
-| `PUBLIC_BASE_URL` | 任意 | アバターにオレンジリングバッジを付ける場合のベース URL |
-| `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
+| `DISCORD_TOKEN` | Yes | Discord bot token |
+| `GEMINI_API_KEY` | Yes | Gemini API key |
+| `DB_PATH` | No | Path to the SQLite file (default: `./translator.db`) |
+| `HTTP_ADDR` | No | Address of the avatar badge server (default: `:8080`) |
+| `PUBLIC_BASE_URL` | No | Base URL for adding an orange ring badge to avatars |
+| `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Per-guild Gemini token limit per minute (default: `100000`) |
 
-### 4. 起動
+### 4. Run
 
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-または、ビルドして実行：
+Or build and run:
 
 ```sh
 go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-## 使い方
+## Usage
 
-ボットを起動するとスラッシュコマンドが各サーバーに登録されます。
+Once the bot starts, slash commands are registered in each server.
 
-### チャンネルの設定
+### Setting up channels
 
-#### 翻訳グループを作成する
+#### Create a translation group
 
-日本語チャンネルで `/new-channel` を実行して翻訳グループを作成します：
+Run `/new-channel` in your Japanese channel to create a translation group:
 
 ```
 /new-channel language:ja
 ```
 
-#### 他の言語チャンネルを追加する
+#### Add channels in other languages
 
-英語チャンネルで `/join-channel` を実行してグループに参加させます：
+Run `/join-channel` in your English channel to add it to the group:
 
 ```
 /join-channel group:general language:en
 ```
 
-中国語チャンネルも追加する場合：
+To add a Chinese channel as well:
 
 ```
 /join-channel group:general language:zh-CN
 ```
 
-これで `#general-ja`, `#general-en`, `#general-zh` が連携されます。
+Now `#general-ja`, `#general-en`, and `#general-zh` are linked.
 
-### コマンド一覧
+### Commands
 
-管理用スラッシュコマンドは、デフォルトでは**サーバー管理者**のみが実行できます。追加のロールに実行を許可する場合は、Discord の「サーバー設定」→「連携サービス」→対象 Bot の「管理」→「コマンド権限」で、全コマンド共通またはコマンド単位の許可を設定してください。Bot はロールやコマンド権限を自動変更しません。
+By default, the admin slash commands can only be run by **server administrators**. To allow additional roles, go to Discord's "Server Settings" → "Integrations" → the bot's "Manage" → "Command Permissions" and grant access globally or per command. The bot never changes roles or command permissions on its own.
 
-| コマンド | 説明 |
+| Command | Description |
 |---|---|
-| `/new-channel language:[言語]` | 翻訳グループを新規作成 |
-| `/join-channel group:[グループ] language:[言語]` | グループにチャンネルを追加 |
-| `/leave-channel group:[グループ]` | グループからチャンネルを離脱 |
-| `/delete-group group:[グループ]` | グループ全体を削除 |
-| `/add-glossary term:[用語] translation:[訳] attribute:[属性] always_include:[常時使用]` | サーバー用語集に優先訳を登録（`attribute` は候補付き自由入力、`always_include` の既定値は `false`） |
-| `/list-glossary` | サーバーの用語集を一覧表示 |
-| `/remove-glossary term:[用語]` | 用語集エントリを削除 |
+| `/new-channel language:[lang]` | Create a new translation group |
+| `/join-channel group:[group] language:[lang]` | Add a channel to a group |
+| `/leave-channel group:[group]` | Remove a channel from a group |
+| `/delete-group group:[group]` | Delete an entire group |
+| `/add-glossary term:[term] translation:[translation] attribute:[attribute] always_include:[bool]` | Register a preferred translation in the server glossary (`attribute` is free-form with suggestions; `always_include` defaults to `false`) |
+| `/list-glossary` | List the server's glossary entries |
+| `/remove-glossary term:[term]` | Remove a glossary entry |
 
-- `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
-- 用語集はサーバーごとに最大 50 件まで登録可能
-- `attribute` には「人名」「地名」「スラング」「略語」「専門用語」が候補表示され、任意の属性も自由入力できます。指定した属性はGeminiが用語の意味を判断する文脈として使われます
-- 通常の用語は翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけシステム指示に追加されます。`always_include:true` の用語は常に追加されます
-- `channel` オプションを省略すると、コマンドを実行したチャンネルが対象
-- 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア
+- `language` uses BCP-47 codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
+- Up to 50 glossary entries can be registered per server
+- `attribute` suggests "person name", "place name", "slang", "abbreviation", and "technical term", but any value can be entered. The attribute is used as context for Gemini to understand the term's meaning
+- Regular terms are added to the system instructions only when the message body contains `term` (case-insensitive). Terms with `always_include:true` are always added
+- If the `channel` option is omitted, the command applies to the channel it was run in
+- Supported channel types: text, news, forum, and media
 
-## テスト
+## Testing
 
 ```sh
 go test ./...
 ```
 
-## GCE へのデプロイ
+## Deploying to GCE
 
-Google Compute Engine へのデプロイスクリプトが `deploy/deploy-gce.ps1` に含まれています（Windows PowerShell 用）。
+A deployment script for Google Compute Engine is included at `deploy/deploy-gce.ps1` (Windows PowerShell).
 
 ```powershell
-# 初回セットアップ（Caddy + systemd のインストール）
+# First-time setup (installs Caddy + systemd unit)
 .\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv
 
-# コード更新時
+# When updating code
 .\deploy\deploy-gce.ps1
 ```
 
-## ライセンス
+## License
 
-このプロジェクトのライセンスについては [LICENSE](LICENSE) ファイルを参照してください。
+See the [LICENSE](LICENSE) file for this project's license.
