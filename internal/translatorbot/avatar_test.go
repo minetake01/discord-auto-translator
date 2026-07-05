@@ -45,7 +45,7 @@ func TestAvatarHandlerReturnsPNGWithDefaultRing(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/avatar?url="+source.URL, nil)
 	rec := httptest.NewRecorder()
-	NewAvatarHandler(source.Client()).ServeHTTP(rec, req)
+	NewAvatarHandler(source.Client(), nil).ServeHTTP(rec, req)
 
 	assertAvatarPNGResponse(t, rec, avatarDefaultRingColor, color.RGBA{R: 20, G: 40, B: 60, A: 255})
 }
@@ -56,7 +56,7 @@ func TestAvatarHandlerReturnsPNGWithCustomRingColor(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/avatar?url="+source.URL+"&color=5865F2", nil)
 	rec := httptest.NewRecorder()
-	NewAvatarHandler(source.Client()).ServeHTTP(rec, req)
+	NewAvatarHandler(source.Client(), nil).ServeHTTP(rec, req)
 
 	assertAvatarPNGResponse(t, rec, color.RGBA{R: 0x58, G: 0x65, B: 0xF2, A: 255}, color.RGBA{R: 20, G: 40, B: 60, A: 255})
 }
@@ -67,9 +67,31 @@ func TestAvatarHandlerFallsBackToDefaultRingForInvalidColor(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/avatar?url="+source.URL+"&color=not-a-color", nil)
 	rec := httptest.NewRecorder()
-	NewAvatarHandler(source.Client()).ServeHTTP(rec, req)
+	NewAvatarHandler(source.Client(), nil).ServeHTTP(rec, req)
 
 	assertAvatarPNGResponse(t, rec, avatarDefaultRingColor, color.RGBA{R: 20, G: 40, B: 60, A: 255})
+}
+
+func TestAvatarHandlerReturns429WhenRateLimited(t *testing.T) {
+	source := newAvatarSourceServer(t)
+	defer source.Close()
+
+	limiter := NewRequestRateLimiter(1)
+	handler := NewAvatarHandler(source.Client(), limiter)
+
+	req := httptest.NewRequest(http.MethodGet, "/avatar?url="+source.URL, nil)
+	req.RemoteAddr = "203.0.113.10:1234"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("first request status = %d, want 200", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request status = %d, want 429", rec.Code)
+	}
 }
 
 func newAvatarSourceServer(t *testing.T) *httptest.Server {

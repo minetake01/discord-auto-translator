@@ -20,7 +20,7 @@ func TestLoadConfigRequiresTokens(t *testing.T) {
 func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nGEMINI_API_KEY=file-key\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nGEMINI_RATE_LIMIT_TOKENS_PER_MIN=12345\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nGEMINI_API_KEY=file-key\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nGEMINI_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -47,6 +47,9 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	if cfg.GeminiRateLimitTokensPerMin != 12345 {
 		t.Fatalf("GeminiRateLimitTokensPerMin = %d", cfg.GeminiRateLimitTokensPerMin)
 	}
+	if cfg.AvatarRateLimitRequestsPerMin != 60 {
+		t.Fatalf("AvatarRateLimitRequestsPerMin = %d", cfg.AvatarRateLimitRequestsPerMin)
+	}
 }
 
 func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
@@ -57,6 +60,17 @@ func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 	if err == nil || !strings.Contains(err.Error(), "GEMINI_RATE_LIMIT_TOKENS_PER_MIN") {
 		t.Fatalf("got %v, want rate limit parse error", err)
+	}
+}
+
+func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "token")
+	t.Setenv("GEMINI_API_KEY", "key")
+	t.Setenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN", "not-a-number")
+
+	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+	if err == nil || !strings.Contains(err.Error(), "AVATAR_RATE_LIMIT_REQUESTS_PER_MIN") {
+		t.Fatalf("got %v, want avatar rate limit parse error", err)
 	}
 }
 
