@@ -8,6 +8,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	"image/png"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -41,11 +42,15 @@ func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, lang
 	return publicBaseURL + "/avatar?" + v.Encode()
 }
 
-func NewAvatarHandler(client *http.Client) http.Handler {
+func NewAvatarHandler(client *http.Client, limiter *RequestRateLimiter) http.Handler {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !limiter.Allow(clientIP(r)) {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 		rawURL := r.URL.Query().Get("url")
 		if sanitizeWebhookAvatarURL(rawURL) == "" {
 			http.Error(w, "invalid avatar url", http.StatusBadRequest)
@@ -80,6 +85,23 @@ func NewAvatarHandler(client *http.Client) http.Handler {
 			return
 		}
 	})
+}
+
+func clientIP(r *http.Request) string {
+	if xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); xff != "" {
+		if ip, _, ok := strings.Cut(xff, ","); ok {
+			return strings.TrimSpace(ip)
+		}
+		return xff
+	}
+	if xri := strings.TrimSpace(r.Header.Get("X-Real-Ip")); xri != "" {
+		return xri
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func avatarRingColor(raw string) color.Color {

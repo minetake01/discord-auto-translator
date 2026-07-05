@@ -23,3 +23,26 @@ func TestTokenRateLimiterUsesDefaultLimit(t *testing.T) {
 		t.Fatalf("got %d", limiter.limit)
 	}
 }
+
+func TestRequestRateLimiterBlocksWhenExceeded(t *testing.T) {
+	limiter := NewRequestRateLimiter(2)
+	if !limiter.Allow("203.0.113.1") {
+		t.Fatal("first request should be allowed")
+	}
+	if !limiter.Allow("203.0.113.1") {
+		t.Fatal("second request should be allowed")
+	}
+	if limiter.Allow("203.0.113.1") {
+		t.Fatal("third request should be blocked")
+	}
+	if !limiter.Allow("203.0.113.2") {
+		t.Fatal("different client should be allowed")
+	}
+}
+
+func TestRequestRateLimiterUsesDefaultLimit(t *testing.T) {
+	limiter := NewRequestRateLimiter(0)
+	if limiter.limit != defaultAvatarRateLimitRequestsPerMinute {
+		t.Fatalf("got %d", limiter.limit)
+	}
+}

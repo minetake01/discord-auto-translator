@@ -5,7 +5,10 @@ import (
 	"time"
 )
 
-const defaultRateLimitTokensPerMinute = 100_000
+const (
+	defaultRateLimitTokensPerMinute         = 100_000
+	defaultAvatarRateLimitRequestsPerMinute = 120
+)
 
 type tokenUsage struct {
 	at     time.Time
@@ -74,4 +77,53 @@ func (r *TokenRateLimiter) totalLocked(guildID string) int {
 		total += entry.tokens
 	}
 	return total
+}
+
+type RequestRateLimiter struct {
+	limit  int
+	mu     sync.Mutex
+	usage  map[string][]time.Time
+	window time.Duration
+}
+
+func NewRequestRateLimiter(limitPerMinute int) *RequestRateLimiter {
+	if limitPerMinute <= 0 {
+		limitPerMinute = defaultAvatarRateLimitRequestsPerMinute
+	}
+	return &RequestRateLimiter{
+		limit:  limitPerMinute,
+		usage:  make(map[string][]time.Time),
+		window: time.Minute,
+	}
+}
+
+func (r *RequestRateLimiter) Allow(key string) bool {
+	if r == nil || r.limit <= 0 {
+		return true
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now().UTC()
+	r.pruneRequestUsageLocked(key, now)
+	if len(r.usage[key]) >= r.limit {
+		return false
+	}
+	r.usage[key] = append(r.usage[key], now)
+	return true
+}
+
+func (r *RequestRateLimiter) pruneRequestUsageLocked(key string, now time.Time) {
+	entries := r.usage[key]
+	cutoff := now.Add(-r.window)
+	kept := entries[:0]
+	for _, at := range entries {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	if len(kept) == 0 {
+		delete(r.usage, key)
+		return
+	}
+	r.usage[key] = kept
 }

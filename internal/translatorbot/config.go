@@ -12,12 +12,13 @@ import (
 )
 
 type Config struct {
-	DiscordToken                string
-	GeminiAPIKey                string
-	DBPath                      string
-	HTTPAddr                    string
-	PublicBaseURL               string
-	GeminiRateLimitTokensPerMin int
+	DiscordToken                  string
+	GeminiAPIKey                  string
+	DBPath                        string
+	HTTPAddr                      string
+	PublicBaseURL                 string
+	GeminiRateLimitTokensPerMin   int
+	AvatarRateLimitRequestsPerMin int
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -37,6 +38,15 @@ func LoadConfig(path string) (Config, error) {
 		cfg.GeminiRateLimitTokensPerMin = limit
 	} else {
 		cfg.GeminiRateLimitTokensPerMin = defaultRateLimitTokensPerMinute
+	}
+	if raw := strings.TrimSpace(os.Getenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil {
+			return cfg, errors.New("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN must be an integer")
+		}
+		cfg.AvatarRateLimitRequestsPerMin = limit
+	} else {
+		cfg.AvatarRateLimitRequestsPerMin = defaultAvatarRateLimitRequestsPerMinute
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./translator.db"

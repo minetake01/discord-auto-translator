@@ -40,7 +40,7 @@ func main() {
 	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
 	httpMux := http.NewServeMux()
-	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient))
+	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRequestRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
