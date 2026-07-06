@@ -14,6 +14,11 @@ const translationHistoryLimit = 3
 const translationHistoryMaxAge = 24 * time.Hour
 const translationReplyChainLimit = 3
 
+const mergeShortMessageMaxRunes = 60
+const mergeMaxCombinedRunes = 150
+const mergeMaxCount = 4
+const mergeMaxInterval = 5 * time.Minute
+
 var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 
 // Service implements the mirroring pipeline: it receives normalized Discord
@@ -203,27 +208,78 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID str
 	if len(historyChannelIDs) == 0 {
 		return translationContext
 	}
-	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, translationHistoryLimit)
+	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, translationHistoryLimit*mergeMaxCount)
 	if err != nil {
 		return translationContext
 	}
 	cutoff := time.Now().UTC().Add(-translationHistoryMaxAge)
+	translationContext.History = mergeConsecutiveMessages(links, cutoff, excludeReplyKeys)
+	return translationContext
+}
+
+type historyMergeSlot struct {
+	author   string
+	content  string
+	lastTime time.Time
+	count    int
+}
+
+func mergeConsecutiveMessages(links []MessageLink, cutoff time.Time, excludeReplyKeys map[string]bool) []ChatContextMessage {
+	slots := make([]historyMergeSlot, 0, len(links))
 	for _, link := range links {
 		if excludeReplyKeys != nil && excludeReplyKeys[messageRefKey(link.SourceChannelID, link.SourceMessageID)] {
 			continue
 		}
-		if strings.TrimSpace(link.SourceContentSnapshot) == "" {
+		content := link.SourceContentSnapshot
+		if strings.TrimSpace(content) == "" {
 			continue
 		}
-		if messageTime, ok := discordSnowflakeTime(link.SourceMessageID); ok && !messageTime.After(cutoff) {
+		messageTime, hasTime := discordSnowflakeTime(link.SourceMessageID)
+		if hasTime && !messageTime.After(cutoff) {
 			continue
 		}
-		translationContext.History = append(translationContext.History, ChatContextMessage{
-			Author:  strings.TrimSpace(link.SourceAuthorDisplayName),
-			Content: link.SourceContentSnapshot,
+		author := strings.TrimSpace(link.SourceAuthorDisplayName)
+		contentRunes := len([]rune(content))
+		if len(slots) > 0 {
+			last := &slots[len(slots)-1]
+			combinedRunes := len([]rune(last.content)) + 1 + contentRunes
+			if last.author == author &&
+				contentRunes <= mergeShortMessageMaxRunes &&
+				combinedRunes <= mergeMaxCombinedRunes &&
+				last.count < mergeMaxCount &&
+				hasTime &&
+				!last.lastTime.IsZero() &&
+				messageTime.Sub(last.lastTime) <= mergeMaxInterval {
+				last.content += "\n" + content
+				if hasTime {
+					last.lastTime = messageTime
+				}
+				last.count++
+				continue
+			}
+		}
+		slot := historyMergeSlot{
+			author:  author,
+			content: content,
+			count:   1,
+		}
+		if hasTime {
+			slot.lastTime = messageTime
+		}
+		slots = append(slots, slot)
+	}
+	limit := translationHistoryLimit
+	if len(slots) < limit {
+		limit = len(slots)
+	}
+	out := make([]ChatContextMessage, 0, limit)
+	for i := 0; i < limit; i++ {
+		out = append(out, ChatContextMessage{
+			Author:  slots[i].author,
+			Content: slots[i].content,
 		})
 	}
-	return translationContext
+	return out
 }
 
 type messageRef struct {
