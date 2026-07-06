@@ -288,7 +288,7 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 		t.Fatal(err)
 	}
 
-	want := "> Stable translated body · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] はじめまして！"
+	want := "> -# Stable translated body · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] はじめまして！"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -865,7 +865,7 @@ func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "> ```go · [Source](https://discord.com/channels/guild/ja/100000000000000001)" {
+	if got != "> -# ```go · [Source](https://discord.com/channels/guild/ja/100000000000000001)" {
 		t.Fatalf("unexpected quote: %q", got)
 	}
 	if len(translator.contexts) != 0 {
@@ -893,7 +893,7 @@ func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := fmt.Sprintf("> snippet · [%s](https://discord.com/channels/guild/en/100000000000000001)", tt.label)
+			want := fmt.Sprintf("> -# snippet · [%s](https://discord.com/channels/guild/en/100000000000000001)", tt.label)
 			if got != want {
 				t.Fatalf("got %q, want %q", got, want)
 			}
@@ -910,10 +910,10 @@ func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
 		{name: "h1", line: "# Title", want: "-# Title"},
 		{name: "h2", line: "## Title", want: "-# Title"},
 		{name: "h3 with trailing hashes", line: "### Title ###", want: "-# Title"},
-		{name: "plain text", line: "plain text", want: "plain text"},
-		{name: "no space after hash", line: "#no-space", want: "#no-space"},
+		{name: "plain text", line: "plain text", want: "-# plain text"},
+		{name: "no space after hash", line: "#no-space", want: "-# #no-space"},
 		{name: "forwarded header", line: "-# Forwarded · https://discord.com/channels/g/c/m", want: "-# Forwarded · https://discord.com/channels/g/c/m"},
-		{name: "empty title", line: "# ", want: "#"},
+		{name: "empty title", line: "# ", want: "-# #"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1564,7 +1564,7 @@ func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "> 元メッセージ本文 · [Source](https://discord.com/channels/guild/ja/100000000000000002)\n\n[en] 返信です"
+	want := "> -# 元メッセージ本文 · [Source](https://discord.com/channels/guild/ja/100000000000000002)\n\n[en] 返信です"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -1587,7 +1587,7 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantPrefix := "> 引用元 · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
+	wantPrefix := "> -# 引用元 · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
 	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix {
 		t.Fatalf("got %#v, want %q", discord.sent, wantPrefix)
 	}
@@ -1614,7 +1614,7 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> 保存済み原文 · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] 返信"
+	want := "> -# 保存済み原文 · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] 返信"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
