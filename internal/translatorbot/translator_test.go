@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, false, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, true, false, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "こんにちは", TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -62,6 +62,9 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if strings.Contains(systemInstruction, "Prefer <reply_context> over <recent_context>") {
 		t.Fatal(systemInstruction)
 	}
+	if !strings.Contains(systemInstruction, "match their register and typing style") {
+		t.Fatal(systemInstruction)
+	}
 	if !strings.Contains(prompt, `<final_message author="bob">こんにちは</final_message>`) {
 		t.Fatal(prompt)
 	}
@@ -88,7 +91,7 @@ func TestBuildTranslationPromptIncludesThreadName(t *testing.T) {
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, true, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, false, true, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{
 		Author: "carol",
 		ReplyChain: []ChatContextMessage{
@@ -121,7 +124,7 @@ func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false, false, false)
 	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
 		t.Fatal(systemInstruction)
 	}
@@ -141,6 +144,15 @@ func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 	}
 }
 
+func TestBuildMultiTranslationUserPromptIncludesDefaultStyle(t *testing.T) {
+	prompt := BuildMultiTranslationUserPrompt([]string{"ja"}, "hello", TranslationContext{
+		StyleInstructions: ResolveStyleInstructions(StylePresetDefault, ""),
+	})
+	if !strings.Contains(prompt, "<style_instructions>") || !strings.Contains(prompt, "casual Japanese: そう, not そうだ") {
+		t.Fatal(prompt)
+	}
+}
+
 func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) {
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{
 		StyleInstructions: "Use formal language.",
@@ -155,13 +167,30 @@ func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) 
 	}
 }
 
+func TestBuildMultiTranslationSystemInstructionContextMatchRule(t *testing.T) {
+	const contextMatchRule = "match their register and typing style"
+
+	withHistory := BuildMultiTranslationSystemInstruction("hello", nil, true, false, false)
+	if !strings.Contains(withHistory, contextMatchRule) {
+		t.Fatal(withHistory)
+	}
+	withReply := BuildMultiTranslationSystemInstruction("hello", nil, false, true, false)
+	if !strings.Contains(withReply, contextMatchRule) {
+		t.Fatal(withReply)
+	}
+	withoutContext := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false)
+	if strings.Contains(withoutContext, contextMatchRule) {
+		t.Fatal(withoutContext)
+	}
+}
+
 func TestBuildMultiTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
-	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, true)
+	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, true)
 	if !strings.Contains(withStyle, "Use <style_instructions> as the default for choices the source leaves open") {
 		t.Fatal(withStyle)
 	}
 
-	withoutStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false)
+	withoutStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false)
 	if strings.Contains(withoutStyle, "<style_instructions>") {
 		t.Fatal(withoutStyle)
 	}

@@ -13,14 +13,32 @@ func TestResolveStyleInstructions(t *testing.T) {
 	if got := ResolveStyleInstructions("formal", ""); got != stylePresetInstructions["formal"] {
 		t.Fatalf("formal = %q", got)
 	}
-	if got := ResolveStyleInstructions(StylePresetDefault, ""); got != "" {
+	if got := ResolveStyleInstructions(StylePresetDefault, ""); got != nativePhrasingInstruction {
 		t.Fatalf("default = %q", got)
 	}
-	if got := ResolveStyleInstructions("netslang", ""); !strings.Contains(got, "2ch/5ch-style") {
+	if got := ResolveStyleInstructions("", ""); got != nativePhrasingInstruction {
+		t.Fatalf("empty = %q", got)
+	}
+	if got := ResolveStyleInstructions(StylePresetDefault, ""); !strings.Contains(got, "casual Japanese: そう, not そうだ") {
+		t.Fatalf("default = %q", got)
+	}
+	if got := ResolveStyleInstructions("netslang", ""); !strings.HasPrefix(got, nativePhrasingInstruction) || !strings.Contains(got, "2ch/5ch-style") {
 		t.Fatalf("netslang = %q", got)
+	}
+	if got := ResolveStyleInstructions("casual", ""); !strings.HasPrefix(got, nativePhrasingInstruction) || !strings.Contains(got, "friends chatting") {
+		t.Fatalf("casual = %q", got)
+	}
+	if got := ResolveStyleInstructions("formal", ""); strings.Contains(got, nativePhrasingInstruction) {
+		t.Fatalf("formal should not include native phrasing: %q", got)
+	}
+	if got := ResolveStyleInstructions("literal", ""); strings.Contains(got, nativePhrasingInstruction) {
+		t.Fatalf("literal should not include native phrasing: %q", got)
 	}
 	if got := ResolveStyleInstructions("tweet", ""); !strings.Contains(got, "social media phrasing") {
 		t.Fatalf("tweet = %q", got)
+	}
+	if IsValidStylePreset("natural") {
+		t.Fatal("natural preset should no longer exist")
 	}
 }
 
