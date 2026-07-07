@@ -67,6 +67,7 @@ func main() {
 			return
 		}
 		refID, refChannelID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
+		mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
 		err = service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
@@ -79,6 +80,9 @@ func main() {
 			ForwardedMessage:           forwarded,
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
+			MentionedUsers:             mentionedUsers,
+			MentionedChannels:          mentionedChannels,
+			MentionedRoles:             mentionedRoles,
 		})
 		if err != nil {
 			log.Printf("message create sync: %v", err)
@@ -99,12 +103,14 @@ func main() {
 			return
 		}
 		parentChannelID, threadName := threadContext(s, m.ChannelID)
+		mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
 		err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
 			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 			ParentChannelID: parentChannelID, ThreadName: threadName,
 			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
 			Attachments: attachmentsFromDiscord(m.Attachments), Stickers: stickersFromDiscord(m.StickerItems),
 			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
+			MentionedUsers: mentionedUsers, MentionedChannels: mentionedChannels, MentionedRoles: mentionedRoles,
 		})
 		if err != nil {
 			log.Printf("message update sync: %v", err)
@@ -240,6 +246,53 @@ func stickersFromDiscord(stickers []*discordgo.StickerItem) []translatorbot.Disc
 		})
 	}
 	return out
+}
+
+func mentionNameMaps(s *discordgo.Session, guildID string, m *discordgo.Message) (users, channels, roles map[string]string) {
+	users = map[string]string{}
+	channels = map[string]string{}
+	roles = map[string]string{}
+	if m == nil {
+		return users, channels, roles
+	}
+	for _, user := range m.Mentions {
+		if user == nil {
+			continue
+		}
+		users[user.ID] = userMentionName(s, guildID, user)
+	}
+	for _, ch := range m.MentionChannels {
+		if ch == nil {
+			continue
+		}
+		channels[ch.ID] = strings.TrimSpace(ch.Name)
+	}
+	for _, roleID := range m.MentionRoles {
+		if role, err := s.State.Role(guildID, roleID); err == nil && role != nil {
+			roles[roleID] = strings.TrimSpace(role.Name)
+		}
+	}
+	return users, channels, roles
+}
+
+func userMentionName(s *discordgo.Session, guildID string, user *discordgo.User) string {
+	if user == nil {
+		return ""
+	}
+	if guildID != "" {
+		if member, err := s.State.Member(guildID, user.ID); err == nil && member != nil {
+			if name := strings.TrimSpace(member.DisplayName()); name != "" {
+				return name
+			}
+			if name := strings.TrimSpace(member.Nick); name != "" {
+				return name
+			}
+		}
+	}
+	if name := strings.TrimSpace(user.DisplayName()); name != "" {
+		return name
+	}
+	return strings.TrimSpace(user.Username)
 }
 
 func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {

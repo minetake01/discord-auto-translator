@@ -95,7 +95,11 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		if replyChannelID == "" {
 			replyChannelID = m.ChannelID
 		}
-		return s.groupTranslationContext(ctx, m.GuildID, source.GroupID, m.ChannelID, m.ChannelID, source.Language, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, "")
+		tc := s.groupTranslationContext(ctx, m.GuildID, source.GroupID, m.ChannelID, m.ChannelID, source.Language, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, "")
+		tc.MentionedUsers = m.MentionedUsers
+		tc.MentionedChannels = m.MentionedChannels
+		tc.MentionedRoles = m.MentionedRoles
+		return tc
 	}
 	return s.mirrorMessage(ctx, m, source.GroupID, source.Language, contextFn, dests)
 }
@@ -230,7 +234,11 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 					}
 				}
 			}
-			return s.groupTranslationContext(ctx, m.GuildID, groupID, contextChannelID, historyChannelID, languageForChannel(targets, m.ChannelID), m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, threadName)
+			tc := s.groupTranslationContext(ctx, m.GuildID, groupID, contextChannelID, historyChannelID, languageForChannel(targets, m.ChannelID), m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, threadName)
+			tc.MentionedUsers = m.MentionedUsers
+			tc.MentionedChannels = m.MentionedChannels
+			tc.MentionedRoles = m.MentionedRoles
+			return tc
 		}
 		languages := make([]string, 0, len(pending))
 		for _, p := range pending {

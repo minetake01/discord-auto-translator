@@ -29,6 +29,9 @@ type TranslationContext struct {
 	ReplyChain        []ChatContextMessage
 	StyleInstructions string
 	Author            string
+	MentionedUsers    map[string]string // userID → display name
+	MentionedChannels map[string]string // channelID → channel name (source)
+	MentionedRoles    map[string]string // roleID → role name
 }
 
 type GlossaryEntry struct {
@@ -79,7 +82,11 @@ func (t *GeminiTranslator) TranslateMulti(ctx context.Context, targetLanguages [
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
 
-	p := NewProtector()
+	p := NewProtector(NameMaps{
+		Users:    translationContext.MentionedUsers,
+		Channels: translationContext.MentionedChannels,
+		Roles:    translationContext.MentionedRoles,
+	})
 	protected := p.Protect(content)
 	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "")
 	userPrompt := BuildMultiTranslationUserPrompt(normalized, protected, translationContext)
@@ -216,7 +223,7 @@ func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryE
 	if hasReplyChain {
 		b.WriteString("<reply_context> contains the direct reply chain for <final_message> (oldest first, up to 3 messages). Prefer <reply_context> over <recent_context> when resolving pronouns, references, and terminology continuity.\n")
 	}
-	b.WriteString("Preserve markdown, __DAT_KEEP_...__ placeholders, line breaks, and tone.")
+	b.WriteString("Copy all [UPPERCASE:...] placeholder tokens (e.g. [EMOJI:wave], [CODE]) character-for-character into your translation — they are structural markers, not translatable text. Preserve markdown, line breaks, and tone.")
 	return b.String()
 }
 
