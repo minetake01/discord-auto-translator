@@ -789,7 +789,7 @@ func TestMergeConsecutiveMessagesLimitsHistorySlots(t *testing.T) {
 	if len(got) != translationHistoryLimit {
 		t.Fatalf("got %d slots, want %d: %#v", len(got), translationHistoryLimit, got)
 	}
-	if got[0].Author != "user-0" || got[2].Author != "user-2" {
+	if got[0].Author != "user-2" || got[2].Author != "user-4" {
 		t.Fatalf("unexpected limited history: %#v", got)
 	}
 }

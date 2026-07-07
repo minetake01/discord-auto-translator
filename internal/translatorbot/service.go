@@ -273,7 +273,8 @@ func mergeConsecutiveMessages(links []MessageLink, cutoff time.Time, excludeRepl
 		limit = len(slots)
 	}
 	out := make([]ChatContextMessage, 0, limit)
-	for i := 0; i < limit; i++ {
+	start := len(slots) - limit
+	for i := start; i < len(slots); i++ {
 		out = append(out, ChatContextMessage{
 			Author:  slots[i].author,
 			Content: slots[i].content,
