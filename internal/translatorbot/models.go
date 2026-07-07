@@ -66,6 +66,9 @@ type DiscordMessage struct {
 	Edited                     bool
 	ThreadSystemMessage        bool
 	ThreadStarterMessage       bool
+	MentionedUsers             map[string]string // userID → display name
+	MentionedChannels          map[string]string // channelID → channel name (source)
+	MentionedRoles             map[string]string // roleID → role name
 }
 
 type DiscordForwardedMessage struct {

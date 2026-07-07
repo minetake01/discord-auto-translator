@@ -248,7 +248,11 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 		if replyChannelID == "" {
 			replyChannelID = m.ChannelID
 		}
-		return s.groupTranslationContext(ctx, m.GuildID, thread.GroupID, thread.SourceChannelID, m.ChannelID, sourceLanguage, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, s.resolveThreadName(m))
+		tc := s.groupTranslationContext(ctx, m.GuildID, thread.GroupID, thread.SourceChannelID, m.ChannelID, sourceLanguage, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, s.resolveThreadName(m))
+		tc.MentionedUsers = m.MentionedUsers
+		tc.MentionedChannels = m.MentionedChannels
+		tc.MentionedRoles = m.MentionedRoles
+		return tc
 	}
 	dests := []mirrorDestination{destinationForThread(*target, thread.TargetThreadID)}
 	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests)
