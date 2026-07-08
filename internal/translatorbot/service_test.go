@@ -1832,6 +1832,47 @@ func TestHandleMessagePinUpdateSyncsOnceAndSkipsEcho(t *testing.T) {
 	}
 }
 
+func TestHandleMessagePinUpdateInitialFalseOnlySeedsState(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000018", TargetLanguage: "en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessagePinUpdate(ctx, "ja", "100000000000000001", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.pinCalls) != 0 {
+		t.Fatalf("initial false should not call pin APIs: %#v", discord.pinCalls)
+	}
+	pinned, known, err := store.GetPinState(ctx, "ja", "100000000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !known || pinned {
+		t.Fatalf("expected source false pin state, got known=%v pinned=%v", known, pinned)
+	}
+	pinned, known, err = store.GetPinState(ctx, "en", "100000000000000018")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !known || pinned {
+		t.Fatalf("expected peer false pin state, got known=%v pinned=%v", known, pinned)
+	}
+
+	if err := service.HandleMessagePinUpdate(ctx, "en", "100000000000000018", false); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.pinCalls) != 0 {
+		t.Fatalf("seeded false echo should not call pin APIs: %#v", discord.pinCalls)
+	}
+}
+
 func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
