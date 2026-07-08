@@ -34,6 +34,9 @@ func (s *Service) HandleMessagePinUpdate(ctx context.Context, channelID, message
 	if known && prevPinned == pinned {
 		return nil
 	}
+	if !known && !pinned {
+		return s.savePinStatesForPeers(ctx, channelID, messageID, false)
+	}
 	if err := s.SyncPin(ctx, channelID, messageID, pinned); err != nil {
 		return err
 	}
