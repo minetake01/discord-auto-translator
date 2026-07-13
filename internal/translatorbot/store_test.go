@@ -273,7 +273,7 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}
 }
 
-func TestDeleteMessageLinksBySourceRemovesAllTargetsForSource(t *testing.T) {
+func TestDeleteMessageDataRemovesAllTargetsForSource(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, link := range []MessageLink{
@@ -286,7 +286,7 @@ func TestDeleteMessageLinksBySourceRemovesAllTargetsForSource(t *testing.T) {
 		}
 	}
 
-	if err := s.DeleteMessageLinksBySource(ctx, "ja", "100"); err != nil {
+	if err := s.DeleteMessageData(ctx, "ja", "100", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -303,6 +303,26 @@ func TestDeleteMessageLinksBySourceRemovesAllTargetsForSource(t *testing.T) {
 	}
 	if len(remaining) != 1 {
 		t.Fatalf("other source links were removed: %#v", remaining)
+	}
+}
+
+func TestMessageTargetsReplyingToReturnsPersistedReplyTargets(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "team",
+		TargetChannelID: "en", TargetMessageID: "target-reply", TargetLanguage: "en",
+		ReferencedMessageID: "100000000000000001", ReferencedChannelID: "ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	links, err := s.MessageTargetsReplyingTo(ctx, "ja", "100000000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || links[0].SourceMessageID != "100000000000000002" || links[0].TargetMessageID != "target-reply" {
+		t.Fatalf("unexpected reply targets: %#v", links)
 	}
 }
 

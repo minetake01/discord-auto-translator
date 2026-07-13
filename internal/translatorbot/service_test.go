@@ -295,6 +295,13 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	if len(translator.contexts) != 1 {
 		t.Fatalf("only the reply body should be translated")
 	}
+	replies, err := store.MessageTargetsReplyingTo(ctx, "ja", "100000000000000002")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replies) != 1 || replies[0].SourceMessageID != "100000000000000008" || replies[0].TargetMessageID != "sent-1" {
+		t.Fatalf("reply reference was not persisted: %#v", replies)
+	}
 }
 
 func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
@@ -1111,6 +1118,52 @@ func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) 
 	}
 	if len(links) != 0 {
 		t.Fatalf("message links were not deleted: %#v", links)
+	}
+}
+
+func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{messageContents: map[string]string{
+		"ja" + "\x00" + "100000000000000015": "> -# 古いスニペット · [引用元を見る](https://discord.com/channels/guild/en/100000000000000014)\n\n[ja] 返信本文",
+	}}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000014", TargetLanguage: "en",
+		SourceAuthorID: "alice", SourceContentSnapshot: "original",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "en", GroupID: "g",
+		TargetChannelID: "ja", TargetMessageID: "100000000000000015", TargetLanguage: "ja",
+		SourceAuthorID: "bob", SourceContentSnapshot: "reply body",
+		ReferencedMessageID: "100000000000000014", ReferencedChannelID: "en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageDelete(ctx, "guild", "ja", "100000000000000001"); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.webhookEdits) != 1 {
+		t.Fatalf("webhook edits: %#v", discord.webhookEdits)
+	}
+	if got := discord.webhookEdits[0]; got.messageID != "100000000000000015" || got.threadID != "" || got.content != "> -# 元のメッセージが削除されました\n\n[ja] 返信本文" {
+		t.Fatalf("unexpected webhook edit: %#v", got)
+	}
+	if len(discord.webhookDeletes) != 1 || discord.webhookDeletes[0].messageID != "100000000000000014" {
+		t.Fatalf("webhook deletes: %#v", discord.webhookDeletes)
+	}
+	replies, err := store.MessageTargetsReplyingTo(ctx, "en", "100000000000000014")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(replies) != 0 {
+		t.Fatalf("deleted reference remains: %#v", replies)
 	}
 }
 
