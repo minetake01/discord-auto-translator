@@ -155,12 +155,17 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content, snapshot string) error {
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
+	referencedChannelID := m.ReferencedMessageChannelID
+	if referencedChannelID == "" && m.ReferencedMessageID != "" {
+		referencedChannelID = m.ChannelID
+	}
 	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
 		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(),
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
 		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
+		ReferencedMessageID: m.ReferencedMessageID, ReferencedChannelID: referencedChannelID,
 	})
 }
 
@@ -273,6 +278,14 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 	if err != nil {
 		return err
 	}
+	replies, err := s.messageTargetsReplyingToCopies(ctx, channelID, messageID, links)
+	if err != nil {
+		return err
+	}
+	if err := s.replaceDeletedReplyQuotes(ctx, guildID, replies); err != nil {
+		return err
+	}
+
 	byGroup := make(map[string][]MessageLink)
 	for _, link := range links {
 		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
@@ -295,7 +308,69 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 			}
 		}
 	}
-	return s.store.DeleteMessageLinksBySource(ctx, channelID, messageID)
+	return s.store.DeleteMessageData(ctx, channelID, messageID, links)
+}
+
+func (s *Service) messageTargetsReplyingToCopies(ctx context.Context, sourceChannelID, sourceMessageID string, copies []MessageLink) ([]MessageLink, error) {
+	type messageRef struct {
+		channelID string
+		messageID string
+	}
+	refs := make([]messageRef, 0, len(copies)+1)
+	refs = append(refs, messageRef{channelID: sourceChannelID, messageID: sourceMessageID})
+	for _, copy := range copies {
+		refs = append(refs, messageRef{channelID: copy.TargetChannelID, messageID: copy.TargetMessageID})
+	}
+	seen := make(map[string]bool)
+	var replies []MessageLink
+	for _, ref := range refs {
+		links, err := s.store.MessageTargetsReplyingTo(ctx, ref.channelID, ref.messageID)
+		if err != nil {
+			return nil, err
+		}
+		for _, link := range links {
+			key := link.SourceChannelID + "\x00" + link.SourceMessageID + "\x00" + link.TargetChannelID + "\x00" + link.TargetMessageID
+			if !seen[key] {
+				replies = append(replies, link)
+				seen[key] = true
+			}
+		}
+	}
+	return replies, nil
+}
+
+func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string, links []MessageLink) error {
+	byGroup := make(map[string][]MessageLink)
+	for _, link := range links {
+		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
+	}
+	for groupID, groupLinks := range byGroup {
+		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
+		if err != nil {
+			return err
+		}
+		for _, link := range groupLinks {
+			target, err := s.messageLinkTarget(ctx, targets, link)
+			if err != nil {
+				return err
+			}
+			if target == nil {
+				continue
+			}
+			message, err := s.discord.Message(link.TargetChannelID, link.TargetMessageID)
+			if err != nil {
+				return fmt.Errorf("fetch reply mirror %s/%s: %w", link.TargetChannelID, link.TargetMessageID, err)
+			}
+			content := fmt.Sprintf("> -# %s", localizedUIString(link.TargetLanguage, uiKeyOriginalMessageDeleted))
+			if body := mirroredMessageBody(message.Content); body != "" {
+				content += "\n\n" + body
+			}
+			if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // replyQuote builds the pseudo-reply quote line for a reply message,

@@ -82,6 +82,13 @@ func (s *Store) Init(ctx context.Context) error {
 			source_content_snapshot TEXT NOT NULL,
 			PRIMARY KEY (source_message_id, source_channel_id, target_channel_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS message_references (
+			source_message_id INTEGER NOT NULL,
+			source_channel_id TEXT NOT NULL,
+			referenced_message_id INTEGER NOT NULL,
+			referenced_channel_id TEXT NOT NULL,
+			PRIMARY KEY (source_message_id, source_channel_id)
+		)`,
 		`CREATE TABLE IF NOT EXISTS thread_links (
 			group_id TEXT NOT NULL,
 			source_thread_id TEXT NOT NULL,
@@ -119,6 +126,7 @@ func (s *Store) Init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_message_links_target_channel_message ON message_links(target_channel_id, target_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_group_source_channel ON message_links(group_id, source_channel_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_group_target_channel ON message_links(group_id, target_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_references_target ON message_references(referenced_channel_id, referenced_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_source_thread ON thread_links(source_thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_target_thread ON thread_links(target_thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_target_thread ON thread_links(group_id, target_thread_id)`,
@@ -230,6 +238,9 @@ func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error 
 		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
 		return err
 	}
+	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links
 		WHERE group_id=?
 		AND (
@@ -266,6 +277,9 @@ func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID st
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
 		return err
 	}
+	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
 		return err
 	}
@@ -274,6 +288,16 @@ func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID st
 
 type execer interface {
 	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func deleteOrphanedMessageReferences(ctx context.Context, x execer) error {
+	_, err := x.ExecContext(ctx, `DELETE FROM message_references
+		WHERE NOT EXISTS (
+			SELECT 1 FROM message_links ml
+			WHERE ml.source_channel_id=message_references.source_channel_id
+			AND ml.source_message_id=message_references.source_message_id
+		)`)
+	return err
 }
 
 func insertGroupChannel(ctx context.Context, x execer, ch GroupChannel) error {
@@ -405,23 +429,74 @@ func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
-		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot); err != nil {
+		return err
+	}
+	if l.ReferencedMessageID != "" {
+		if l.ReferencedChannelID == "" {
+			return errors.New("referenced_channel_id is required when referenced_message_id is set")
+		}
+		referencedMessageID, err := parseDiscordSnowflakeID("referenced_message_id", l.ReferencedMessageID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_references(source_message_id,source_channel_id,referenced_message_id,referenced_channel_id) VALUES(?,?,?,?)`,
+			sourceMessageID, l.SourceChannelID, referencedMessageID, l.ReferencedChannelID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
-func (s *Store) DeleteMessageLinksBySource(ctx context.Context, sourceChannelID, sourceMessageID string) error {
+func (s *Store) DeleteMessageData(ctx context.Context, sourceChannelID, sourceMessageID string, copies []MessageLink) error {
 	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references
+		WHERE (source_channel_id=? AND source_message_id=?) OR (referenced_channel_id=? AND referenced_message_id=?)`,
+		sourceChannelID, sourceMessageIDValue, sourceChannelID, sourceMessageIDValue); err != nil {
+		return err
+	}
+	for _, copy := range copies {
+		copyMessageID, err := parseDiscordSnowflakeID("target_message_id", copy.TargetMessageID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE referenced_channel_id=? AND referenced_message_id=?`, copy.TargetChannelID, copyMessageID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeleteMessageLinksByChannel(ctx context.Context, channelID string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? OR target_channel_id=?`, channelID, channelID)
-	return err
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE source_channel_id=? OR target_channel_id=?`, channelID, channelID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE source_channel_id=? OR referenced_channel_id=?`, channelID, channelID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessageID string) ([]MessageLink, error) {
@@ -430,6 +505,21 @@ func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessa
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
+	if err != nil {
+		return nil, err
+	}
+	return scanMessageLinks(rows)
+}
+
+func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelID, referencedMessageID string) ([]MessageLink, error) {
+	referencedMessageIDValue, err := parseDiscordSnowflakeID("referenced_message_id", referencedMessageID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot
+		FROM message_links ml
+		JOIN message_references mr ON mr.source_channel_id=ml.source_channel_id AND mr.source_message_id=ml.source_message_id
+		WHERE mr.referenced_channel_id=? AND mr.referenced_message_id=?`, referencedChannelID, referencedMessageIDValue)
 	if err != nil {
 		return nil, err
 	}
@@ -702,13 +792,24 @@ func (s *Store) DeleteThreadLinks(ctx context.Context, threadID string) error {
 
 func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
 	maxID := snowflakeIDBefore(cutoff.UTC())
-	res, err := s.db.ExecContext(ctx, `DELETE FROM message_links WHERE source_message_id < ?`, maxID)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE source_message_id < ?`, maxID)
 	if err != nil {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM pin_states WHERE message_id < ?`, maxID); err != nil {
-		return n, err
+	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pin_states WHERE message_id < ?`, maxID); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
 	}
 	return n, nil
 }

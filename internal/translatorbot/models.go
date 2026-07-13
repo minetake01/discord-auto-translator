@@ -32,6 +32,8 @@ type MessageLink struct {
 	SourceAuthorID          string
 	SourceAuthorDisplayName string
 	SourceContentSnapshot   string
+	ReferencedMessageID     string
+	ReferencedChannelID     string
 }
 
 type ThreadLink struct {

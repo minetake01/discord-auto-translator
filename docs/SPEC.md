@@ -135,6 +135,8 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 
 `message_links` に対応がない場合も、ゲートウェイの `referenced_message` に含まれる原文を引用します。引用スニペットは Discord の subtext 形式 `-# ` に正規化します。Markdown ATX ヘッダー行（`# ` で始まる行）の場合は、先頭の `#` を除去してから `-# ` を付与します。引用スニペットには翻訳、用語集、スタイル指定、翻訳レート制限、リンク置換を適用しません。リンクラベルは送信先チャンネルの言語に合わせ、未対応言語では英語の `Source` を使用します（日本語は `引用元を見る`）。疑似リプライは先頭の `>` 行にスニペット、半角スペース、ミドルドット、半角スペース、Discord メッセージリンクが並ぶ場合だけ認識するため、通常本文として記述された Markdown 引用は保持されます。疑似リプライと返信本文の間には空行を1行置きます。
 
+疑似リプライの投稿後に返信元が削除された場合は、保存済みの返信参照から既存の疑似リプライを逆引きし、返信本文を保持したまま引用部分を送信先チャンネルの言語で `> -# 元のメッセージが削除されました` に相当する削除表示へ置換します。削除表示にはメッセージリンクを付けません。
+
 ### 3.4 転送メッセージ
 
 Discord の `message_reference.type=FORWARD` と作成時点で不変の `message_snapshots[0]` を使用し、返信とは別の経路で転送メッセージをミラーします。snapshot が1件でない、または `message` が `null` のペイロードはエラーとして扱い、通常メッセージや返信にはフォールバックしません。
@@ -309,6 +311,15 @@ message_links (
     source_author_id TEXT,
     source_content_snapshot TEXT,  -- 翻訳文脈・引用スニペット用
     PRIMARY KEY (source_message_id, source_channel_id, target_channel_id)
+)
+
+-- 返信元の逆引き
+message_references (
+    source_message_id INTEGER,
+    source_channel_id TEXT,
+    referenced_message_id INTEGER,
+    referenced_channel_id TEXT,
+    PRIMARY KEY (source_message_id, source_channel_id)
 )
 
 -- スレッドの対応関係

@@ -9,11 +9,12 @@ import (
 type uiKey string
 
 const (
-	uiKeyViewOriginalLink uiKey = "viewOriginalLink"
-	uiKeyOriginalMessage  uiKey = "originalMessage"
-	uiKeyAlreadyOriginal  uiKey = "alreadyOriginal"
-	uiKeyNotManaged       uiKey = "notManaged"
-	uiKeyForwarded        uiKey = "forwarded"
+	uiKeyViewOriginalLink       uiKey = "viewOriginalLink"
+	uiKeyOriginalMessage        uiKey = "originalMessage"
+	uiKeyOriginalMessageDeleted uiKey = "originalMessageDeleted"
+	uiKeyAlreadyOriginal        uiKey = "alreadyOriginal"
+	uiKeyNotManaged             uiKey = "notManaged"
+	uiKeyForwarded              uiKey = "forwarded"
 
 	uiKeyRateLimitNotice         uiKey = "rateLimitNotice"
 	uiKeyTranslationFailedNotice uiKey = "translationFailedNotice"
@@ -69,11 +70,12 @@ const (
 // enforces this together with matching format verbs.
 var uiStrings = map[string]map[uiKey]string{
 	"en": {
-		uiKeyViewOriginalLink: "Go to original message",
-		uiKeyOriginalMessage:  "Source",
-		uiKeyAlreadyOriginal:  "This message is already the original.",
-		uiKeyNotManaged:       "This message is not managed by the translation bot.",
-		uiKeyForwarded:        "Forwarded",
+		uiKeyViewOriginalLink:       "Go to original message",
+		uiKeyOriginalMessage:        "Source",
+		uiKeyOriginalMessageDeleted: "The original message was deleted",
+		uiKeyAlreadyOriginal:        "This message is already the original.",
+		uiKeyNotManaged:             "This message is not managed by the translation bot.",
+		uiKeyForwarded:              "Forwarded",
 
 		uiKeyRateLimitNotice:         "This message was not translated because the translation rate limit was reached.",
 		uiKeyTranslationFailedNotice: "This message was not mirrored because translation failed.",
@@ -124,11 +126,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Reset the style of translation group `%[1]s`.",
 	},
 	"ja": {
-		uiKeyViewOriginalLink: "原文メッセージへ移動",
-		uiKeyOriginalMessage:  "引用元を見る",
-		uiKeyAlreadyOriginal:  "このメッセージは原文です。",
-		uiKeyNotManaged:       "このメッセージは翻訳ボットが管理していません。",
-		uiKeyForwarded:        "転送済み",
+		uiKeyViewOriginalLink:       "原文メッセージへ移動",
+		uiKeyOriginalMessage:        "引用元を見る",
+		uiKeyOriginalMessageDeleted: "元のメッセージが削除されました",
+		uiKeyAlreadyOriginal:        "このメッセージは原文です。",
+		uiKeyNotManaged:             "このメッセージは翻訳ボットが管理していません。",
+		uiKeyForwarded:              "転送済み",
 
 		uiKeyRateLimitNotice:         "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。",
 		uiKeyTranslationFailedNotice: "翻訳に失敗したため、このメッセージはミラーリングされませんでした。",
@@ -179,11 +182,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "翻訳グループ `%[1]s` のスタイルをリセットしました。",
 	},
 	"zh-CN": {
-		uiKeyViewOriginalLink: "前往原文消息",
-		uiKeyOriginalMessage:  "查看来源",
-		uiKeyAlreadyOriginal:  "此消息已是原文。",
-		uiKeyNotManaged:       "此消息不受翻译机器人管理。",
-		uiKeyForwarded:        "已转发",
+		uiKeyViewOriginalLink:       "前往原文消息",
+		uiKeyOriginalMessage:        "查看来源",
+		uiKeyOriginalMessageDeleted: "原消息已被删除",
+		uiKeyAlreadyOriginal:        "此消息已是原文。",
+		uiKeyNotManaged:             "此消息不受翻译机器人管理。",
+		uiKeyForwarded:              "已转发",
 
 		uiKeyRateLimitNotice:         "已达到翻译速率限制，此消息未被翻译。",
 		uiKeyTranslationFailedNotice: "翻译失败，此消息未被镜像。",
@@ -234,11 +238,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "已重置翻译组 `%[1]s` 的风格。",
 	},
 	"zh-TW": {
-		uiKeyViewOriginalLink: "前往原文訊息",
-		uiKeyOriginalMessage:  "查看來源",
-		uiKeyAlreadyOriginal:  "此訊息已是原文。",
-		uiKeyNotManaged:       "此訊息不受翻譯機器人管理。",
-		uiKeyForwarded:        "已轉發",
+		uiKeyViewOriginalLink:       "前往原文訊息",
+		uiKeyOriginalMessage:        "查看來源",
+		uiKeyOriginalMessageDeleted: "原訊息已被刪除",
+		uiKeyAlreadyOriginal:        "此訊息已是原文。",
+		uiKeyNotManaged:             "此訊息不受翻譯機器人管理。",
+		uiKeyForwarded:              "已轉發",
 
 		uiKeyRateLimitNotice:         "已達到翻譯速率限制，此訊息未被翻譯。",
 		uiKeyTranslationFailedNotice: "翻譯失敗，此訊息未被鏡像。",
@@ -289,11 +294,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "已重設翻譯群組 `%[1]s` 的風格。",
 	},
 	"ko": {
-		uiKeyViewOriginalLink: "원문 메시지로 이동",
-		uiKeyOriginalMessage:  "출처 보기",
-		uiKeyAlreadyOriginal:  "이 메시지는 이미 원문입니다.",
-		uiKeyNotManaged:       "이 메시지는 번역 봇이 관리하지 않습니다.",
-		uiKeyForwarded:        "전달됨",
+		uiKeyViewOriginalLink:       "원문 메시지로 이동",
+		uiKeyOriginalMessage:        "출처 보기",
+		uiKeyOriginalMessageDeleted: "원본 메시지가 삭제되었습니다",
+		uiKeyAlreadyOriginal:        "이 메시지는 이미 원문입니다.",
+		uiKeyNotManaged:             "이 메시지는 번역 봇이 관리하지 않습니다.",
+		uiKeyForwarded:              "전달됨",
 
 		uiKeyRateLimitNotice:         "번역 속도 제한에 도달하여 이 메시지는 번역되지 않았습니다.",
 		uiKeyTranslationFailedNotice: "번역에 실패하여 이 메시지는 미러링되지 않았습니다.",
@@ -344,11 +350,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "번역 그룹 `%[1]s`의 스타일을 초기화했습니다.",
 	},
 	"fr": {
-		uiKeyViewOriginalLink: "Aller au message original",
-		uiKeyOriginalMessage:  "Source",
-		uiKeyAlreadyOriginal:  "Ce message est déjà l'original.",
-		uiKeyNotManaged:       "Ce message n'est pas géré par le bot de traduction.",
-		uiKeyForwarded:        "Transféré",
+		uiKeyViewOriginalLink:       "Aller au message original",
+		uiKeyOriginalMessage:        "Source",
+		uiKeyOriginalMessageDeleted: "Le message d’origine a été supprimé",
+		uiKeyAlreadyOriginal:        "Ce message est déjà l'original.",
+		uiKeyNotManaged:             "Ce message n'est pas géré par le bot de traduction.",
+		uiKeyForwarded:              "Transféré",
 
 		uiKeyRateLimitNotice:         "Ce message n'a pas été traduit car la limite de débit de traduction a été atteinte.",
 		uiKeyTranslationFailedNotice: "Ce message n'a pas été miroité car la traduction a échoué.",
@@ -399,11 +406,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Le style du groupe de traduction `%[1]s` a été réinitialisé.",
 	},
 	"de": {
-		uiKeyViewOriginalLink: "Zur Originalnachricht",
-		uiKeyOriginalMessage:  "Quelle",
-		uiKeyAlreadyOriginal:  "Diese Nachricht ist bereits das Original.",
-		uiKeyNotManaged:       "Diese Nachricht wird vom Übersetzungsbot nicht verwaltet.",
-		uiKeyForwarded:        "Weitergeleitet",
+		uiKeyViewOriginalLink:       "Zur Originalnachricht",
+		uiKeyOriginalMessage:        "Quelle",
+		uiKeyOriginalMessageDeleted: "Die ursprüngliche Nachricht wurde gelöscht",
+		uiKeyAlreadyOriginal:        "Diese Nachricht ist bereits das Original.",
+		uiKeyNotManaged:             "Diese Nachricht wird vom Übersetzungsbot nicht verwaltet.",
+		uiKeyForwarded:              "Weitergeleitet",
 
 		uiKeyRateLimitNotice:         "Diese Nachricht wurde nicht übersetzt, weil das Übersetzungsratenlimit erreicht wurde.",
 		uiKeyTranslationFailedNotice: "Diese Nachricht wurde nicht gespiegelt, weil die Übersetzung fehlgeschlagen ist.",
@@ -454,11 +462,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Der Stil der Übersetzungsgruppe `%[1]s` wurde zurückgesetzt.",
 	},
 	"es": {
-		uiKeyViewOriginalLink: "Ir al mensaje original",
-		uiKeyOriginalMessage:  "Ver fuente",
-		uiKeyAlreadyOriginal:  "Este mensaje ya es el original.",
-		uiKeyNotManaged:       "Este mensaje no está gestionado por el bot de traducción.",
-		uiKeyForwarded:        "Reenviado",
+		uiKeyViewOriginalLink:       "Ir al mensaje original",
+		uiKeyOriginalMessage:        "Ver fuente",
+		uiKeyOriginalMessageDeleted: "El mensaje original fue eliminado",
+		uiKeyAlreadyOriginal:        "Este mensaje ya es el original.",
+		uiKeyNotManaged:             "Este mensaje no está gestionado por el bot de traducción.",
+		uiKeyForwarded:              "Reenviado",
 
 		uiKeyRateLimitNotice:         "Este mensaje no se tradujo porque se alcanzó el límite de traducciones.",
 		uiKeyTranslationFailedNotice: "Este mensaje no se replicó porque falló la traducción.",
@@ -509,11 +518,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Se restableció el estilo del grupo de traducción `%[1]s`.",
 	},
 	"pt-BR": {
-		uiKeyViewOriginalLink: "Ir para a mensagem original",
-		uiKeyOriginalMessage:  "Ver fonte",
-		uiKeyAlreadyOriginal:  "Esta mensagem já é o original.",
-		uiKeyNotManaged:       "Esta mensagem não é gerenciada pelo bot de tradução.",
-		uiKeyForwarded:        "Encaminhado",
+		uiKeyViewOriginalLink:       "Ir para a mensagem original",
+		uiKeyOriginalMessage:        "Ver fonte",
+		uiKeyOriginalMessageDeleted: "A mensagem original foi excluída",
+		uiKeyAlreadyOriginal:        "Esta mensagem já é o original.",
+		uiKeyNotManaged:             "Esta mensagem não é gerenciada pelo bot de tradução.",
+		uiKeyForwarded:              "Encaminhado",
 
 		uiKeyRateLimitNotice:         "Esta mensagem não foi traduzida porque o limite de traduções foi atingido.",
 		uiKeyTranslationFailedNotice: "Esta mensagem não foi espelhada porque a tradução falhou.",
@@ -564,11 +574,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "O estilo do grupo de tradução `%[1]s` foi redefinido.",
 	},
 	"it": {
-		uiKeyViewOriginalLink: "Vai al messaggio originale",
-		uiKeyOriginalMessage:  "Fonte",
-		uiKeyAlreadyOriginal:  "Questo messaggio è già l'originale.",
-		uiKeyNotManaged:       "Questo messaggio non è gestito dal bot di traduzione.",
-		uiKeyForwarded:        "Inoltrato",
+		uiKeyViewOriginalLink:       "Vai al messaggio originale",
+		uiKeyOriginalMessage:        "Fonte",
+		uiKeyOriginalMessageDeleted: "Il messaggio originale è stato eliminato",
+		uiKeyAlreadyOriginal:        "Questo messaggio è già l'originale.",
+		uiKeyNotManaged:             "Questo messaggio non è gestito dal bot di traduzione.",
+		uiKeyForwarded:              "Inoltrato",
 
 		uiKeyRateLimitNotice:         "Questo messaggio non è stato tradotto perché è stato raggiunto il limite di traduzioni.",
 		uiKeyTranslationFailedNotice: "Questo messaggio non è stato replicato perché la traduzione non è riuscita.",
@@ -619,11 +630,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Lo stile del gruppo di traduzione `%[1]s` è stato reimpostato.",
 	},
 	"id": {
-		uiKeyViewOriginalLink: "Buka pesan asli",
-		uiKeyOriginalMessage:  "Lihat sumber",
-		uiKeyAlreadyOriginal:  "Pesan ini sudah merupakan pesan asli.",
-		uiKeyNotManaged:       "Pesan ini tidak dikelola oleh bot terjemahan.",
-		uiKeyForwarded:        "Diteruskan",
+		uiKeyViewOriginalLink:       "Buka pesan asli",
+		uiKeyOriginalMessage:        "Lihat sumber",
+		uiKeyOriginalMessageDeleted: "Pesan asli telah dihapus",
+		uiKeyAlreadyOriginal:        "Pesan ini sudah merupakan pesan asli.",
+		uiKeyNotManaged:             "Pesan ini tidak dikelola oleh bot terjemahan.",
+		uiKeyForwarded:              "Diteruskan",
 
 		uiKeyRateLimitNotice:         "Pesan ini tidak diterjemahkan karena batas laju terjemahan telah tercapai.",
 		uiKeyTranslationFailedNotice: "Pesan ini tidak dicerminkan karena terjemahan gagal.",
@@ -674,11 +686,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "Gaya grup terjemahan `%[1]s` telah diatur ulang.",
 	},
 	"th": {
-		uiKeyViewOriginalLink: "ไปยังข้อความต้นฉบับ",
-		uiKeyOriginalMessage:  "ดูต้นฉบับ",
-		uiKeyAlreadyOriginal:  "ข้อความนี้เป็นข้อความต้นฉบับอยู่แล้ว",
-		uiKeyNotManaged:       "ข้อความนี้ไม่ได้อยู่ภายใต้การจัดการของบอทแปลภาษา",
-		uiKeyForwarded:        "ส่งต่อแล้ว",
+		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
+		uiKeyOriginalMessage:        "ดูต้นฉบับ",
+		uiKeyOriginalMessageDeleted: "ข้อความต้นฉบับถูกลบแล้ว",
+		uiKeyAlreadyOriginal:        "ข้อความนี้เป็นข้อความต้นฉบับอยู่แล้ว",
+		uiKeyNotManaged:             "ข้อความนี้ไม่ได้อยู่ภายใต้การจัดการของบอทแปลภาษา",
+		uiKeyForwarded:              "ส่งต่อแล้ว",
 
 		uiKeyRateLimitNotice:         "ข้อความนี้ไม่ได้รับการแปลเนื่องจากถึงขีดจำกัดอัตราการแปลแล้ว",
 		uiKeyTranslationFailedNotice: "ข้อความนี้ไม่ได้ถูกมิเรอร์เนื่องจากการแปลล้มเหลว",
@@ -729,11 +742,12 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleReset:         "รีเซ็ตสไตล์ของกลุ่มการแปล `%[1]s` แล้ว",
 	},
 	"vi": {
-		uiKeyViewOriginalLink: "Đi tới tin nhắn gốc",
-		uiKeyOriginalMessage:  "Xem nguồn",
-		uiKeyAlreadyOriginal:  "Tin nhắn này đã là bản gốc.",
-		uiKeyNotManaged:       "Tin nhắn này không được bot dịch quản lý.",
-		uiKeyForwarded:        "Đã chuyển tiếp",
+		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
+		uiKeyOriginalMessage:        "Xem nguồn",
+		uiKeyOriginalMessageDeleted: "Tin nhắn gốc đã bị xóa",
+		uiKeyAlreadyOriginal:        "Tin nhắn này đã là bản gốc.",
+		uiKeyNotManaged:             "Tin nhắn này không được bot dịch quản lý.",
+		uiKeyForwarded:              "Đã chuyển tiếp",
 
 		uiKeyRateLimitNotice:         "Tin nhắn này không được dịch vì đã đạt giới hạn tốc độ dịch.",
 		uiKeyTranslationFailedNotice: "Tin nhắn này không được sao chép vì dịch thất bại.",
