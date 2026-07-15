@@ -78,6 +78,88 @@ func TestStoreOptimizedSchema(t *testing.T) {
 	}
 }
 
+func TestAllowedSourceCRUDDuplicateNotFoundAndGuildIsolation(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const sourceID = "18446744073709551615"
+
+	if err := s.AddAllowedSource(ctx, "guild-a", SourceTypeBot, sourceID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddAllowedSource(ctx, "guild-a", SourceTypeBot, sourceID, "admin"); !errors.Is(err, ErrSourceAlreadyAllowed) {
+		t.Fatalf("duplicate error = %v", err)
+	}
+	for _, guildID := range []string{"guild-a", "guild-b"} {
+		allowed, err := s.IsMessageSourceAllowed(ctx, guildID, SourceTypeBot, sourceID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if allowed != (guildID == "guild-a") {
+			t.Fatalf("guild %s allowed = %v", guildID, allowed)
+		}
+	}
+	sources, err := s.ListAllowedSources(ctx, "guild-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 || sources[0].GuildID != "guild-a" || sources[0].Type != SourceTypeBot || sources[0].ID != sourceID || sources[0].CreatedBy != "admin" {
+		t.Fatalf("sources = %#v", sources)
+	}
+	if err := s.RemoveAllowedSource(ctx, "guild-b", SourceTypeBot, sourceID); !errors.Is(err, ErrSourceNotAllowed) {
+		t.Fatalf("cross-guild remove error = %v", err)
+	}
+	if err := s.RemoveAllowedSource(ctx, "guild-a", SourceTypeBot, sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveAllowedSource(ctx, "guild-a", SourceTypeBot, sourceID); !errors.Is(err, ErrSourceNotAllowed) {
+		t.Fatalf("missing remove error = %v", err)
+	}
+}
+
+func TestAllowedSourceRejectsMalformedIDsAndTypes(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"", "0", "01", "+1", "-1", "not-a-snowflake", "18446744073709551616"} {
+		if err := s.AddAllowedSource(ctx, "guild", SourceTypeBot, id, "admin"); !errors.Is(err, ErrInvalidSnowflake) {
+			t.Errorf("id %q error = %v", id, err)
+		}
+	}
+	if err := s.AddAllowedSource(ctx, "guild", SourceType("user"), "123456789012345678", "admin"); !errors.Is(err, ErrInvalidSourceType) {
+		t.Fatalf("source type error = %v", err)
+	}
+}
+
+func TestAllowedSourceRejectsAndRemovesManagedWebhooks(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	const webhookID = "123456789012345678"
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "first", GuildID: "guild", DisplayName: "first", CreatedBy: "admin"}, GroupChannel{
+		GroupID: "first", GuildID: "guild", ChannelID: "channel-1", Language: "ja", WebhookID: webhookID, WebhookToken: "token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddAllowedSource(ctx, "guild", SourceTypeWebhook, webhookID, "admin"); !errors.Is(err, ErrManagedWebhook) {
+		t.Fatalf("managed webhook add error = %v", err)
+	}
+
+	const laterManagedID = "234567890123456789"
+	if err := s.AddAllowedSource(ctx, "guild", SourceTypeWebhook, laterManagedID, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "second", GuildID: "guild", DisplayName: "second", CreatedBy: "admin"}, GroupChannel{
+		GroupID: "second", GuildID: "guild", ChannelID: "channel-2", Language: "en", WebhookID: laterManagedID, WebhookToken: "token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := s.ListAllowedSources(ctx, "guild")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 0 {
+		t.Fatalf("managed webhook remained allowlisted: %#v", sources)
+	}
+}
+
 func TestStoreRejectsInvalidIntegerSnowflakes(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

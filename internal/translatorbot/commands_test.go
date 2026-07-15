@@ -40,6 +40,12 @@ func slashCommandInteraction(guildID, name string, options []*discordgo.Applicat
 	}
 }
 
+func botWhitelistInteraction(guildID, subcommand string, options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.InteractionCreate {
+	return slashCommandInteraction(guildID, botWhitelistCommandName, []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: subcommand, Type: discordgo.ApplicationCommandOptionSubCommand, Options: options},
+	})
+}
+
 func TestCommandDefaultPermissions(t *testing.T) {
 	for _, command := range Commands() {
 		if command.Name == viewOriginalCommandName {
@@ -51,6 +57,115 @@ func TestCommandDefaultPermissions(t *testing.T) {
 		if command.DefaultMemberPermissions == nil || *command.DefaultMemberPermissions != discordgo.PermissionAdministrator {
 			t.Fatalf("%s DefaultMemberPermissions = %v, want Administrator", command.Name, command.DefaultMemberPermissions)
 		}
+	}
+}
+
+func TestSourceAllowlistCommandDefinitions(t *testing.T) {
+	var whitelist *discordgo.ApplicationCommand
+	for _, command := range Commands() {
+		if command.Name == botWhitelistCommandName {
+			whitelist = command
+			break
+		}
+	}
+	if whitelist == nil {
+		t.Fatal("missing bot-whitelist command")
+	}
+	if len(whitelist.Options) != 3 {
+		t.Fatalf("bot-whitelist options = %#v", whitelist.Options)
+	}
+	for index, name := range []string{"add", "remove", "list"} {
+		subcommand := whitelist.Options[index]
+		if subcommand.Name != name || subcommand.Type != discordgo.ApplicationCommandOptionSubCommand {
+			t.Fatalf("subcommand %d = %#v", index, subcommand)
+		}
+		if name == "list" {
+			if len(subcommand.Options) != 0 {
+				t.Fatalf("list options = %#v", subcommand.Options)
+			}
+			continue
+		}
+		if len(subcommand.Options) != 2 || subcommand.Options[0].Name != "source_type" || subcommand.Options[1].Name != "source_id" {
+			t.Fatalf("%s options = %#v", name, subcommand.Options)
+		}
+		if subcommand.Options[0].Type != discordgo.ApplicationCommandOptionString || !subcommand.Options[0].Required ||
+			len(subcommand.Options[0].Choices) != 2 || subcommand.Options[0].Choices[0].Value != string(SourceTypeBot) ||
+			subcommand.Options[0].Choices[1].Value != string(SourceTypeWebhook) ||
+			subcommand.Options[1].Type != discordgo.ApplicationCommandOptionString || !subcommand.Options[1].Required {
+			t.Fatalf("%s option contract = %#v", name, subcommand.Options)
+		}
+	}
+}
+
+func TestSourceAllowlistCommandsCRUDValidationGuildOnlyAndIsolation(t *testing.T) {
+	store := newTestStore(t)
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	responses := captureResponses(handler)
+	options := func(sourceType, sourceID string) []*discordgo.ApplicationCommandInteractionDataOption {
+		return []*discordgo.ApplicationCommandInteractionDataOption{
+			{Name: "source_type", Type: discordgo.ApplicationCommandOptionString, Value: sourceType},
+			{Name: "source_id", Type: discordgo.ApplicationCommandOptionString, Value: sourceID},
+		}
+	}
+
+	handler.Handle(nil, botWhitelistInteraction("", "add", options("bot", "123456789012345678")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIString("en", uiKeyGuildOnly) {
+		t.Fatalf("guild-only response = %q", got)
+	}
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "add", options("user", "123456789012345678")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIString("en", uiKeyInvalidSourceType) {
+		t.Fatalf("type response = %q", got)
+	}
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "add", options("bot", "01")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIString("en", uiKeyInvalidSourceID) {
+		t.Fatalf("ID response = %q", got)
+	}
+
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "add", options("bot", "123456789012345678")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIStringf("en", uiKeySourceAllowed, SourceTypeBot, "123456789012345678") {
+		t.Fatalf("add response = %q", got)
+	}
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "add", options("bot", "123456789012345678")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIStringf("en", uiKeySourceAlreadyAllowed, SourceTypeBot, "123456789012345678") {
+		t.Fatalf("duplicate response = %q", got)
+	}
+
+	handler.Handle(nil, botWhitelistInteraction("guild-b", "list", nil))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIString("en", uiKeyNoAllowedSources) {
+		t.Fatalf("isolated list response = %q", got)
+	}
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "list", nil))
+	if got := (*responses)[len(*responses)-1]; !strings.Contains(got, "123456789012345678") || !strings.Contains(got, "`bot`") {
+		t.Fatalf("list response = %q", got)
+	}
+
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "remove", options("bot", "234567890123456789")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIStringf("en", uiKeySourceNotAllowed, SourceTypeBot, "234567890123456789") {
+		t.Fatalf("not-found response = %q", got)
+	}
+	handler.Handle(nil, botWhitelistInteraction("guild-a", "remove", options("bot", "123456789012345678")))
+	if got := (*responses)[len(*responses)-1]; got != localizedUIStringf("en", uiKeySourceRemoved, SourceTypeBot, "123456789012345678") {
+		t.Fatalf("remove response = %q", got)
+	}
+}
+
+func TestBotWhitelistAddRejectsManagedWebhook(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	const webhookID = "123456789012345678"
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "general", GuildID: "guild", DisplayName: "general", CreatedBy: "admin"}, GroupChannel{
+		GroupID: "general", GuildID: "guild", ChannelID: "channel", Language: "ja", WebhookID: webhookID, WebhookToken: "token",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	responses := captureResponses(handler)
+	handler.Handle(nil, botWhitelistInteraction("guild", "add", []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "source_type", Type: discordgo.ApplicationCommandOptionString, Value: "webhook"},
+		{Name: "source_id", Type: discordgo.ApplicationCommandOptionString, Value: webhookID},
+	}))
+	if len(*responses) != 1 || (*responses)[0] != localizedUIString("en", uiKeyManagedWebhookRejected) {
+		t.Fatalf("responses = %#v", *responses)
 	}
 }
 

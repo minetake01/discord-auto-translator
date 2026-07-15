@@ -137,6 +137,11 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 | `/list-glossary` | Tampilkan glosarium server |
 | `/remove-glossary term:[istilah]` | Hapus entri glosarium |
 | `/set-style group:[grup] preset:<preset> custom:<instruksi kustom>` | Atur gaya terjemahan untuk grup. Tentukan `preset` atau `custom`, bukan keduanya |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Izinkan sumber pesan otomatis di server ini. Untuk `source_type:bot`, `source_id` adalah ID pengguna bot; untuk `source_type:webhook`, nilainya adalah ID webhook |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Hapus sumber pesan otomatis yang cocok dari daftar izin server ini |
+| `/bot-whitelist list` | Tampilkan sumber bot dan webhook yang diizinkan di server ini |
+
+- Daftar izin sumber disimpan di SQLite dan dibatasi untuk setiap server Discord (guild). Webhook keluaran yang dikelola penerjemah dan pesan dari bot penerjemah ini sendiri tetap dikecualikan meskipun ID-nya ditambahkan
 
 - `language` menggunakan kode BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, dll.)
 - Maksimal 50 entri glosarium per server

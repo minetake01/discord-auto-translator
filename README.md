@@ -137,6 +137,11 @@ By default, the admin slash commands can only be run by **server administrators*
 | `/list-glossary` | List the server's glossary entries |
 | `/remove-glossary term:[term]` | Remove a glossary entry |
 | `/set-style group:[group] preset:<preset> custom:<custom>` | Set translation style for a group. Specify `preset` or `custom`, not both |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Allow an automated message source in this server. For `source_type:bot`, `source_id` is the bot user ID; for `source_type:webhook`, it is the webhook ID |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Remove the matching automated message source from this server's allowlist |
+| `/bot-whitelist list` | List the bot and webhook sources allowed in this server |
+
+- Source allowlists are persisted in SQLite and scoped to each Discord server (guild). Translator-managed output webhooks and messages from this translator bot itself remain excluded even if their IDs are added
 
 - `language` uses BCP-47 codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Up to 50 glossary entries can be registered per server

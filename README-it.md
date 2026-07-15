@@ -137,6 +137,11 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 | `/list-glossary` | Visualizzare il glossario del server |
 | `/remove-glossary term:[termine]` | Rimuovere una voce dal glossario |
 | `/set-style group:[gruppo] preset:<preset> custom:<istruzione personalizzata>` | Impostare lo stile di traduzione di un gruppo. Specificare `preset` o `custom`, non entrambi |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Consentire una fonte di messaggi automatizzata in questo server. Con `source_type:bot`, `source_id` è l'ID utente del bot; con `source_type:webhook`, è l'ID del webhook |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Rimuovere la fonte di messaggi automatizzata corrispondente dall'elenco consentito di questo server |
+| `/bot-whitelist list` | Elencare le fonti bot e webhook consentite in questo server |
+
+- Gli elenchi delle fonti consentite vengono salvati in SQLite e sono limitati a ciascun server Discord (guild). I webhook di output gestiti dal traduttore e i messaggi del bot traduttore stesso restano esclusi anche se vengono aggiunti i relativi ID
 
 - `language` usa codici BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, ecc.)
 - Massimo 50 voci nel glossario per server

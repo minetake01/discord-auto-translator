@@ -137,6 +137,11 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `/list-glossary` | 서버의 용어집 목록 표시 |
 | `/remove-glossary term:[용어]` | 용어집 항목 삭제 |
 | `/set-style group:[그룹] preset:<프리셋> custom:<사용자 지정 지시>` | 그룹의 번역 스타일 설정. `preset` 또는 `custom` 중 하나만 지정하세요 |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 이 서버에서 자동 메시지 출처를 허용합니다. `source_type:bot`이면 `source_id`는 봇 사용자 ID이고, `source_type:webhook`이면 웹후크 ID입니다 |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 이 서버의 허용 목록에서 일치하는 자동 메시지 출처를 제거합니다 |
+| `/bot-whitelist list` | 이 서버에서 허용된 봇 및 웹후크 출처를 표시합니다 |
+
+- 출처 허용 목록은 SQLite에 영구 저장되며 Discord 서버(길드)별로 분리됩니다. 번역 봇이 관리하는 출력 웹후크와 번역 봇 자체의 메시지는 ID를 추가해도 계속 제외됩니다
 
 - `language`는 BCP-47 형식(`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` 등)
 - 용어집은 서버당 최대 50개까지 등록할 수 있습니다

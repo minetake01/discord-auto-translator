@@ -212,6 +212,161 @@ func seedMultiLangGroup(t *testing.T, s *Store) {
 	}
 }
 
+func TestMessageSourceAllowlistAppliesToCreateAndUpdate(t *testing.T) {
+	const botID = "123456789012345678"
+	const webhookID = "234567890123456789"
+	const otherID = "345678901234567890"
+	for _, operation := range []string{"create", "update"} {
+		for _, tc := range []struct {
+			name       string
+			message    DiscordMessage
+			allowType  SourceType
+			allowID    string
+			allowGuild string
+			want       bool
+		}{
+			{name: "human", message: DiscordMessage{AuthorID: "human"}, want: true},
+			{name: "bot denied", message: DiscordMessage{Bot: true, AuthorID: botID}},
+			{name: "bot allowed", message: DiscordMessage{Bot: true, AuthorID: botID}, allowType: SourceTypeBot, allowID: botID, allowGuild: "guild", want: true},
+			{name: "bot isolated by guild", message: DiscordMessage{Bot: true, AuthorID: botID}, allowType: SourceTypeBot, allowID: botID, allowGuild: "other"},
+			{name: "webhook denied even when Bot false", message: DiscordMessage{AuthorID: otherID, WebhookID: webhookID}},
+			{name: "webhook allowed when Bot false", message: DiscordMessage{AuthorID: otherID, WebhookID: webhookID}, allowType: SourceTypeWebhook, allowID: webhookID, allowGuild: "guild", want: true},
+			{name: "WebhookID takes priority over allowed bot author", message: DiscordMessage{Bot: true, AuthorID: botID, WebhookID: webhookID}, allowType: SourceTypeBot, allowID: botID, allowGuild: "guild"},
+		} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				ctx := context.Background()
+				store := newTestStore(t)
+				seedGroup(t, store)
+				if tc.allowID != "" {
+					if err := store.AddAllowedSource(ctx, tc.allowGuild, tc.allowType, tc.allowID, "admin"); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if operation == "update" {
+					if err := store.SaveMessageLink(ctx, MessageLink{
+						SourceMessageID: "456789012345678901", SourceChannelID: "ja", GroupID: "g",
+						TargetChannelID: "en", TargetMessageID: "567890123456789012", TargetLanguage: "en",
+						SourceAuthorID: tc.message.AuthorID, SourceContentSnapshot: "before",
+					}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				discord := &fakeDiscordAPI{}
+				translator := &echoTranslator{}
+				service := NewService(store, discord, translator)
+				tc.message.ID = "456789012345678901"
+				tc.message.ChannelID = "ja"
+				tc.message.GuildID = "guild"
+				tc.message.AuthorDisplayName = "source"
+				tc.message.Content = "after"
+				var err error
+				if operation == "create" {
+					err = service.HandleMessageCreate(ctx, tc.message)
+				} else {
+					err = service.HandleMessageUpdate(ctx, tc.message)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				processed := len(translator.contexts) == 1
+				if processed != tc.want {
+					t.Fatalf("processed = %v, want %v; sends=%d edits=%d", processed, tc.want, len(discord.sent), len(discord.webhookEdits))
+				}
+			})
+		}
+	}
+}
+
+func TestMessageSourcePolicyAlwaysExcludesSelfAndManagedWebhooks(t *testing.T) {
+	ctx := context.Background()
+	const selfID = "123456789012345678"
+	const managedWebhookID = "234567890123456789"
+	for _, operation := range []string{"create", "update"} {
+		for _, tc := range []struct {
+			name    string
+			message DiscordMessage
+		}{
+			{name: "native self message", message: DiscordMessage{Bot: true, AuthorID: selfID}},
+			{name: "managed output webhook", message: DiscordMessage{AuthorID: "345678901234567890", WebhookID: managedWebhookID}},
+		} {
+			t.Run(operation+"/"+tc.name, func(t *testing.T) {
+				store := newTestStore(t)
+				seedGroup(t, store)
+				if _, err := store.db.ExecContext(ctx, `UPDATE group_channels SET webhook_id=? WHERE guild_id='guild' AND channel_id='ja'`, managedWebhookID); err != nil {
+					t.Fatal(err)
+				}
+				if err := store.AddAllowedSource(ctx, "guild", SourceTypeBot, selfID, "admin"); err != nil {
+					t.Fatal(err)
+				}
+				if operation == "update" {
+					if err := store.SaveMessageLink(ctx, MessageLink{SourceMessageID: "456789012345678901", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "567890123456789012", TargetLanguage: "en", SourceContentSnapshot: "before"}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				discord := &fakeDiscordAPI{}
+				translator := &echoTranslator{}
+				service := NewService(store, discord, translator)
+				service.SetSelfBotUserID(selfID)
+				tc.message.ID, tc.message.ChannelID, tc.message.GuildID, tc.message.Content = "456789012345678901", "ja", "guild", "after"
+				var err error
+				if operation == "create" {
+					err = service.HandleMessageCreate(ctx, tc.message)
+				} else {
+					err = service.HandleMessageUpdate(ctx, tc.message)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(translator.contexts) != 0 || len(discord.sent) != 0 || len(discord.webhookEdits) != 0 {
+					t.Fatalf("excluded source was processed")
+				}
+			})
+		}
+	}
+}
+
+func TestMessageSourcePolicyFailsClosedOnDatabaseErrors(t *testing.T) {
+	ctx := context.Background()
+	for _, operation := range []string{"create", "update"} {
+		for _, message := range []DiscordMessage{
+			{Bot: true, AuthorID: "123456789012345678"},
+			{AuthorID: "234567890123456789", WebhookID: "345678901234567890"},
+		} {
+			t.Run(operation, func(t *testing.T) {
+				store := newTestStore(t)
+				if err := store.Close(); err != nil {
+					t.Fatal(err)
+				}
+				discord := &fakeDiscordAPI{}
+				translator := &echoTranslator{}
+				service := NewService(store, discord, translator)
+				message.ID, message.ChannelID, message.GuildID, message.Content = "456789012345678901", "ja", "guild", "after"
+				var err error
+				if operation == "create" {
+					err = service.HandleMessageCreate(ctx, message)
+				} else {
+					err = service.HandleMessageUpdate(ctx, message)
+				}
+				if err == nil || !strings.Contains(err.Error(), "message source policy") {
+					t.Fatalf("error = %v", err)
+				}
+				if len(translator.contexts) != 0 || len(discord.sent) != 0 || len(discord.webhookEdits) != 0 {
+					t.Fatal("DB policy failure translated an automated source")
+				}
+			})
+		}
+	}
+
+	store := newTestStore(t)
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	allowed, err := NewService(store, &fakeDiscordAPI{}, &echoTranslator{}).shouldProcessMessage(ctx, DiscordMessage{AuthorID: "human"})
+	if err != nil || !allowed {
+		t.Fatalf("human policy = allowed %v, error %v", allowed, err)
+	}
+}
+
 func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -2279,8 +2434,8 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{
 		messages: map[string]DiscordFetchedMessage{
-			"ja\x00one":   {Content: "100000000000000021", AuthorDisplayName: "A"},
-			"ja\x00two":   {Content: "second", AuthorDisplayName: "B", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000012"},
+			"ja\x00one":                {Content: "100000000000000021", AuthorDisplayName: "A"},
+			"ja\x00two":                {Content: "second", AuthorDisplayName: "B", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000012"},
 			"ja\x00100000000000000022": {Content: "third", AuthorDisplayName: "C", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000019"},
 			"ja\x00100000000000000023": {Content: "fourth", AuthorDisplayName: "D", ReferencedChannelID: "ja", ReferencedMessageID: "100000000000000022"},
 		},

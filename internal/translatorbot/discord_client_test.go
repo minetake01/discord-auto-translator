@@ -1,11 +1,40 @@
 package translatorbot
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+func TestCurrentUserIDUsesRESTBeforeGatewayOpen(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/users/@me" {
+			t.Fatalf("path = %q, want /users/@me", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"345678901234567890","username":"translator"}`))
+	}))
+	defer server.Close()
+
+	oldEndpointUsers := discordgo.EndpointUsers
+	discordgo.EndpointUsers = server.URL + "/users/"
+	defer func() { discordgo.EndpointUsers = oldEndpointUsers }()
+
+	session, err := discordgo.New("Bot token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := NewDiscordGoAPI(session).CurrentUserID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "345678901234567890" {
+		t.Fatalf("CurrentUserID = %q", got)
+	}
+}
 
 func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
 	got := sanitizeWebhookName("Discord Gemini Auto Translator")

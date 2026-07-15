@@ -137,6 +137,11 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 | `/list-glossary` | Afficher le glossaire du serveur |
 | `/remove-glossary term:[terme]` | Supprimer une entrée du glossaire |
 | `/set-style group:[groupe] preset:<préréglage> custom:<instruction personnalisée>` | Définir le style de traduction d'un groupe. Spécifier `preset` ou `custom`, pas les deux |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Autoriser une source de messages automatisée sur ce serveur. Avec `source_type:bot`, `source_id` est l'ID utilisateur du bot ; avec `source_type:webhook`, c'est l'ID du webhook |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Retirer la source de messages automatisée correspondante de la liste d'autorisation de ce serveur |
+| `/bot-whitelist list` | Afficher les sources bot et webhook autorisées sur ce serveur |
+
+- Les listes de sources autorisées sont conservées dans SQLite et limitées à chaque serveur Discord (guild). Les webhooks de sortie gérés par le traducteur et les messages du bot traducteur lui-même restent exclus, même si leurs ID sont ajoutés
 
 - `language` utilise des codes BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Maximum 50 entrées de glossaire par serveur

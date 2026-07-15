@@ -137,6 +137,11 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 | `/list-glossary` | Glossar des Servers anzeigen |
 | `/remove-glossary term:[Begriff]` | Glossareintrag entfernen |
 | `/set-style group:[Gruppe] preset:<Voreinstellung> custom:<eigene Anweisung>` | Übersetzungsstil für eine Gruppe festlegen. `preset` oder `custom` angeben, nicht beides |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Eine automatisierte Nachrichtenquelle auf diesem Server zulassen. Bei `source_type:bot` ist `source_id` die Bot-Benutzer-ID, bei `source_type:webhook` die Webhook-ID |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Die entsprechende automatisierte Nachrichtenquelle aus der Zulassungsliste dieses Servers entfernen |
+| `/bot-whitelist list` | Die auf diesem Server zugelassenen Bot- und Webhook-Quellen anzeigen |
+
+- Quellen-Zulassungslisten werden in SQLite gespeichert und gelten jeweils nur für einen Discord-Server (eine Guild). Vom Übersetzer verwaltete Ausgabe-Webhooks und Nachrichten dieses Übersetzungsbots selbst bleiben ausgeschlossen, auch wenn ihre IDs hinzugefügt werden
 
 - `language` verwendet BCP-47-Codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` usw.)
 - Maximal 50 Glossareinträge pro Server

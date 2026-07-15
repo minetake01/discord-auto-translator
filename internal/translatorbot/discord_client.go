@@ -1,6 +1,8 @@
 package translatorbot
 
 import (
+	"errors"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -47,6 +49,17 @@ type DiscordGoAPI struct {
 
 func NewDiscordGoAPI(session *discordgo.Session) DiscordGoAPI {
 	return DiscordGoAPI{session: session}
+}
+
+func (d DiscordGoAPI) CurrentUserID() (string, error) {
+	user, err := d.session.User("@me")
+	if err != nil {
+		return "", fmt.Errorf("fetch current Discord user: %w", err)
+	}
+	if user == nil || user.ID == "" {
+		return "", errors.New("fetch current Discord user: response did not include a user ID")
+	}
+	return user.ID, nil
 }
 
 func (d DiscordGoAPI) GuildName(guildID string) (string, error) {

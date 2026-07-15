@@ -137,6 +137,11 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 | `/list-glossary` | Listar o glossário do servidor |
 | `/remove-glossary term:[termo]` | Remover uma entrada do glossário |
 | `/set-style group:[grupo] preset:<predefinição> custom:<instrução personalizada>` | Definir o estilo de tradução de um grupo. Especifique `preset` ou `custom`, não ambos |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Permitir uma fonte de mensagens automatizada neste servidor. Com `source_type:bot`, `source_id` é o ID de usuário do bot; com `source_type:webhook`, é o ID do webhook |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Remover a fonte de mensagens automatizada correspondente da lista de permissões deste servidor |
+| `/bot-whitelist list` | Listar as fontes de bot e webhook permitidas neste servidor |
+
+- As listas de fontes permitidas são persistidas no SQLite e limitadas a cada servidor Discord (guild). Webhooks de saída gerenciados pelo tradutor e mensagens do próprio bot tradutor permanecem excluídos mesmo que seus IDs sejam adicionados
 
 - `language` usa códigos BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Máximo de 50 entradas de glossário por servidor

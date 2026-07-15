@@ -137,6 +137,11 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `/list-glossary` | 列出服务器的术语表 |
 | `/remove-glossary term:[术语]` | 删除术语表条目 |
 | `/set-style group:[组] preset:<预设> custom:<自定义指示>` | 设置组的翻译风格。指定 `preset` 或 `custom` 之一，不可同时指定 |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 允许此服务器中的自动消息来源。`source_type:bot` 时，`source_id` 是机器人用户 ID；`source_type:webhook` 时，它是 Webhook ID |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 从此服务器的允许列表中删除匹配的自动消息来源 |
+| `/bot-whitelist list` | 列出此服务器中允许的机器人和 Webhook 来源 |
+
+- 来源允许列表会持久化到 SQLite，并按每个 Discord 服务器（公会）隔离。翻译机器人管理的输出 Webhook 和翻译机器人自身的消息即使添加了相应 ID，也仍会被排除
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每个服务器最多可注册 50 条术语

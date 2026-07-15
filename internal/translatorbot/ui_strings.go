@@ -63,6 +63,18 @@ const (
 	uiKeyStyleCustomSet     uiKey = "styleCustomSet"
 	uiKeyStylePresetSet     uiKey = "stylePresetSet"
 	uiKeyStyleReset         uiKey = "styleReset"
+
+	uiKeyGuildOnly               uiKey = "guildOnly"
+	uiKeyInvalidSourceType       uiKey = "invalidSourceType"
+	uiKeyInvalidSourceID         uiKey = "invalidSourceID"
+	uiKeySourceAlreadyAllowed    uiKey = "sourceAlreadyAllowed"
+	uiKeySourceNotAllowed        uiKey = "sourceNotAllowed"
+	uiKeyManagedWebhookRejected  uiKey = "managedWebhookRejected"
+	uiKeySourceAllowed           uiKey = "sourceAllowed"
+	uiKeySourceRemoved           uiKey = "sourceRemoved"
+	uiKeyNoAllowedSources        uiKey = "noAllowedSources"
+	uiKeyAllowedSourcesHeader    uiKey = "allowedSourcesHeader"
+	uiKeyAllowedSourcesTruncated uiKey = "allowedSourcesTruncated"
 )
 
 // uiStrings maps a supported UI language to its full message catalog.
@@ -124,6 +136,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Set the style of translation group `%[1]s` to a custom instruction: `%[2]s`",
 		uiKeyStylePresetSet:     "Set the style of translation group `%[1]s` to preset `%[2]s`.",
 		uiKeyStyleReset:         "Reset the style of translation group `%[1]s`.",
+
+		uiKeyGuildOnly:               "This command can only be used in a server.",
+		uiKeyInvalidSourceType:       "Source type must be `bot` or `webhook`.",
+		uiKeyInvalidSourceID:         "Source ID must be a canonical nonzero Discord snowflake.",
+		uiKeySourceAlreadyAllowed:    "`%[1]s` source `%[2]s` is already allowed in this server.",
+		uiKeySourceNotAllowed:        "`%[1]s` source `%[2]s` is not allowed in this server.",
+		uiKeyManagedWebhookRejected:  "Translation output webhooks cannot be allowlisted.",
+		uiKeySourceAllowed:           "Allowed `%[1]s` source `%[2]s` in this server.",
+		uiKeySourceRemoved:           "Removed `%[1]s` source `%[2]s` from this server's allowlist.",
+		uiKeyNoAllowedSources:        "No bot or webhook sources are allowed in this server.",
+		uiKeyAllowedSourcesHeader:    "Allowed message sources (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(remaining sources omitted)",
 	},
 	"ja": {
 		uiKeyViewOriginalLink:       "原文メッセージへ移動",
@@ -180,6 +204,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "翻訳グループ `%[1]s` のスタイルをカスタム指示に設定しました: `%[2]s`",
 		uiKeyStylePresetSet:     "翻訳グループ `%[1]s` のスタイルをプリセット `%[2]s` に設定しました。",
 		uiKeyStyleReset:         "翻訳グループ `%[1]s` のスタイルをリセットしました。",
+
+		uiKeyGuildOnly:               "このコマンドはサーバー内でのみ使用できます。",
+		uiKeyInvalidSourceType:       "ソース種別は `bot` または `webhook` で指定してください。",
+		uiKeyInvalidSourceID:         "ソース ID は正規形の 0 以外の Discord snowflake で指定してください。",
+		uiKeySourceAlreadyAllowed:    "`%[1]s` ソース `%[2]s` は既にこのサーバーで許可されています。",
+		uiKeySourceNotAllowed:        "`%[1]s` ソース `%[2]s` はこのサーバーで許可されていません。",
+		uiKeyManagedWebhookRejected:  "翻訳出力用 Webhook は許可リストに追加できません。",
+		uiKeySourceAllowed:           "このサーバーで `%[1]s` ソース `%[2]s` を許可しました。",
+		uiKeySourceRemoved:           "このサーバーの許可リストから `%[1]s` ソース `%[2]s` を削除しました。",
+		uiKeyNoAllowedSources:        "このサーバーでは bot または webhook ソースが許可されていません。",
+		uiKeyAllowedSourcesHeader:    "許可済みメッセージソース (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n（残りのソースは表示を省略しました）",
 	},
 	"zh-CN": {
 		uiKeyViewOriginalLink:       "前往原文消息",
@@ -236,6 +272,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "已将翻译组 `%[1]s` 的风格设置为自定义指令: `%[2]s`",
 		uiKeyStylePresetSet:     "已将翻译组 `%[1]s` 的风格设置为预设 `%[2]s`。",
 		uiKeyStyleReset:         "已重置翻译组 `%[1]s` 的风格。",
+
+		uiKeyGuildOnly:               "此命令只能在服务器中使用。",
+		uiKeyInvalidSourceType:       "来源类型必须为 `bot` 或 `webhook`。",
+		uiKeyInvalidSourceID:         "来源 ID 必须是规范格式且非零的 Discord snowflake。",
+		uiKeySourceAlreadyAllowed:    "`%[1]s` 来源 `%[2]s` 已在此服务器中获准。",
+		uiKeySourceNotAllowed:        "`%[1]s` 来源 `%[2]s` 未在此服务器中获准。",
+		uiKeyManagedWebhookRejected:  "翻译输出 Webhook 不能加入允许列表。",
+		uiKeySourceAllowed:           "已在此服务器中允许 `%[1]s` 来源 `%[2]s`。",
+		uiKeySourceRemoved:           "已从此服务器的允许列表中移除 `%[1]s` 来源 `%[2]s`。",
+		uiKeyNoAllowedSources:        "此服务器未允许任何 bot 或 webhook 来源。",
+		uiKeyAllowedSourcesHeader:    "已允许的消息来源 (%[1]d)：",
+		uiKeyAllowedSourcesTruncated: "\n（已省略其余来源）",
 	},
 	"zh-TW": {
 		uiKeyViewOriginalLink:       "前往原文訊息",
@@ -292,6 +340,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "已將翻譯群組 `%[1]s` 的風格設定為自訂指令: `%[2]s`",
 		uiKeyStylePresetSet:     "已將翻譯群組 `%[1]s` 的風格設定為預設 `%[2]s`。",
 		uiKeyStyleReset:         "已重設翻譯群組 `%[1]s` 的風格。",
+
+		uiKeyGuildOnly:               "此指令只能在伺服器中使用。",
+		uiKeyInvalidSourceType:       "來源類型必須是 `bot` 或 `webhook`。",
+		uiKeyInvalidSourceID:         "來源 ID 必須是標準格式且非零的 Discord snowflake。",
+		uiKeySourceAlreadyAllowed:    "`%[1]s` 來源 `%[2]s` 已在此伺服器中獲准。",
+		uiKeySourceNotAllowed:        "`%[1]s` 來源 `%[2]s` 未在此伺服器中獲准。",
+		uiKeyManagedWebhookRejected:  "翻譯輸出 Webhook 無法加入允許清單。",
+		uiKeySourceAllowed:           "已在此伺服器中允許 `%[1]s` 來源 `%[2]s`。",
+		uiKeySourceRemoved:           "已從此伺服器的允許清單移除 `%[1]s` 來源 `%[2]s`。",
+		uiKeyNoAllowedSources:        "此伺服器未允許任何 bot 或 webhook 來源。",
+		uiKeyAllowedSourcesHeader:    "已允許的訊息來源 (%[1]d)：",
+		uiKeyAllowedSourcesTruncated: "\n（其餘來源已省略）",
 	},
 	"ko": {
 		uiKeyViewOriginalLink:       "원문 메시지로 이동",
@@ -348,6 +408,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "번역 그룹 `%[1]s`의 스타일을 사용자 지정 지시로 설정했습니다: `%[2]s`",
 		uiKeyStylePresetSet:     "번역 그룹 `%[1]s`의 스타일을 프리셋 `%[2]s`(으)로 설정했습니다.",
 		uiKeyStyleReset:         "번역 그룹 `%[1]s`의 스타일을 초기화했습니다.",
+
+		uiKeyGuildOnly:               "이 명령어는 서버에서만 사용할 수 있습니다.",
+		uiKeyInvalidSourceType:       "소스 유형은 `bot` 또는 `webhook`이어야 합니다.",
+		uiKeyInvalidSourceID:         "소스 ID는 정규 형식의 0이 아닌 Discord snowflake여야 합니다.",
+		uiKeySourceAlreadyAllowed:    "`%[1]s` 소스 `%[2]s`는 이미 이 서버에서 허용되어 있습니다.",
+		uiKeySourceNotAllowed:        "`%[1]s` 소스 `%[2]s`는 이 서버에서 허용되지 않았습니다.",
+		uiKeyManagedWebhookRejected:  "번역 출력 Webhook은 허용 목록에 추가할 수 없습니다.",
+		uiKeySourceAllowed:           "이 서버에서 `%[1]s` 소스 `%[2]s`를 허용했습니다.",
+		uiKeySourceRemoved:           "이 서버의 허용 목록에서 `%[1]s` 소스 `%[2]s`를 제거했습니다.",
+		uiKeyNoAllowedSources:        "이 서버에는 허용된 bot 또는 webhook 소스가 없습니다.",
+		uiKeyAllowedSourcesHeader:    "허용된 메시지 소스 (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(나머지 소스 생략)",
 	},
 	"fr": {
 		uiKeyViewOriginalLink:       "Aller au message original",
@@ -404,6 +476,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Le style du groupe de traduction `%[1]s` a été défini sur une instruction personnalisée : `%[2]s`",
 		uiKeyStylePresetSet:     "Le style du groupe de traduction `%[1]s` a été défini sur le préréglage `%[2]s`.",
 		uiKeyStyleReset:         "Le style du groupe de traduction `%[1]s` a été réinitialisé.",
+
+		uiKeyGuildOnly:               "Cette commande ne peut être utilisée que dans un serveur.",
+		uiKeyInvalidSourceType:       "Le type de source doit être `bot` ou `webhook`.",
+		uiKeyInvalidSourceID:         "L’ID source doit être un snowflake Discord canonique non nul.",
+		uiKeySourceAlreadyAllowed:    "La source `%[1]s` `%[2]s` est déjà autorisée sur ce serveur.",
+		uiKeySourceNotAllowed:        "La source `%[1]s` `%[2]s` n’est pas autorisée sur ce serveur.",
+		uiKeyManagedWebhookRejected:  "Les webhooks de sortie de traduction ne peuvent pas être autorisés.",
+		uiKeySourceAllowed:           "La source `%[1]s` `%[2]s` a été autorisée sur ce serveur.",
+		uiKeySourceRemoved:           "La source `%[1]s` `%[2]s` a été retirée de la liste d’autorisation de ce serveur.",
+		uiKeyNoAllowedSources:        "Aucune source bot ou webhook n’est autorisée sur ce serveur.",
+		uiKeyAllowedSourcesHeader:    "Sources de messages autorisées (%[1]d) :",
+		uiKeyAllowedSourcesTruncated: "\n(sources restantes omises)",
 	},
 	"de": {
 		uiKeyViewOriginalLink:       "Zur Originalnachricht",
@@ -460,6 +544,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Der Stil der Übersetzungsgruppe `%[1]s` wurde auf eine benutzerdefinierte Anweisung gesetzt: `%[2]s`",
 		uiKeyStylePresetSet:     "Der Stil der Übersetzungsgruppe `%[1]s` wurde auf das Preset `%[2]s` gesetzt.",
 		uiKeyStyleReset:         "Der Stil der Übersetzungsgruppe `%[1]s` wurde zurückgesetzt.",
+
+		uiKeyGuildOnly:               "Dieser Befehl kann nur auf einem Server verwendet werden.",
+		uiKeyInvalidSourceType:       "Der Quelltyp muss `bot` oder `webhook` sein.",
+		uiKeyInvalidSourceID:         "Die Quell-ID muss ein kanonischer Discord-Snowflake ungleich null sein.",
+		uiKeySourceAlreadyAllowed:    "Die `%[1]s`-Quelle `%[2]s` ist auf diesem Server bereits erlaubt.",
+		uiKeySourceNotAllowed:        "Die `%[1]s`-Quelle `%[2]s` ist auf diesem Server nicht erlaubt.",
+		uiKeyManagedWebhookRejected:  "Übersetzungsausgabe-Webhooks können nicht erlaubt werden.",
+		uiKeySourceAllowed:           "Die `%[1]s`-Quelle `%[2]s` wurde auf diesem Server erlaubt.",
+		uiKeySourceRemoved:           "Die `%[1]s`-Quelle `%[2]s` wurde aus der Erlaubnisliste dieses Servers entfernt.",
+		uiKeyNoAllowedSources:        "Auf diesem Server sind keine Bot- oder Webhook-Quellen erlaubt.",
+		uiKeyAllowedSourcesHeader:    "Erlaubte Nachrichtenquellen (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(weitere Quellen ausgelassen)",
 	},
 	"es": {
 		uiKeyViewOriginalLink:       "Ir al mensaje original",
@@ -516,6 +612,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Se estableció el estilo del grupo de traducción `%[1]s` con una instrucción personalizada: `%[2]s`",
 		uiKeyStylePresetSet:     "Se estableció el estilo del grupo de traducción `%[1]s` con el preajuste `%[2]s`.",
 		uiKeyStyleReset:         "Se restableció el estilo del grupo de traducción `%[1]s`.",
+
+		uiKeyGuildOnly:               "Este comando solo se puede usar en un servidor.",
+		uiKeyInvalidSourceType:       "El tipo de origen debe ser `bot` o `webhook`.",
+		uiKeyInvalidSourceID:         "El ID de origen debe ser un snowflake de Discord canónico distinto de cero.",
+		uiKeySourceAlreadyAllowed:    "El origen `%[1]s` `%[2]s` ya está permitido en este servidor.",
+		uiKeySourceNotAllowed:        "El origen `%[1]s` `%[2]s` no está permitido en este servidor.",
+		uiKeyManagedWebhookRejected:  "Los webhooks de salida de traducción no se pueden añadir a la lista de permitidos.",
+		uiKeySourceAllowed:           "Se permitió el origen `%[1]s` `%[2]s` en este servidor.",
+		uiKeySourceRemoved:           "Se eliminó el origen `%[1]s` `%[2]s` de la lista de permitidos de este servidor.",
+		uiKeyNoAllowedSources:        "No hay orígenes bot o webhook permitidos en este servidor.",
+		uiKeyAllowedSourcesHeader:    "Orígenes de mensajes permitidos (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(se omitieron los orígenes restantes)",
 	},
 	"pt-BR": {
 		uiKeyViewOriginalLink:       "Ir para a mensagem original",
@@ -572,6 +680,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "O estilo do grupo de tradução `%[1]s` foi definido com uma instrução personalizada: `%[2]s`",
 		uiKeyStylePresetSet:     "O estilo do grupo de tradução `%[1]s` foi definido com o preset `%[2]s`.",
 		uiKeyStyleReset:         "O estilo do grupo de tradução `%[1]s` foi redefinido.",
+
+		uiKeyGuildOnly:               "Este comando só pode ser usado em um servidor.",
+		uiKeyInvalidSourceType:       "O tipo de origem deve ser `bot` ou `webhook`.",
+		uiKeyInvalidSourceID:         "O ID de origem deve ser um snowflake canônico do Discord diferente de zero.",
+		uiKeySourceAlreadyAllowed:    "A origem `%[1]s` `%[2]s` já é permitida neste servidor.",
+		uiKeySourceNotAllowed:        "A origem `%[1]s` `%[2]s` não é permitida neste servidor.",
+		uiKeyManagedWebhookRejected:  "Webhooks de saída de tradução não podem entrar na lista de permissões.",
+		uiKeySourceAllowed:           "A origem `%[1]s` `%[2]s` foi permitida neste servidor.",
+		uiKeySourceRemoved:           "A origem `%[1]s` `%[2]s` foi removida da lista de permissões deste servidor.",
+		uiKeyNoAllowedSources:        "Nenhuma origem bot ou webhook é permitida neste servidor.",
+		uiKeyAllowedSourcesHeader:    "Origens de mensagens permitidas (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(demais origens omitidas)",
 	},
 	"it": {
 		uiKeyViewOriginalLink:       "Vai al messaggio originale",
@@ -628,6 +748,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Lo stile del gruppo di traduzione `%[1]s` è stato impostato su un'istruzione personalizzata: `%[2]s`",
 		uiKeyStylePresetSet:     "Lo stile del gruppo di traduzione `%[1]s` è stato impostato sul preset `%[2]s`.",
 		uiKeyStyleReset:         "Lo stile del gruppo di traduzione `%[1]s` è stato reimpostato.",
+
+		uiKeyGuildOnly:               "Questo comando può essere usato solo in un server.",
+		uiKeyInvalidSourceType:       "Il tipo di origine deve essere `bot` o `webhook`.",
+		uiKeyInvalidSourceID:         "L’ID origine deve essere uno snowflake Discord canonico diverso da zero.",
+		uiKeySourceAlreadyAllowed:    "L’origine `%[1]s` `%[2]s` è già consentita in questo server.",
+		uiKeySourceNotAllowed:        "L’origine `%[1]s` `%[2]s` non è consentita in questo server.",
+		uiKeyManagedWebhookRejected:  "I webhook di output della traduzione non possono essere autorizzati.",
+		uiKeySourceAllowed:           "L’origine `%[1]s` `%[2]s` è stata consentita in questo server.",
+		uiKeySourceRemoved:           "L’origine `%[1]s` `%[2]s` è stata rimossa dall’elenco consentiti di questo server.",
+		uiKeyNoAllowedSources:        "Nessuna origine bot o webhook è consentita in questo server.",
+		uiKeyAllowedSourcesHeader:    "Origini messaggio consentite (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(altre origini omesse)",
 	},
 	"id": {
 		uiKeyViewOriginalLink:       "Buka pesan asli",
@@ -684,6 +816,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Gaya grup terjemahan `%[1]s` telah diatur ke instruksi kustom: `%[2]s`",
 		uiKeyStylePresetSet:     "Gaya grup terjemahan `%[1]s` telah diatur ke preset `%[2]s`.",
 		uiKeyStyleReset:         "Gaya grup terjemahan `%[1]s` telah diatur ulang.",
+
+		uiKeyGuildOnly:               "Perintah ini hanya dapat digunakan di server.",
+		uiKeyInvalidSourceType:       "Jenis sumber harus `bot` atau `webhook`.",
+		uiKeyInvalidSourceID:         "ID sumber harus berupa snowflake Discord kanonis bukan nol.",
+		uiKeySourceAlreadyAllowed:    "Sumber `%[1]s` `%[2]s` sudah diizinkan di server ini.",
+		uiKeySourceNotAllowed:        "Sumber `%[1]s` `%[2]s` tidak diizinkan di server ini.",
+		uiKeyManagedWebhookRejected:  "Webhook keluaran terjemahan tidak dapat dimasukkan ke daftar izin.",
+		uiKeySourceAllowed:           "Sumber `%[1]s` `%[2]s` telah diizinkan di server ini.",
+		uiKeySourceRemoved:           "Sumber `%[1]s` `%[2]s` telah dihapus dari daftar izin server ini.",
+		uiKeyNoAllowedSources:        "Tidak ada sumber bot atau webhook yang diizinkan di server ini.",
+		uiKeyAllowedSourcesHeader:    "Sumber pesan yang diizinkan (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(sumber lainnya dihilangkan)",
 	},
 	"th": {
 		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
@@ -740,6 +884,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "ตั้งค่าสไตล์ของกลุ่มการแปล `%[1]s` เป็นคำสั่งกำหนดเองแล้ว: `%[2]s`",
 		uiKeyStylePresetSet:     "ตั้งค่าสไตล์ของกลุ่มการแปล `%[1]s` เป็นพรีเซ็ต `%[2]s` แล้ว",
 		uiKeyStyleReset:         "รีเซ็ตสไตล์ของกลุ่มการแปล `%[1]s` แล้ว",
+
+		uiKeyGuildOnly:               "คำสั่งนี้ใช้ได้เฉพาะในเซิร์ฟเวอร์เท่านั้น",
+		uiKeyInvalidSourceType:       "ประเภทแหล่งที่มาต้องเป็น `bot` หรือ `webhook`",
+		uiKeyInvalidSourceID:         "ID แหล่งที่มาต้องเป็น Discord snowflake รูปแบบมาตรฐานที่ไม่ใช่ศูนย์",
+		uiKeySourceAlreadyAllowed:    "แหล่งที่มา `%[1]s` `%[2]s` ได้รับอนุญาตในเซิร์ฟเวอร์นี้แล้ว",
+		uiKeySourceNotAllowed:        "แหล่งที่มา `%[1]s` `%[2]s` ไม่ได้รับอนุญาตในเซิร์ฟเวอร์นี้",
+		uiKeyManagedWebhookRejected:  "ไม่สามารถเพิ่ม webhook เอาต์พุตการแปลในรายการอนุญาตได้",
+		uiKeySourceAllowed:           "อนุญาตแหล่งที่มา `%[1]s` `%[2]s` ในเซิร์ฟเวอร์นี้แล้ว",
+		uiKeySourceRemoved:           "นำแหล่งที่มา `%[1]s` `%[2]s` ออกจากรายการอนุญาตของเซิร์ฟเวอร์นี้แล้ว",
+		uiKeyNoAllowedSources:        "ไม่มีแหล่งที่มา bot หรือ webhook ที่ได้รับอนุญาตในเซิร์ฟเวอร์นี้",
+		uiKeyAllowedSourcesHeader:    "แหล่งที่มาของข้อความที่อนุญาต (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(ละแหล่งที่มาที่เหลือ)",
 	},
 	"vi": {
 		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
@@ -796,6 +952,18 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyStyleCustomSet:     "Đã đặt kiểu của nhóm dịch `%[1]s` thành hướng dẫn tùy chỉnh: `%[2]s`",
 		uiKeyStylePresetSet:     "Đã đặt kiểu của nhóm dịch `%[1]s` thành preset `%[2]s`.",
 		uiKeyStyleReset:         "Đã đặt lại kiểu của nhóm dịch `%[1]s`.",
+
+		uiKeyGuildOnly:               "Lệnh này chỉ có thể dùng trong máy chủ.",
+		uiKeyInvalidSourceType:       "Loại nguồn phải là `bot` hoặc `webhook`.",
+		uiKeyInvalidSourceID:         "ID nguồn phải là snowflake Discord chuẩn khác không.",
+		uiKeySourceAlreadyAllowed:    "Nguồn `%[1]s` `%[2]s` đã được cho phép trong máy chủ này.",
+		uiKeySourceNotAllowed:        "Nguồn `%[1]s` `%[2]s` không được cho phép trong máy chủ này.",
+		uiKeyManagedWebhookRejected:  "Không thể đưa webhook đầu ra bản dịch vào danh sách cho phép.",
+		uiKeySourceAllowed:           "Đã cho phép nguồn `%[1]s` `%[2]s` trong máy chủ này.",
+		uiKeySourceRemoved:           "Đã xóa nguồn `%[1]s` `%[2]s` khỏi danh sách cho phép của máy chủ này.",
+		uiKeyNoAllowedSources:        "Không có nguồn bot hoặc webhook nào được cho phép trong máy chủ này.",
+		uiKeyAllowedSourcesHeader:    "Nguồn tin nhắn được cho phép (%[1]d):",
+		uiKeyAllowedSourcesTruncated: "\n(đã lược bỏ các nguồn còn lại)",
 	},
 }
 
