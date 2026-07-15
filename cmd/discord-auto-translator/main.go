@@ -21,21 +21,26 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	store, err := translatorbot.OpenStore(cfg.DBPath)
-	if err != nil {
-		log.Fatal(err)
-	}
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 	dg.Identify.Intents = discordgo.IntentsGuilds | discordgo.IntentsGuildMessages | discordgo.IntentsGuildMessageReactions | discordgo.IntentsMessageContent
 	api := translatorbot.NewDiscordGoAPI(dg)
+	selfBotUserID, err := api.CurrentUserID()
+	if err != nil {
+		log.Fatalf("Discord startup configuration: %v", err)
+	}
+	store, err := translatorbot.OpenStore(cfg.DBPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 	translator, err := translatorbot.NewGeminiTranslator(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		log.Fatal(err)
 	}
 	service := translatorbot.NewService(store, api, translator)
+	service.SetSelfBotUserID(selfBotUserID)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
 	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
@@ -80,9 +85,9 @@ func main() {
 			ForwardedMessage:           forwarded,
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
-			MentionedUsers:             mentionedUsers,
-			MentionedChannels:          mentionedChannels,
-			MentionedRoles:             mentionedRoles,
+			MentionedUsers:    mentionedUsers,
+			MentionedChannels: mentionedChannels,
+			MentionedRoles:    mentionedRoles,
 		})
 		if err != nil {
 			log.Printf("message create sync: %v", err)
@@ -95,9 +100,6 @@ func main() {
 		ctx := context.Background()
 		if err := service.HandleMessagePinUpdate(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
 			log.Printf("pin sync: %v", err)
-		}
-		if m.Author.Bot || m.WebhookID != "" {
-			return
 		}
 		if strings.TrimSpace(m.Content) == "" {
 			return

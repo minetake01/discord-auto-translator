@@ -31,6 +31,7 @@ type Service struct {
 	rateLimiter   *TokenRateLimiter
 	alternateURLs *alternateURLReplacer
 	publicBaseURL string
+	selfBotUserID string
 	threadMu      sync.Mutex
 	messageLocks  sync.Map
 }
@@ -51,6 +52,26 @@ func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
 
 func (s *Service) SetPublicBaseURL(publicBaseURL string) {
 	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
+}
+
+func (s *Service) SetSelfBotUserID(selfBotUserID string) {
+	s.selfBotUserID = selfBotUserID
+}
+
+// shouldProcessMessage is the single source policy for create and update.
+// Human messages do not depend on SQLite. Automated sources fail closed when
+// their guild-scoped allowlist lookup cannot be completed.
+func (s *Service) shouldProcessMessage(ctx context.Context, m DiscordMessage) (bool, error) {
+	if s.selfBotUserID != "" && m.AuthorID == s.selfBotUserID {
+		return false, nil
+	}
+	if m.WebhookID != "" {
+		return s.store.IsMessageSourceAllowed(ctx, m.GuildID, SourceTypeWebhook, m.WebhookID)
+	}
+	if !m.Bot {
+		return true, nil
+	}
+	return s.store.IsMessageSourceAllowed(ctx, m.GuildID, SourceTypeBot, m.AuthorID)
 }
 
 // postProcessContent applies target-language link rewriting to translated

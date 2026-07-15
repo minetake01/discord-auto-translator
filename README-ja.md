@@ -137,6 +137,11 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `/list-glossary` | サーバーの用語集を一覧表示 |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除 |
 | `/set-style group:[グループ] preset:<プリセット> custom:<カスタム指示>` | グループの翻訳スタイルを設定。`preset` か `custom` のどちらか一方を指定してください |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | このサーバーで自動送信元を許可。`source_type:bot` の `source_id` は Bot ユーザー ID、`source_type:webhook` では Webhook ID です |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | このサーバーの許可リストから一致する自動送信元を削除 |
+| `/bot-whitelist list` | このサーバーで許可されている Bot と Webhook の送信元を一覧表示 |
+
+- 送信元許可リストは SQLite に永続化され、Discord サーバー（ギルド）ごとに分離されます。翻訳 Bot が管理する出力 Webhook と翻訳 Bot 自身のメッセージは、ID を追加しても引き続き除外されます
 
 - `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
 - 用語集はサーバーごとに最大 50 件まで登録できます

@@ -23,6 +23,11 @@ var (
 	ErrGlossaryFull         = errors.New("glossary is full for this server")
 	ErrGlossaryNotFound     = errors.New("glossary entry not found")
 	ErrGlossaryTermRequired = errors.New("glossary term and translation are required")
+	ErrSourceAlreadyAllowed = errors.New("message source is already allowed in this guild")
+	ErrSourceNotAllowed     = errors.New("message source is not allowed in this guild")
+	ErrInvalidSourceType    = errors.New("message source type must be bot or webhook")
+	ErrInvalidSnowflake     = errors.New("source ID must be a canonical nonzero uint64 snowflake")
+	ErrManagedWebhook       = errors.New("translation output webhooks cannot be allowlisted")
 )
 
 type Store struct {
@@ -119,6 +124,14 @@ func (s *Store) Init(ctx context.Context) error {
 			created_at INTEGER NOT NULL,
 			PRIMARY KEY (guild_id, source_term_key)
 		)`,
+		`CREATE TABLE IF NOT EXISTS source_allowlists (
+			guild_id TEXT NOT NULL,
+			source_type TEXT NOT NULL CHECK (source_type IN ('bot', 'webhook')),
+			source_id TEXT NOT NULL,
+			created_by TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (guild_id, source_type, source_id)
+		)`,
 	}
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_group_channels_guild_channel ON group_channels(guild_id, channel_id)`,
@@ -144,6 +157,37 @@ func (s *Store) Init(ctx context.Context) error {
 		return err
 	}
 	for _, stmt := range indexes {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			return err
+		}
+	}
+	triggers := []string{
+		`CREATE TRIGGER IF NOT EXISTS reject_managed_webhook_allowlist_insert
+		BEFORE INSERT ON source_allowlists
+		WHEN NEW.source_type = 'webhook' AND EXISTS (
+			SELECT 1 FROM group_channels
+			WHERE guild_id = NEW.guild_id AND webhook_id = NEW.source_id
+		)
+		BEGIN
+			SELECT RAISE(ABORT, 'translation output webhooks cannot be allowlisted');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS reject_managed_webhook_allowlist_update
+		BEFORE UPDATE ON source_allowlists
+		WHEN NEW.source_type = 'webhook' AND EXISTS (
+			SELECT 1 FROM group_channels
+			WHERE guild_id = NEW.guild_id AND webhook_id = NEW.source_id
+		)
+		BEGIN
+			SELECT RAISE(ABORT, 'translation output webhooks cannot be allowlisted');
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS remove_new_managed_webhook_allowlist
+		AFTER INSERT ON group_channels
+		BEGIN
+			DELETE FROM source_allowlists
+			WHERE guild_id = NEW.guild_id AND source_type = 'webhook' AND source_id = NEW.webhook_id;
+		END`,
+	}
+	for _, stmt := range triggers {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return err
 		}

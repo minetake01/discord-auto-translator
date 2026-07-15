@@ -32,7 +32,11 @@ func (d mirrorDestination) threadID() string {
 }
 
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" {
+	allowed, err := s.shouldProcessMessage(ctx, m)
+	if err != nil {
+		return fmt.Errorf("message source policy: %w", err)
+	}
+	if !allowed {
 		return nil
 	}
 	unlock := s.lockMessage(m.ChannelID, m.ID)
@@ -190,7 +194,11 @@ func (s *Service) messageLinkTarget(ctx context.Context, targets []GroupChannel,
 }
 
 func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) error {
-	if m.Bot || m.WebhookID != "" {
+	allowed, err := s.shouldProcessMessage(ctx, m)
+	if err != nil {
+		return fmt.Errorf("message source policy: %w", err)
+	}
+	if !allowed {
 		return nil
 	}
 	links, err := s.store.MessageTargets(ctx, m.ChannelID, m.ID)

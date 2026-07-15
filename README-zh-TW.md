@@ -137,6 +137,11 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `/list-glossary` | 列出伺服器的詞彙表 |
 | `/remove-glossary term:[詞彙]` | 刪除詞彙表項目 |
 | `/set-style group:[群組] preset:<預設> custom:<自訂指示>` | 設定群組的翻譯風格。指定 `preset` 或 `custom` 其中之一，不可同時指定 |
+| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 允許此伺服器中的自動訊息來源。`source_type:bot` 時，`source_id` 是機器人使用者 ID；`source_type:webhook` 時則是 Webhook ID |
+| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 從此伺服器的允許清單移除符合的自動訊息來源 |
+| `/bot-whitelist list` | 列出此伺服器中允許的機器人與 Webhook 來源 |
+
+- 來源允許清單會持久化至 SQLite，並依各 Discord 伺服器（Guild）隔離。翻譯機器人管理的輸出 Webhook 與翻譯機器人本身的訊息即使加入相應 ID，仍會被排除
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每個伺服器最多可註冊 50 筆詞彙

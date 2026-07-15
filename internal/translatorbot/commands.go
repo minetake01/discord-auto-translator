@@ -13,6 +13,7 @@ import (
 var defaultAdminCommandPermissions int64 = discordgo.PermissionAdministrator
 
 const viewOriginalCommandName = "View Original"
+const botWhitelistCommandName = "bot-whitelist"
 
 func Commands() []*discordgo.ApplicationCommand {
 	channelTypes := []discordgo.ChannelType{
@@ -89,6 +90,35 @@ func Commands() []*discordgo.ApplicationCommand {
 				{Name: "custom", Description: "Custom style instruction in natural language", Type: discordgo.ApplicationCommandOptionString, Required: false},
 			},
 		},
+		{
+			Name:        botWhitelistCommandName,
+			Description: "Manage allowed bot and webhook sources for this server",
+			Options: []*discordgo.ApplicationCommandOption{
+				{
+					Name:        "add",
+					Description: "Allow a bot or webhook source in this server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{Name: "source_type", Description: "Automated message source type", Type: discordgo.ApplicationCommandOptionString, Required: true, Choices: sourceTypeChoices()},
+						{Name: "source_id", Description: "Discord bot user ID or webhook ID", Type: discordgo.ApplicationCommandOptionString, Required: true},
+					},
+				},
+				{
+					Name:        "remove",
+					Description: "Remove a bot or webhook source from this server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+					Options: []*discordgo.ApplicationCommandOption{
+						{Name: "source_type", Description: "Automated message source type", Type: discordgo.ApplicationCommandOptionString, Required: true, Choices: sourceTypeChoices()},
+						{Name: "source_id", Description: "Discord bot user ID or webhook ID", Type: discordgo.ApplicationCommandOptionString, Required: true},
+					},
+				},
+				{
+					Name:        "list",
+					Description: "List allowed bot and webhook sources for this server",
+					Type:        discordgo.ApplicationCommandOptionSubCommand,
+				},
+			},
+		},
 	}
 	for _, cmd := range cmds {
 		cmd.DefaultMemberPermissions = &defaultAdminCommandPermissions
@@ -137,6 +167,10 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleAutocomplete(s, i, data)
 		return
 	}
+	if data.Name == botWhitelistCommandName && i.GuildID == "" {
+		h.reply(s, i, uiKeyGuildOnly)
+		return
+	}
 	switch data.Name {
 	case "new-channel":
 		h.handleNewChannel(s, i, data)
@@ -156,6 +190,35 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleRemoveGlossary(s, i, data)
 	case "set-style":
 		h.handleSetStyle(s, i, data)
+	case botWhitelistCommandName:
+		h.handleBotWhitelist(s, i, data)
+	}
+}
+
+func sourceTypeChoices() []*discordgo.ApplicationCommandOptionChoice {
+	return []*discordgo.ApplicationCommandOptionChoice{
+		{Name: "Bot", Value: string(SourceTypeBot)},
+		{Name: "Webhook", Value: string(SourceTypeWebhook)},
+	}
+}
+
+func (h *CommandHandler) handleBotWhitelist(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	if len(data.Options) != 1 || data.Options[0].Type != discordgo.ApplicationCommandOptionSubCommand {
+		log.Printf("%s invalid subcommand payload", botWhitelistCommandName)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	subcommand := data.Options[0]
+	switch subcommand.Name {
+	case "add":
+		h.handleAddSource(s, i, subcommand.Options)
+	case "remove":
+		h.handleRemoveSource(s, i, subcommand.Options)
+	case "list":
+		h.handleListSources(s, i)
+	default:
+		log.Printf("%s unknown subcommand %q", botWhitelistCommandName, subcommand.Name)
+		h.reply(s, i, uiKeyUnexpectedError)
 	}
 }
 
@@ -530,6 +593,93 @@ func (h *CommandHandler) handleSetStyle(s *discordgo.Session, i *discordgo.Inter
 	default:
 		h.reply(s, i, uiKeyStyleReset, groupID)
 	}
+}
+
+func (h *CommandHandler) handleAddSource(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) {
+	sourceType, sourceID, ok := h.sourceOptions(s, i, options)
+	if !ok {
+		return
+	}
+	createdBy := ""
+	if i.Member != nil && i.Member.User != nil {
+		createdBy = i.Member.User.ID
+	}
+	if err := h.store.AddAllowedSource(context.Background(), i.GuildID, sourceType, sourceID, createdBy); err != nil {
+		switch {
+		case errors.Is(err, ErrSourceAlreadyAllowed):
+			h.reply(s, i, uiKeySourceAlreadyAllowed, sourceType, sourceID)
+		case errors.Is(err, ErrManagedWebhook):
+			h.reply(s, i, uiKeyManagedWebhookRejected)
+		default:
+			log.Printf("%s add store: %v", botWhitelistCommandName, err)
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
+		return
+	}
+	h.reply(s, i, uiKeySourceAllowed, sourceType, sourceID)
+}
+
+func (h *CommandHandler) handleRemoveSource(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) {
+	sourceType, sourceID, ok := h.sourceOptions(s, i, options)
+	if !ok {
+		return
+	}
+	if err := h.store.RemoveAllowedSource(context.Background(), i.GuildID, sourceType, sourceID); err != nil {
+		if errors.Is(err, ErrSourceNotAllowed) {
+			h.reply(s, i, uiKeySourceNotAllowed, sourceType, sourceID)
+		} else {
+			log.Printf("%s remove store: %v", botWhitelistCommandName, err)
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
+		return
+	}
+	h.reply(s, i, uiKeySourceRemoved, sourceType, sourceID)
+}
+
+func (h *CommandHandler) sourceOptions(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) (SourceType, string, bool) {
+	sourceType, err := ParseSourceType(optionString(options, "source_type"))
+	if err != nil {
+		h.reply(s, i, uiKeyInvalidSourceType)
+		return "", "", false
+	}
+	sourceID := strings.TrimSpace(optionString(options, "source_id"))
+	if err := ValidateCanonicalSnowflake(sourceID); err != nil {
+		h.reply(s, i, uiKeyInvalidSourceID)
+		return "", "", false
+	}
+	return sourceType, sourceID, true
+}
+
+func (h *CommandHandler) handleListSources(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	sources, err := h.store.ListAllowedSources(context.Background(), i.GuildID)
+	if err != nil {
+		log.Printf("%s list store: %v", botWhitelistCommandName, err)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	if len(sources) == 0 {
+		h.reply(s, i, uiKeyNoAllowedSources)
+		return
+	}
+	lang := commandLocale(i)
+	truncatedSuffix := localizedUIString(lang, uiKeyAllowedSourcesTruncated)
+	var b strings.Builder
+	b.WriteString(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)))
+	b.WriteString("\n")
+	truncated := false
+	for _, source := range sources {
+		line := fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID)
+		if b.Len()+len(line)+len(truncatedSuffix) > discordMessageContentLimit {
+			truncated = true
+			break
+		}
+		b.WriteString(line)
+	}
+	msg := strings.TrimSpace(b.String())
+	if truncated {
+		msg += truncatedSuffix
+	}
+	h.respond(s, i, msg, true)
 }
 
 func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
