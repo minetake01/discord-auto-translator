@@ -4,10 +4,115 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestStoreFileBackedConcurrentReaderDoesNotPoisonWrites(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "store.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000000", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "200000000000000000", TargetLanguage: "en", SourceAuthorID: "u", SourceContentSnapshot: "seed"}); err != nil {
+		t.Fatal(err)
+	}
+
+	readerHeld := make(chan struct{})
+	releaseReader := make(chan struct{})
+	readerDone := make(chan struct{})
+	writeDone := make(chan error, 1)
+	writeCtx, cancelWrite := context.WithTimeout(ctx, 2*time.Second)
+	defer cancelWrite()
+
+	go func() {
+		defer close(readerDone)
+		conn, err := s.db.Conn(ctx)
+		if err != nil {
+			t.Errorf("reader conn: %v", err)
+			close(readerHeld)
+			return
+		}
+		defer conn.Close()
+		rows, err := conn.QueryContext(ctx, `SELECT source_message_id FROM message_links`)
+		if err != nil {
+			t.Errorf("reader query: %v", err)
+			close(readerHeld)
+			return
+		}
+		if !rows.Next() {
+			t.Error("reader query returned no rows")
+			_ = rows.Close()
+			close(readerHeld)
+			return
+		}
+		var sourceMessageID string
+		if err := rows.Scan(&sourceMessageID); err != nil {
+			t.Errorf("reader scan: %v", err)
+			_ = rows.Close()
+			close(readerHeld)
+			return
+		}
+		close(readerHeld)
+		<-releaseReader
+		_ = rows.Close()
+	}()
+
+	<-readerHeld
+
+	go func() {
+		writeDone <- s.SaveMessageLink(writeCtx, MessageLink{
+			SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+			TargetChannelID: "en", TargetMessageID: "200000000000000001", TargetLanguage: "en",
+			SourceAuthorID: "u", SourceContentSnapshot: "first",
+		})
+	}()
+
+	var prematureWrite error
+	writeCompletedEarly := false
+	select {
+	case err := <-writeDone:
+		writeCompletedEarly = true
+		prematureWrite = err
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	close(releaseReader)
+	<-readerDone
+
+	if writeCompletedEarly {
+		t.Fatalf("write completed while reader held connection: %v", prematureWrite)
+	}
+
+	select {
+	case err := <-writeDone:
+		if err != nil {
+			t.Fatalf("write after reader released: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("write timed out after reader released")
+	}
+
+	if err := s.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "200000000000000002", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "second",
+	}); err != nil {
+		t.Fatalf("subsequent write poisoned: %v", err)
+	}
+	links, err := s.MessageTargets(ctx, "ja", "100000000000000002")
+	if err != nil {
+		t.Fatalf("subsequent read poisoned: %v", err)
+	}
+	if len(links) != 1 {
+		t.Fatalf("subsequent read: %#v", links)
+	}
+}
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
