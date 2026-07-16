@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | Biến | Bắt buộc | Mô tả |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token Gemini mỗi máy chủ mỗi phút (mặc định: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | Giới hạn yêu cầu mỗi IP mỗi phút cho endpoint badge `/avatar` (mặc định: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Không | Số ngày giữ `message_links` trong SQLite trước khi dọn tự động. `0` (mặc định) tắt dọn; ví dụ `60` xóa liên kết cũ hơn 60 ngày khi khởi động và mỗi 24 giờ |
+| `GUILD_DATA_RETENTION_DAYS` | Không | Số ngày giữ dữ liệu SQLite của máy chủ sau khi bot bị gỡ. `0` (mặc định) tắt dọn; ví dụ `30` xóa dữ liệu của máy chủ đã gỡ bot quá 30 ngày khi khởi động và mỗi 24 giờ. Tham gia lại trước hạn sẽ hủy lịch xóa |
 
 ### 4. Chạy
 

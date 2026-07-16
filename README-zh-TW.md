@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | 變數 | 必要 | 說明 |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 選用 | 每個伺服器每分鐘的 Gemini 權杖上限（預設: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 選用 | `/avatar` 徽章端點的每 IP 每分鐘請求上限（預設: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 選用 | SQLite 中 `message_links` 自動清理前的保留天數。`0`（預設）停用清理；例如 `60` 會在啟動時及每 24 小時刪除超過 60 天的連結 |
+| `GUILD_DATA_RETENTION_DAYS` | 選用 | Bot 從伺服器移除後，該伺服器 SQLite 資料的保留天數。`0`（預設）停用清理；例如 `30` 會在啟動時及每 24 小時刪除已移除超過 30 天的伺服器資料。到期前重新加入會取消排定的刪除 |
 
 ### 4. 啟動
 

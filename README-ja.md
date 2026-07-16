@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | 変数 | 必須 | 説明 |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemini トークン上限/分（デフォルト: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `/avatar` バッジエンドポイントの IP ごとのリクエスト上限/分（デフォルト: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 任意 | SQLite の `message_links` を保持する日数。`0`（デフォルト）で自動削除を無効。例: `60` で 60 日より古いリンクを起動時および 24 時間ごとに削除 |
+| `GUILD_DATA_RETENTION_DAYS` | 任意 | Bot がギルドから削除された後、そのギルドの SQLite データを保持する日数。`0`（デフォルト）で自動削除を無効。例: `30` で削除から 30 日を超えたギルドのデータを起動時および 24 時間ごとに削除。期限前に再参加すると削除予定を取り消す |
 
 ### 4. 起動
 

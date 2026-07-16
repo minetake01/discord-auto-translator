@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -127,6 +128,13 @@ func newTestStore(t *testing.T) *Store {
 func TestStoreOptimizedSchema(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
+	var busyTimeout int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA busy_timeout`).Scan(&busyTimeout); err != nil {
+		t.Fatal(err)
+	}
+	if busyTimeout != 2000 {
+		t.Fatalf("busy_timeout = %d, want 2000", busyTimeout)
+	}
 
 	columnTypes := map[string]map[string]string{
 		"translation_groups": {"created_at": "INTEGER"},
@@ -164,13 +172,17 @@ func TestStoreOptimizedSchema(t *testing.T) {
 		"idx_message_links_target_channel_message",
 		"idx_message_links_group_source_channel",
 		"idx_message_links_group_target_channel",
+		"idx_message_references_source",
 		"idx_thread_links_source_thread",
 		"idx_thread_links_target_thread",
 		"idx_thread_links_group_target_thread",
 		"idx_thread_links_group_source_channel",
 		"idx_thread_links_group_target_channel",
+		"idx_thread_links_source_channel",
+		"idx_thread_links_target_channel",
 		"idx_pin_states_message",
 		"idx_processed_events_created_at",
+		"idx_guild_removals_removed_at",
 	}
 	for _, index := range wantIndexes {
 		var count int
@@ -180,6 +192,346 @@ func TestStoreOptimizedSchema(t *testing.T) {
 		if count != 1 {
 			t.Errorf("index %s count = %d, want 1", index, count)
 		}
+	}
+
+	for index, wantLeadingColumn := range map[string]string{
+		"idx_message_references_source":   "source_channel_id",
+		"idx_thread_links_source_channel": "source_channel_id",
+		"idx_thread_links_target_channel": "target_channel_id",
+	} {
+		var sequence int
+		var columnID int
+		var column string
+		if err := s.db.QueryRowContext(ctx, `SELECT seqno, cid, name FROM pragma_index_info(?) ORDER BY seqno LIMIT 1`, index).Scan(&sequence, &columnID, &column); err != nil {
+			t.Fatal(err)
+		}
+		if sequence != 0 || column != wantLeadingColumn {
+			t.Errorf("index %s leading column = %q at sequence %d, want %q at sequence 0", index, column, sequence, wantLeadingColumn)
+		}
+	}
+}
+
+func TestOpenStoreEnablesForeignKeysOnEveryFileBackedConnection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "translator.db")
+	first, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	second, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = second.Close() })
+
+	ctx := context.Background()
+	for i, store := range []*Store{first, second} {
+		conn, err := store.db.Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var enabled int
+		err = conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&enabled)
+		_ = conn.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if enabled != 1 {
+			t.Fatalf("store %d foreign_keys = %d, want 1", i+1, enabled)
+		}
+	}
+}
+func TestGuildLifecycleWriteWaitsForTransientSQLiteContention(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "translator.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	locker, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = locker.Close() })
+	conn, err := locker.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(context.Background(), `BEGIN IMMEDIATE`); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- s.MarkGuildRemoved(context.Background(), "guild", time.Unix(1, 0))
+	}()
+	select {
+	case err := <-done:
+		t.Fatalf("lifecycle write did not wait for SQLite lock: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	if _, err := conn.ExecContext(context.Background(), `ROLLBACK`); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("lifecycle write did not recover from transient contention: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("lifecycle write exceeded bounded SQLite busy timeout")
+	}
+
+	var count int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM guild_removals WHERE guild_id='guild'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("persisted markers = %d, want 1", count)
+	}
+}
+
+func TestMarkGuildRemovedUpsertsSingleMarker(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	first := time.Date(2026, time.July, 1, 12, 0, 0, 0, time.UTC)
+	second := first.Add(24 * time.Hour)
+
+	if err := s.MarkGuildRemoved(ctx, "guild", first); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkGuildRemoved(ctx, "guild", second); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	var removedAt int64
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*), MAX(removed_at) FROM guild_removals WHERE guild_id='guild'`).Scan(&count, &removedAt); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || removedAt != second.UnixMilli() {
+		t.Fatalf("marker count=%d removed_at=%d, want 1 and %d", count, removedAt, second.UnixMilli())
+	}
+}
+
+func TestCancelGuildRemovalDeletesMarker(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.MarkGuildRemoved(ctx, "guild", time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CancelGuildRemoval(ctx, "guild"); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM guild_removals WHERE guild_id='guild'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("marker count = %d, want 0", count)
+	}
+}
+
+func TestGuildIDsWithStoredDataReturnsDistinctSortedGuilds(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	statements := []string{
+		`INSERT INTO translation_groups(id,guild_id,display_name,created_by,created_at) VALUES('group','guild-b','B','admin',1)`,
+		`INSERT INTO glossary_entries(guild_id,source_term,source_term_key,preferred_translation,created_by,created_at) VALUES('guild-a','term','term','value','admin',1)`,
+		`INSERT INTO source_allowlists(guild_id,source_type,source_id,created_by,created_at) VALUES('guild-b','bot','123456789012345678','admin',1)`,
+		`INSERT INTO guild_removals(guild_id,removed_at) VALUES('guild-c',1)`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	guildIDs, err := s.GuildIDsWithStoredData(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fmt.Sprint(guildIDs), "[guild-a guild-b guild-c]"; got != want {
+		t.Fatalf("guild IDs = %s, want %s", got, want)
+	}
+}
+
+func TestGuildPurgeUsesStrictCutoff(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	cutoff := time.Date(2026, time.July, 10, 0, 0, 0, 0, time.UTC)
+	markers := map[string]time.Time{
+		"before": cutoff.Add(-time.Millisecond),
+		"at":     cutoff,
+		"after":  cutoff.Add(time.Millisecond),
+	}
+	for guildID, removedAt := range markers {
+		if err := s.MarkGuildRemoved(ctx, guildID, removedAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	guildIDs, err := s.GuildIDsRemovedBefore(ctx, cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fmt.Sprint(guildIDs); got != "[before]" {
+		t.Fatalf("eligible guilds = %s, want [before]", got)
+	}
+	purged, err := s.PurgeGuildRemovedBefore(ctx, "before", cutoff)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !purged {
+		t.Fatal("eligible guild was not purged")
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT guild_id FROM guild_removals ORDER BY guild_id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var remaining []string
+	for rows.Next() {
+		var guildID string
+		if err := rows.Scan(&guildID); err != nil {
+			t.Fatal(err)
+		}
+		remaining = append(remaining, guildID)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(remaining) != "[after at]" {
+		t.Fatalf("remaining markers = %v, want [after at]", remaining)
+	}
+}
+
+func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	removedAt := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
+
+	statements := []string{
+		`INSERT INTO translation_groups(id,guild_id,display_name,created_by,created_at) VALUES
+			('shared','guild-a','A','admin',1), ('shared','guild-b','B','admin',1)`,
+		`INSERT INTO group_channels(group_id,guild_id,channel_id,channel_type,language,webhook_id,webhook_token) VALUES
+			('shared','guild-a','a-source',0,'ja','a-wh-1','a-token-1'),
+			('shared','guild-a','a-target',0,'en','a-wh-2','a-token-2'),
+			('shared','guild-b','b-source',0,'ja','b-wh-1','b-token-1'),
+			('shared','guild-b','b-target',0,'en','b-wh-2','b-token-2')`,
+		`INSERT INTO thread_links(group_id,source_thread_id,source_channel_id,target_thread_id,target_channel_id,target_language) VALUES
+			('shared','a-thread','a-source','a-target-thread','a-target','en'),
+			('shared','b-thread','b-source','b-target-thread','b-target','en')`,
+		`INSERT INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_content_snapshot) VALUES
+			(101,'a-source','shared','a-target','a-parent-copy','en','user','a parent'),
+			(102,'a-thread','shared','a-target-thread','a-thread-copy','en','user','a thread'),
+			(201,'b-source','shared','b-target','b-parent-copy','en','user','b parent'),
+			(202,'b-thread','shared','b-target-thread','b-thread-copy','en','user','b thread')`,
+		`INSERT INTO message_references(source_message_id,source_channel_id,referenced_message_id,referenced_channel_id) VALUES
+			(101,'a-source',1,'a-source'), (102,'a-thread',2,'a-thread'),
+			(201,'b-source',3,'b-source'), (202,'b-thread',4,'b-thread')`,
+		`INSERT INTO pin_states(channel_id,message_id,pinned) VALUES
+			('a-source',101,1), ('a-thread',102,1), ('b-source',201,1), ('b-thread',202,1)`,
+		`INSERT INTO glossary_entries(guild_id,source_term,source_term_key,preferred_translation,created_by,created_at) VALUES
+			('guild-a','a','a','A','admin',1), ('guild-b','b','b','B','admin',1)`,
+		`INSERT INTO source_allowlists(guild_id,source_type,source_id,created_by,created_at) VALUES
+			('guild-a','bot','101','admin',1), ('guild-b','bot','201','admin',1)`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.MarkGuildRemoved(ctx, "guild-a", removedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	if purged, err := s.PurgeGuildRemovedBefore(ctx, "guild-a", removedAt); err != nil || purged {
+		t.Fatalf("at cutoff purged=%v err=%v, want false", purged, err)
+	}
+	assertCount := func(query string, want int) {
+		t.Helper()
+		var got int
+		if err := s.db.QueryRowContext(ctx, query).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Fatalf("%s: count=%d, want %d", query, got, want)
+		}
+	}
+	for table, want := range map[string]int{
+		"translation_groups": 2, "group_channels": 4, "thread_links": 2,
+		"message_links": 4, "message_references": 4, "pin_states": 4,
+		"glossary_entries": 2, "source_allowlists": 2, "guild_removals": 1,
+	} {
+		assertCount(`SELECT COUNT(*) FROM `+table, want)
+	}
+
+	purged, err := s.PurgeGuildRemovedBefore(ctx, "guild-a", removedAt.Add(time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !purged {
+		t.Fatal("eligible guild was not purged")
+	}
+
+	assertCount(`SELECT COUNT(*) FROM translation_groups WHERE guild_id='guild-a'`, 0)
+	assertCount(`SELECT COUNT(*) FROM group_channels WHERE guild_id='guild-a'`, 0)
+	assertCount(`SELECT COUNT(*) FROM glossary_entries WHERE guild_id='guild-a'`, 0)
+	assertCount(`SELECT COUNT(*) FROM source_allowlists WHERE guild_id='guild-a'`, 0)
+	assertCount(`SELECT COUNT(*) FROM guild_removals WHERE guild_id='guild-a'`, 0)
+	for _, table := range []string{"translation_groups", "thread_links", "glossary_entries", "source_allowlists"} {
+		assertCount(`SELECT COUNT(*) FROM `+table, 1)
+	}
+	assertCount(`SELECT COUNT(*) FROM group_channels`, 2)
+	for _, table := range []string{"message_links", "message_references", "pin_states"} {
+		assertCount(`SELECT COUNT(*) FROM `+table, 2)
+	}
+	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('a-source','a-thread') OR target_channel_id IN ('a-target','a-target-thread')`, 0)
+	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('b-source','b-thread')`, 2)
+}
+
+func TestPurgeGuildRemovedBeforePreservesUnrelatedOrphanMessageReference(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	statements := []string{
+		`INSERT INTO translation_groups(id,guild_id,display_name,created_by,created_at)
+			VALUES('group','removed-guild','Removed','admin',1),
+			('group','retained-guild','Retained','admin',1)`,
+		`INSERT INTO group_channels(group_id,guild_id,channel_id,channel_type,language,webhook_id,webhook_token)
+			VALUES('group','removed-guild','removed-channel',0,'ja','removed-webhook','removed-token'),
+			('group','retained-guild','retained-channel',0,'en','retained-webhook','retained-token')`,
+		`INSERT INTO message_references(source_message_id,source_channel_id,referenced_message_id,referenced_channel_id)
+			VALUES(1,'retained-channel',2,'retained-channel')`,
+	}
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.MarkGuildRemoved(ctx, "removed-guild", time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	purged, err := s.PurgeGuildRemovedBefore(ctx, "removed-guild", time.Unix(2, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !purged {
+		t.Fatal("eligible guild was not purged")
+	}
+	var references int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM message_references
+		WHERE source_channel_id='retained-channel' AND referenced_channel_id='retained-channel'`).Scan(&references); err != nil {
+		t.Fatal(err)
+	}
+	if references != 1 {
+		t.Fatalf("unrelated orphan message references = %d, want 1", references)
 	}
 }
 
@@ -305,6 +657,95 @@ func TestPurgeQueriesUseIndexesWithoutCast(t *testing.T) {
 		if !strings.Contains(plan, tc.index) || strings.Contains(strings.ToUpper(plan), "CAST(") {
 			t.Errorf("query plan for %q = %q, want index %q without CAST", tc.query, plan, tc.index)
 		}
+	}
+}
+
+func TestGuildPurgePredicatesUseIndexesWithoutFullTableScans(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name        string
+		query       string
+		args        []any
+		indexes     []string
+		unscannedBy []string
+	}{
+		{
+			name: "thread lookup",
+			query: `SELECT source_thread_id FROM thread_links
+				WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+					OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)`,
+			args:        []any{"guild", "guild"},
+			indexes:     []string{"idx_thread_links_source_channel", "idx_thread_links_target_channel"},
+			unscannedBy: []string{"thread_links"},
+		},
+		{
+			name: "message reference delete",
+			query: `WITH guild_channels(channel_id) AS (
+					SELECT channel_id FROM group_channels WHERE guild_id=?
+				), guild_threads(thread_id) AS (
+					SELECT source_thread_id FROM thread_links
+					WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
+						OR target_channel_id IN (SELECT channel_id FROM guild_channels)
+					UNION
+					SELECT target_thread_id FROM thread_links
+					WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
+						OR target_channel_id IN (SELECT channel_id FROM guild_channels)
+				) DELETE FROM message_references
+				WHERE source_channel_id IN (
+					SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+				) OR referenced_channel_id IN (
+					SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+				)`,
+			args: []any{"guild"},
+			indexes: []string{
+				"idx_thread_links_source_channel",
+				"idx_thread_links_target_channel",
+				"idx_message_references_source",
+				"idx_message_references_target",
+			},
+			unscannedBy: []string{"thread_links", "message_references"},
+		},
+		{
+			name: "thread link delete",
+			query: `DELETE FROM thread_links
+				WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+					OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)`,
+			args:        []any{"guild", "guild"},
+			indexes:     []string{"idx_thread_links_source_channel", "idx_thread_links_target_channel"},
+			unscannedBy: []string{"thread_links"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err := s.db.QueryContext(ctx, `EXPLAIN QUERY PLAN `+tc.query, tc.args...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var details []string
+			for rows.Next() {
+				var id, parent, unused int
+				var detail string
+				if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+					t.Fatal(err)
+				}
+				details = append(details, detail)
+			}
+			if err := rows.Close(); err != nil {
+				t.Fatal(err)
+			}
+			plan := strings.Join(details, "\n")
+			for _, index := range tc.indexes {
+				if !strings.Contains(plan, index) {
+					t.Errorf("query plan = %q, want index %q", plan, index)
+				}
+			}
+			upperPlan := strings.ToUpper(plan)
+			for _, table := range tc.unscannedBy {
+				if strings.Contains(upperPlan, "SCAN "+strings.ToUpper(table)) {
+					t.Errorf("query plan = %q, want no full scan of %s", plan, table)
+				}
+			}
+		})
 	}
 }
 

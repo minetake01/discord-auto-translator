@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | 변수 | 필수 | 설명 |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 선택 | 서버(길드)별 분당 Gemini 토큰 상한(기본값: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 선택 | `/avatar` 배지 엔드포인트의 IP별 분당 요청 상한(기본값: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | 선택 | SQLite의 `message_links` 자동 정리 전 보관 일수. `0`(기본값)이면 정리 비활성화. 예: `60`이면 60일보다 오래된 링크를 시작 시 및 24시간마다 삭제 |
+| `GUILD_DATA_RETENTION_DAYS` | 선택 | 봇이 서버에서 제거된 후 해당 서버의 SQLite 데이터를 보관하는 일수. `0`(기본값)이면 정리 비활성화. 예: `30`이면 제거 후 30일이 지난 서버 데이터를 시작 시 및 24시간마다 삭제. 만료 전에 다시 참여하면 예약된 삭제를 취소 |
 
 ### 4. 실행
 

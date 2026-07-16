@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | Variable | Erforderlich | Beschreibung |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Nein | Gemini-Token-Limit pro Server und Minute (Standard: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | Anfrage-Limit pro IP und Minute für den `/avatar`-Badge-Endpunkt (Standard: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Nein | Aufbewahrungsdauer von `message_links` in SQLite in Tagen vor automatischer Bereinigung. `0` (Standard) deaktiviert die Bereinigung; z. B. `60` löscht Links älter als 60 Tage beim Start und alle 24 Stunden |
+| `GUILD_DATA_RETENTION_DAYS` | Nein | Tage, die SQLite-Daten eines Servers nach Entfernung des Bots aufbewahrt werden. `0` (Standard) deaktiviert die Bereinigung; z. B. `30` löscht Daten von seit mehr als 30 Tagen entfernten Servern beim Start und alle 24 Stunden. Ein erneuter Beitritt vor Ablauf hebt die geplante Löschung auf |
 
 ### 4. Starten
 

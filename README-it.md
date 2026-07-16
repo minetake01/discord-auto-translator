@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | Variabile | Obbligatorio | Descrizione |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | No | Limite di token Gemini per server al minuto (predefinito: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Limite di richieste per IP al minuto per l'endpoint badge `/avatar` (predefinito: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Giorni di conservazione di `message_links` in SQLite prima della purge automatica. `0` (predefinito) disabilita la purge; es. `60` elimina i link più vecchi di 60 giorni all'avvio e ogni 24 ore |
+| `GUILD_DATA_RETENTION_DAYS` | No | Giorni di conservazione in SQLite dei dati di un server dopo la rimozione del bot. `0` (predefinito) disabilita la purge; es. `30` elimina all'avvio e ogni 24 ore i dati dei server rimossi da più di 30 giorni. Un nuovo ingresso prima della scadenza annulla l'eliminazione programmata |
 
 ### 4. Avviare
 

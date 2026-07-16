@@ -9,7 +9,10 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const MaxRetentionDays = int((1<<63 - 1) / (24 * time.Hour))
 
 type Config struct {
 	DiscordToken                  string
@@ -20,6 +23,7 @@ type Config struct {
 	GeminiRateLimitTokensPerMin   int
 	AvatarRateLimitRequestsPerMin int
 	MessageLinkRetentionDays      int
+	GuildDataRetentionDays        int
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -57,7 +61,23 @@ func LoadConfig(path string) (Config, error) {
 		if days < 0 {
 			return cfg, errors.New("MESSAGE_LINK_RETENTION_DAYS must be non-negative")
 		}
+		if days > MaxRetentionDays {
+			return cfg, fmt.Errorf("MESSAGE_LINK_RETENTION_DAYS must not exceed %d", MaxRetentionDays)
+		}
 		cfg.MessageLinkRetentionDays = days
+	}
+	if raw := strings.TrimSpace(os.Getenv("GUILD_DATA_RETENTION_DAYS")); raw != "" {
+		days, err := strconv.Atoi(raw)
+		if err != nil {
+			return cfg, errors.New("GUILD_DATA_RETENTION_DAYS must be an integer")
+		}
+		if days < 0 {
+			return cfg, errors.New("GUILD_DATA_RETENTION_DAYS must be non-negative")
+		}
+		if days > MaxRetentionDays {
+			return cfg, fmt.Errorf("GUILD_DATA_RETENTION_DAYS must not exceed %d", MaxRetentionDays)
+		}
+		cfg.GuildDataRetentionDays = days
 	}
 	if cfg.DBPath == "" {
 		cfg.DBPath = "./translator.db"

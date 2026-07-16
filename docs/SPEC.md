@@ -344,7 +344,19 @@ pin_states (
 -- 未使用（将来実装用）
 processed_events (event_id, created_at INTEGER) -- Unix milliseconds
 glossary_entries (guild_id, source_term, source_term_key, preferred_translation, attribute, always_include, created_by, created_at INTEGER) -- Unix milliseconds
+
+-- Botがギルドから削除された時刻
+guild_removals (
+    guild_id TEXT PRIMARY KEY,
+    removed_at INTEGER -- Unix milliseconds
+)
 ```
+
+### ギルド削除後のデータ保持
+
+`GUILD_DATA_RETENTION_DAYS` は、Bot がギルドから削除された後にそのギルドの SQLite データを保持する日数です。未指定または `0` では自動削除しません。正の整数の場合、削除確認から指定日数を超えたギルドを起動時および 24 時間ごとに削除します。負数または整数以外は起動時エラーになります。
+
+一時的な Gateway 障害を示す `GUILD_DELETE` の `unavailable=true` は削除として記録しません。保持期限前に利用可能な `GUILD_CREATE` を受け取った場合は削除予定を取り消します。削除処理は対象ギルドごとのトランザクションで、`translation_groups`、`group_channels`、`glossary_entries`、`source_allowlists` と、そのギルドの登録チャンネルおよび同期済みスレッドに属する `message_links`、孤立した `message_references`、`thread_links`、`pin_states` を SQLite から削除します。Discord 上のメッセージや Webhook は削除しません。
 
 ---
 
