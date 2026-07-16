@@ -36,10 +36,15 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	separator := "?"
+	if strings.Contains(path, "?") {
+		separator = "&"
+	}
+	db, err := sql.Open("sqlite", path+separator+"_pragma=busy_timeout%3d2000&_pragma=foreign_keys%3dON")
 	if err != nil {
 		return nil, err
 	}
+	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
 	if err := s.Init(context.Background()); err != nil {
 		_ = db.Close()
