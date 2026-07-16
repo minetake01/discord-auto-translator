@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | 变量 | 必需 | 说明 |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | 否 | 每个服务器每分钟的 Gemini 令牌上限（默认: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 否 | `/avatar` 徽章端点的每 IP 每分钟请求上限（默认: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 否 | SQLite 中 `message_links` 的自动清理前保留天数。`0`（默认）禁用清理；例如 `60` 会在启动时及每 24 小时删除超过 60 天的链接 |
+| `GUILD_DATA_RETENTION_DAYS` | 否 | 机器人从服务器移除后，该服务器 SQLite 数据的保留天数。`0`（默认）禁用清理；例如 `30` 会在启动时及每 24 小时删除已移除超过 30 天的服务器数据。到期前重新加入会取消计划删除 |
 
 ### 4. 启动
 

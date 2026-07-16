@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -35,6 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	lifecycle := newGuildLifecycleHandler(store, dg.State)
 	translator, err := translatorbot.NewGeminiTranslator(ctx, cfg.GeminiAPIKey)
 	if err != nil {
 		log.Fatal(err)
@@ -53,12 +55,23 @@ func main() {
 		}
 	}()
 	dg.AddHandler(func(s *discordgo.Session, g *discordgo.GuildCreate) {
-		if g == nil || g.Unavailable || g.ID == "" {
-			return
+		register := func(guildID string) error {
+			return translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, guildID)
 		}
-		if err := translatorbot.RegisterGuildCommandsForGuild(s, s.State.User.ID, g.ID); err != nil {
-			log.Printf("register commands in new guild %s: %v", g.ID, err)
+		if err := lifecycle.handleCreate(context.Background(), time.Now, register, g); err != nil {
+			var persistenceErr *guildLifecyclePersistenceError
+			if errors.As(err, &persistenceErr) {
+				failGuildLifecycle("guild create", err, log.Fatalf)
+				return
+			}
+			log.Printf("guild create commands: %v", err)
 		}
+	})
+	dg.AddHandler(func(_ *discordgo.Session, g *discordgo.GuildDelete) {
+		failGuildLifecycle("guild delete", lifecycle.handleDelete(context.Background(), time.Now, g), log.Fatalf)
+	})
+	dg.AddHandler(func(_ *discordgo.Session, ready *discordgo.Ready) {
+		failGuildLifecycle("ready", lifecycle.handleReady(context.Background(), time.Now, ready), log.Fatalf)
 	})
 	dg.AddHandler(commands.Handle)
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -171,41 +184,22 @@ func main() {
 	}
 	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
 	log.Println("Discord Gemini Auto Translator is running")
-	var cancelRetention context.CancelFunc
-	if cfg.MessageLinkRetentionDays > 0 {
-		retentionCtx, cancel := context.WithCancel(context.Background())
-		cancelRetention = cancel
-		retention := time.Duration(cfg.MessageLinkRetentionDays) * 24 * time.Hour
-		days := cfg.MessageLinkRetentionDays
-		go func() {
-			purge := func() {
-				n, err := store.PurgeMessageLinksOlderThan(retentionCtx, time.Now().UTC().Add(-retention))
-				if err != nil {
-					log.Printf("message link purge: %v", err)
-					return
-				}
-				if n > 0 {
-					log.Printf("purged %d message_links older than %d days", n, days)
-				}
-			}
-			purge()
-			ticker := time.NewTicker(24 * time.Hour)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-retentionCtx.Done():
-					return
-				case <-ticker.C:
-					purge()
-				}
-			}
-		}()
+	var retention *retentionWorker
+	if cfg.MessageLinkRetentionDays > 0 || cfg.GuildDataRetentionDays > 0 {
+		retention = startRetentionWorker(
+			store,
+			cfg.MessageLinkRetentionDays,
+			cfg.GuildDataRetentionDays,
+			time.Now,
+			dg.State,
+			log.Printf,
+		)
 	}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
-	if cancelRetention != nil {
-		cancelRetention()
+	if retention != nil {
+		retention.Stop()
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

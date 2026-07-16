@@ -74,6 +74,84 @@ func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
 	}
 }
 
+func TestLoadConfigGuildDataRetentionDays(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    int
+		wantErr string
+	}{
+		{name: "unset"},
+		{name: "zero disables purge", value: "0"},
+		{name: "positive days", value: "30", want: 30},
+		{name: "maximum safe days", value: "106751", want: 106751},
+		{name: "duration overflow", value: "106752", wantErr: "GUILD_DATA_RETENTION_DAYS must not exceed 106751"},
+		{name: "negative", value: "-1", wantErr: "GUILD_DATA_RETENTION_DAYS must be non-negative"},
+		{name: "non-integer", value: "thirty", wantErr: "GUILD_DATA_RETENTION_DAYS must be an integer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISCORD_TOKEN", "token")
+			t.Setenv("GEMINI_API_KEY", "key")
+			t.Setenv("GUILD_DATA_RETENTION_DAYS", tt.value)
+
+			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("got %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.GuildDataRetentionDays != tt.want {
+				t.Fatalf("GuildDataRetentionDays = %d, want %d", cfg.GuildDataRetentionDays, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    int
+		wantErr string
+	}{
+		{name: "unset"},
+		{name: "zero disables purge", value: "0"},
+		{name: "positive days", value: "60", want: 60},
+		{name: "maximum safe days", value: "106751", want: 106751},
+		{name: "duration overflow", value: "106752", wantErr: "MESSAGE_LINK_RETENTION_DAYS must not exceed 106751"},
+		{name: "negative", value: "-1", wantErr: "MESSAGE_LINK_RETENTION_DAYS must be non-negative"},
+		{name: "non-integer", value: "sixty", wantErr: "MESSAGE_LINK_RETENTION_DAYS must be an integer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISCORD_TOKEN", "token")
+			t.Setenv("GEMINI_API_KEY", "key")
+			t.Setenv("MESSAGE_LINK_RETENTION_DAYS", tt.value)
+
+			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("got %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.MessageLinkRetentionDays != tt.want {
+				t.Fatalf("MessageLinkRetentionDays = %d, want %d", cfg.MessageLinkRetentionDays, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
 	t.Setenv("GEMINI_API_KEY", "key")

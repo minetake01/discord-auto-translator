@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | ตัวแปร | จำเป็น | คำอธิบาย |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | ไม่ | จำกัดโทเค็น Gemini ต่อเซิร์ฟเวอร์ต่อนาที (ค่าเริ่มต้น: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | ไม่ | จำกัดคำขอต่อ IP ต่อนาทีสำหรับ endpoint แบดจ์ `/avatar` (ค่าเริ่มต้น: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | ไม่ | จำนวนวันเก็บ `message_links` ใน SQLite ก่อนลบอัตโนมัติ `0` (ค่าเริ่มต้น) ปิดการลบ เช่น `60` จะลบลิงก์ที่เก่ากว่า 60 วันตอนเริ่มและทุก 24 ชั่วโมง |
+| `GUILD_DATA_RETENTION_DAYS` | ไม่ | จำนวนวันที่เก็บข้อมูล SQLite ของเซิร์ฟเวอร์หลังนำบอทออก `0` (ค่าเริ่มต้น) ปิดการลบ เช่น `30` จะลบข้อมูลของเซิร์ฟเวอร์ที่นำบอทออกเกิน 30 วันตอนเริ่มและทุก 24 ชั่วโมง หากเข้าร่วมใหม่ก่อนครบกำหนดจะยกเลิกการลบที่ตั้งไว้ |
 
 ### 4. เรียกใช้
 

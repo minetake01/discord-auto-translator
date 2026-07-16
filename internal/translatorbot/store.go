@@ -137,6 +137,10 @@ func (s *Store) Init(ctx context.Context) error {
 			created_at INTEGER NOT NULL,
 			PRIMARY KEY (guild_id, source_type, source_id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS guild_removals (
+			guild_id TEXT PRIMARY KEY,
+			removed_at INTEGER NOT NULL
+		)`,
 	}
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_group_channels_guild_channel ON group_channels(guild_id, channel_id)`,
@@ -144,14 +148,18 @@ func (s *Store) Init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_message_links_target_channel_message ON message_links(target_channel_id, target_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_group_source_channel ON message_links(group_id, source_channel_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_group_target_channel ON message_links(group_id, target_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_message_references_source ON message_references(source_channel_id, source_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_references_target ON message_references(referenced_channel_id, referenced_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_source_thread ON thread_links(source_thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_target_thread ON thread_links(target_thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_target_thread ON thread_links(group_id, target_thread_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_source_channel ON thread_links(group_id, source_channel_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_thread_links_group_target_channel ON thread_links(group_id, target_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_source_channel ON thread_links(source_channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_thread_links_target_channel ON thread_links(target_channel_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_pin_states_message ON pin_states(message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_processed_events_created_at ON processed_events(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_guild_removals_removed_at ON guild_removals(removed_at)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -198,6 +206,140 @@ func (s *Store) Init(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Store) MarkGuildRemoved(ctx context.Context, guildID string, removedAt time.Time) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO guild_removals(guild_id,removed_at) VALUES(?,?)
+		ON CONFLICT(guild_id) DO UPDATE SET removed_at=excluded.removed_at`, guildID, removedAt.UnixMilli())
+	return err
+}
+
+func (s *Store) CancelGuildRemoval(ctx context.Context, guildID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM guild_removals WHERE guild_id=?`, guildID)
+	return err
+}
+
+func (s *Store) GuildIDsWithStoredData(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT guild_id FROM (
+		SELECT guild_id FROM translation_groups
+		UNION SELECT guild_id FROM group_channels
+		UNION SELECT guild_id FROM glossary_entries
+		UNION SELECT guild_id FROM source_allowlists
+		UNION SELECT guild_id FROM guild_removals
+	) WHERE guild_id <> '' ORDER BY guild_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var guildIDs []string
+	for rows.Next() {
+		var guildID string
+		if err := rows.Scan(&guildID); err != nil {
+			return nil, err
+		}
+		guildIDs = append(guildIDs, guildID)
+	}
+	return guildIDs, rows.Err()
+}
+
+func (s *Store) GuildIDsRemovedBefore(ctx context.Context, cutoff time.Time) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT guild_id FROM guild_removals WHERE removed_at < ? ORDER BY guild_id`, cutoff.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	var guildIDs []string
+	for rows.Next() {
+		var guildID string
+		if err := rows.Scan(&guildID); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		guildIDs = append(guildIDs, guildID)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return guildIDs, nil
+}
+
+func (s *Store) PurgeGuildRemovedBefore(ctx context.Context, guildID string, cutoff time.Time) (bool, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var eligible bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM guild_removals WHERE guild_id=? AND removed_at < ?
+	)`, guildID, cutoff.UnixMilli()).Scan(&eligible); err != nil {
+		return false, err
+	}
+	if !eligible {
+		return false, tx.Commit()
+	}
+	guildChannelsAndThreads := `WITH guild_channels(channel_id) AS (
+		SELECT channel_id FROM group_channels WHERE guild_id=?
+	), guild_threads(thread_id) AS (
+		SELECT source_thread_id FROM thread_links
+		WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
+			OR target_channel_id IN (SELECT channel_id FROM guild_channels)
+		UNION
+		SELECT target_thread_id FROM thread_links
+		WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
+			OR target_channel_id IN (SELECT channel_id FROM guild_channels)
+	) `
+	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM message_references
+		WHERE source_channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		) OR referenced_channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		)`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM message_links
+		WHERE source_channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		) OR target_channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		)`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM pin_states
+		WHERE channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		)`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE
+		source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+		OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)`, guildID, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM glossary_entries WHERE guild_id=?`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM source_allowlists WHERE guild_id=?`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM translation_groups WHERE guild_id=?`, guildID); err != nil {
+		return false, err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM guild_removals WHERE guild_id=? AND removed_at < ?`, guildID, cutoff.UnixMilli())
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return n == 1, nil
 }
 
 func (s *Store) validateOptimizedSchema(ctx context.Context) error {

@@ -66,6 +66,7 @@ PUBLIC_BASE_URL=https://your-public-domain.example
 GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
+# GUILD_DATA_RETENTION_DAYS=30
 ```
 
 | Variabel | Wajib | Deskripsi |
@@ -78,6 +79,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | Batas token Gemini per server per menit (default: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | Batas permintaan per IP per menit untuk endpoint badge `/avatar` (default: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Tidak | Hari retensi `message_links` di SQLite sebelum pembersihan otomatis. `0` (default) menonaktifkan pembersihan; mis. `60` menghapus tautan lebih dari 60 hari saat startup dan setiap 24 jam |
+| `GUILD_DATA_RETENTION_DAYS` | Tidak | Hari penyimpanan data SQLite server setelah bot dikeluarkan. `0` (default) menonaktifkan pembersihan; mis. `30` menghapus data server yang sudah lebih dari 30 hari ditinggalkan saat startup dan setiap 24 jam. Bergabung kembali sebelum tenggat membatalkan penghapusan terjadwal |
 
 ### 4. Jalankan
 
