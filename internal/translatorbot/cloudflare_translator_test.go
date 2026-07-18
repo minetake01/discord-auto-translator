@@ -55,11 +55,21 @@ func TestCloudflareTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	if result.Translations["en"] != "Hello <@42>" || result.InputTokens != 111 || result.OutputTokens != 22 {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if gotRequest["model"] != cloudflareModel || gotRequest["temperature"] != 0.2 || gotRequest["stream"] != false || gotRequest["max_tokens"] != float64(16384) {
+	if gotRequest["model"] != cloudflareModel || gotRequest["temperature"] != 0.2 || gotRequest["stream"] != false {
 		t.Fatalf("unexpected fixed request fields: %#v", gotRequest)
 	}
-	if _, ok := gotRequest["reasoning"]; ok {
-		t.Fatal("reasoning settings must be omitted")
+	if _, ok := gotRequest["reasoning_effort"]; ok {
+		t.Fatal("reasoning_effort must be omitted for Gemma 4")
+	}
+	chatTemplateKwargs, ok := gotRequest["chat_template_kwargs"].(map[string]any)
+	if !ok || chatTemplateKwargs["enable_thinking"] != false {
+		t.Fatalf("chat_template_kwargs = %#v, want enable_thinking=false", gotRequest["chat_template_kwargs"])
+	}
+	if gotRequest["max_completion_tokens"] != float64(maxTranslationCompletionTokens(1)) {
+		t.Fatalf("max_completion_tokens = %#v, want %d", gotRequest["max_completion_tokens"], maxTranslationCompletionTokens(1))
+	}
+	if _, ok := gotRequest["max_tokens"]; ok {
+		t.Fatal("deprecated max_tokens must be omitted")
 	}
 	if _, ok := gotRequest["cache_key"]; ok {
 		t.Fatal("custom cache key must be omitted")
@@ -85,6 +95,23 @@ func TestCloudflareTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	schema := jsonSchema["schema"].(map[string]any)
 	if schema["additionalProperties"] != false {
 		t.Fatalf("schema must reject unknown fields: %#v", schema)
+	}
+}
+
+func TestMaxTranslationCompletionTokensScalesWithLanguageCount(t *testing.T) {
+	tests := []struct {
+		languages int
+		want      int
+	}{
+		{languages: 1, want: 6024},
+		{languages: 2, want: 11024},
+		{languages: 3, want: 16024},
+		{languages: 13, want: 66024},
+	}
+	for _, tt := range tests {
+		if got := maxTranslationCompletionTokens(tt.languages); got != tt.want {
+			t.Errorf("maxTranslationCompletionTokens(%d) = %d, want %d", tt.languages, got, tt.want)
+		}
 	}
 }
 
