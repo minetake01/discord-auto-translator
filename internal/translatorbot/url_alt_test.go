@@ -144,3 +144,66 @@ func TestAlternateURLReplacerConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestAlternateURLReplacerLooksUpDistinctURLsInParallelWithBound(t *testing.T) {
+	started := make(chan struct{}, alternateURLLookupConcurrency+1)
+	release := make(chan struct{})
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		started <- struct{}{}
+		<-release
+		return htmlResponse(`<html><head></head></html>`), nil
+	})}
+	replacer := newAlternateURLReplacer(client, 24*time.Hour, time.Now)
+	done := make(chan string, 1)
+	go func() {
+		done <- replacer.Replace(context.Background(), "https://one.example/a https://two.example/b https://three.example/c https://four.example/d https://five.example/e", "en")
+	}()
+
+	for i := 0; i < alternateURLLookupConcurrency; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("URL lookups did not start in parallel")
+		}
+	}
+	select {
+	case <-started:
+		t.Fatalf("more than %d URL lookups started concurrently", alternateURLLookupConcurrency)
+	default:
+	}
+	for i := 0; i < alternateURLLookupConcurrency; i++ {
+		release <- struct{}{}
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("queued URL lookup did not start")
+	}
+	release <- struct{}{}
+	select {
+	case got := <-done:
+		want := "https://one.example/a https://two.example/b https://three.example/c https://four.example/d https://five.example/e"
+		if got != want {
+			t.Fatalf("Replace() = %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Replace did not finish")
+	}
+}
+
+func TestAlternateURLReplacerLooksUpDuplicateURLOnce(t *testing.T) {
+	var requests atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		requests.Add(1)
+		return htmlResponse(`<link rel="alternate" hreflang="en" href="https://example.com/en">`), nil
+	})}
+	replacer := newAlternateURLReplacer(client, 24*time.Hour, time.Now)
+
+	got := replacer.Replace(context.Background(), "https://example.com/page and https://example.com/page", "en")
+	if got != "https://example.com/en and https://example.com/en" {
+		t.Fatalf("Replace() = %q", got)
+	}
+	if got := requests.Load(); got != 1 {
+		t.Fatalf("requests = %d, want 1", got)
+	}
+}
