@@ -12,6 +12,7 @@ import (
 )
 
 const alternateURLDomainCacheTTL = 24 * time.Hour
+const alternateURLLookupConcurrency = 4
 
 var urlPattern = regexp.MustCompile(`https?://[^\s<>()]+`)
 var alternateLinkPattern = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*\balternate\b[^"']*["'][^>]*>`)
@@ -48,24 +49,72 @@ func newAlternateURLReplacer(client *http.Client, ttl time.Duration, now func() 
 }
 
 func (r *alternateURLReplacer) Replace(ctx context.Context, text, targetLanguage string) string {
-	return urlPattern.ReplaceAllStringFunc(text, func(rawURL string) string {
-		domain, err := alternateURLDomain(rawURL)
-		if err != nil || r.isKnownWithoutAlternates(domain) {
-			return rawURL
-		}
+	matches := urlPattern.FindAllStringIndex(text, -1)
+	if len(matches) == 0 {
+		return text
+	}
 
-		alternate, hasAlternates, cacheable, err := findAlternateURL(ctx, r.client, rawURL, targetLanguage)
-		if err != nil {
-			return rawURL
+	type occurrence struct {
+		start            int
+		end              int
+		replacementIndex int
+	}
+	occurrences := make([]occurrence, 0, len(matches))
+	uniqueIndexes := make(map[string]int, len(matches))
+	uniqueURLs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		rawURL := text[match[0]:match[1]]
+		index, ok := uniqueIndexes[rawURL]
+		if !ok {
+			index = len(uniqueURLs)
+			uniqueIndexes[rawURL] = index
+			uniqueURLs = append(uniqueURLs, rawURL)
 		}
-		if cacheable {
-			r.storeDomain(domain, hasAlternates)
-		}
-		if alternate == "" {
-			return rawURL
-		}
-		return alternate
-	})
+		occurrences = append(occurrences, occurrence{start: match[0], end: match[1], replacementIndex: index})
+	}
+
+	replacements := append([]string(nil), uniqueURLs...)
+	semaphore := make(chan struct{}, alternateURLLookupConcurrency)
+	var wg sync.WaitGroup
+	for i, rawURL := range uniqueURLs {
+		wg.Add(1)
+		go func(index int, rawURL string) {
+			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			replacements[index] = r.replaceOne(ctx, rawURL, targetLanguage)
+		}(i, rawURL)
+	}
+	wg.Wait()
+
+	var b strings.Builder
+	b.Grow(len(text))
+	last := 0
+	for _, occurrence := range occurrences {
+		b.WriteString(text[last:occurrence.start])
+		b.WriteString(replacements[occurrence.replacementIndex])
+		last = occurrence.end
+	}
+	b.WriteString(text[last:])
+	return b.String()
+}
+
+func (r *alternateURLReplacer) replaceOne(ctx context.Context, rawURL, targetLanguage string) string {
+	domain, err := alternateURLDomain(rawURL)
+	if err != nil || r.isKnownWithoutAlternates(domain) {
+		return rawURL
+	}
+	alternate, hasAlternates, cacheable, err := findAlternateURL(ctx, r.client, rawURL, targetLanguage)
+	if err != nil {
+		return rawURL
+	}
+	if cacheable {
+		r.storeDomain(domain, hasAlternates)
+	}
+	if alternate == "" {
+		return rawURL
+	}
+	return alternate
 }
 
 func (r *alternateURLReplacer) isKnownWithoutAlternates(domain string) bool {
