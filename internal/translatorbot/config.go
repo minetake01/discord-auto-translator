@@ -15,34 +15,38 @@ import (
 const MaxRetentionDays = int((1<<63 - 1) / (24 * time.Hour))
 
 type Config struct {
-	DiscordToken                  string
-	GeminiAPIKey                  string
-	DBPath                        string
-	HTTPAddr                      string
-	PublicBaseURL                 string
-	GeminiRateLimitTokensPerMin   int
-	AvatarRateLimitRequestsPerMin int
-	MessageLinkRetentionDays      int
-	GuildDataRetentionDays        int
+	DiscordToken                     string
+	CloudflareAccountID              string
+	CloudflareAPIToken               string
+	CloudflareAIGatewayID            string
+	DBPath                           string
+	HTTPAddr                         string
+	PublicBaseURL                    string
+	TranslationRateLimitTokensPerMin int
+	AvatarRateLimitRequestsPerMin    int
+	MessageLinkRetentionDays         int
+	GuildDataRetentionDays           int
 }
 
 func LoadConfig(path string) (Config, error) {
 	_ = loadDotEnv(path)
 	cfg := Config{
-		DiscordToken:  os.Getenv("DISCORD_TOKEN"),
-		GeminiAPIKey:  os.Getenv("GEMINI_API_KEY"),
-		DBPath:        os.Getenv("DB_PATH"),
-		HTTPAddr:      os.Getenv("HTTP_ADDR"),
-		PublicBaseURL: strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		DiscordToken:          os.Getenv("DISCORD_TOKEN"),
+		CloudflareAccountID:   os.Getenv("CLOUDFLARE_ACCOUNT_ID"),
+		CloudflareAPIToken:    os.Getenv("CLOUDFLARE_API_TOKEN"),
+		CloudflareAIGatewayID: os.Getenv("CLOUDFLARE_AI_GATEWAY_ID"),
+		DBPath:                os.Getenv("DB_PATH"),
+		HTTPAddr:              os.Getenv("HTTP_ADDR"),
+		PublicBaseURL:         strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
 	}
-	if raw := strings.TrimSpace(os.Getenv("GEMINI_RATE_LIMIT_TOKENS_PER_MIN")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN")); raw != "" {
 		limit, err := strconv.Atoi(raw)
 		if err != nil {
-			return cfg, errors.New("GEMINI_RATE_LIMIT_TOKENS_PER_MIN must be an integer")
+			return cfg, errors.New("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN must be an integer")
 		}
-		cfg.GeminiRateLimitTokensPerMin = limit
+		cfg.TranslationRateLimitTokensPerMin = limit
 	} else {
-		cfg.GeminiRateLimitTokensPerMin = defaultRateLimitTokensPerMinute
+		cfg.TranslationRateLimitTokensPerMin = defaultRateLimitTokensPerMinute
 	}
 	if raw := strings.TrimSpace(os.Getenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN")); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -88,8 +92,14 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.DiscordToken == "" {
 		return cfg, errors.New("DISCORD_TOKEN is required")
 	}
-	if cfg.GeminiAPIKey == "" {
-		return cfg, errors.New("GEMINI_API_KEY is required")
+	if cfg.CloudflareAccountID == "" {
+		return cfg, errors.New("CLOUDFLARE_ACCOUNT_ID is required")
+	}
+	if cfg.CloudflareAPIToken == "" {
+		return cfg, errors.New("CLOUDFLARE_API_TOKEN is required")
+	}
+	if cfg.CloudflareAIGatewayID == "" {
+		return cfg, errors.New("CLOUDFLARE_AI_GATEWAY_ID is required")
 	}
 	if err := validateHTTPAddr(cfg.HTTPAddr); err != nil {
 		return cfg, err

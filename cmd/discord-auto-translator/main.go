@@ -17,7 +17,6 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
 	cfg, err := translatorbot.LoadConfig(".env")
 	if err != nil {
 		log.Fatal(err)
@@ -37,14 +36,11 @@ func main() {
 		log.Fatal(err)
 	}
 	lifecycle := newGuildLifecycleHandler(store, dg.State)
-	translator, err := translatorbot.NewGeminiTranslator(ctx, cfg.GeminiAPIKey)
-	if err != nil {
-		log.Fatal(err)
-	}
+	translator := translatorbot.NewCloudflareTranslator(cfg.CloudflareAccountID, cfg.CloudflareAPIToken, cfg.CloudflareAIGatewayID)
 	service := translatorbot.NewService(store, api, translator)
 	service.SetSelfBotUserID(selfBotUserID)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
-	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.GeminiRateLimitTokensPerMin))
+	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.TranslationRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRequestRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
@@ -183,7 +179,7 @@ func main() {
 		log.Fatal(err)
 	}
 	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
-	log.Println("Discord Gemini Auto Translator is running")
+	log.Println("Discord Auto Translator is running")
 	var retention *retentionWorker
 	if cfg.MessageLinkRetentionDays > 0 || cfg.GuildDataRetentionDays > 0 {
 		retention = startRetentionWorker(

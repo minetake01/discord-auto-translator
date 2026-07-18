@@ -19,7 +19,7 @@ var (
 
 // nativePhrasingInstruction is the baseline for the default style and every
 // casual-leaning preset: translate into what a native would actually type in
-// chat, phrased positively because Gemini follows positive instructions more
+// chat, phrased positively so the translation model receives direct guidance
 // reliably than prohibitions.
 const nativePhrasingInstruction = `Write each translation as a native speaker of the target language would type it in this chat: keep the source's tone and intent, and use the grammar, particles, and phrasing a native would actually type (casual Japanese: そう, not そうだ).`
 

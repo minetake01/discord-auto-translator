@@ -8,11 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"google.golang.org/genai"
 )
-
-const geminiModel = "gemini-3.1-flash-lite"
 
 type ChatContextMessage struct {
 	Author  string
@@ -20,6 +16,8 @@ type ChatContextMessage struct {
 }
 
 type TranslationContext struct {
+	GuildID           string
+	MessageID         string
 	ServerName        string
 	ServerDescription string
 	ChannelName       string
@@ -51,20 +49,14 @@ type Translator interface {
 	TranslateMulti(ctx context.Context, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error)
 }
 
-type GeminiTranslator struct {
-	client *genai.Client
-	model  string
+type preparedTranslation struct {
+	targetLanguages   []string
+	systemInstruction string
+	userPrompt        string
+	protector         *Protector
 }
 
-func NewGeminiTranslator(ctx context.Context, apiKey string) (*GeminiTranslator, error) {
-	c, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey, Backend: genai.BackendGeminiAPI})
-	if err != nil {
-		return nil, err
-	}
-	return &GeminiTranslator{client: c, model: geminiModel}, nil
-}
-
-func (t *GeminiTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
+func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 	normalized := make([]string, 0, len(targetLanguages))
 	seen := make(map[string]bool, len(targetLanguages))
 	for _, lang := range targetLanguages {
@@ -73,13 +65,13 @@ func (t *GeminiTranslator) TranslateMulti(ctx context.Context, targetLanguages [
 			continue
 		}
 		if !IsValidLanguageCode(lang) {
-			return MultiTranslationResult{}, fmt.Errorf("invalid target language %q", lang)
+			return preparedTranslation{}, fmt.Errorf("invalid target language %q", lang)
 		}
 		seen[lang] = true
 		normalized = append(normalized, lang)
 	}
 	if len(normalized) == 0 {
-		return MultiTranslationResult{Translations: map[string]string{}}, nil
+		return preparedTranslation{}, nil
 	}
 
 	p := NewProtector(NameMaps{
@@ -90,30 +82,7 @@ func (t *GeminiTranslator) TranslateMulti(ctx context.Context, targetLanguages [
 	protected := p.Protect(content)
 	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "")
 	userPrompt := BuildMultiTranslationUserPrompt(normalized, protected, translationContext)
-	resp, err := t.client.Models.GenerateContent(ctx, t.model, genai.Text(userPrompt), multiTranslationGenerateConfig(normalized, systemInstruction))
-	if err != nil {
-		return MultiTranslationResult{}, err
-	}
-
-	raw := strings.TrimSpace(resp.Text())
-	out, err := parseMultiTranslationResponse(raw, normalized, p)
-	if err != nil {
-		return MultiTranslationResult{}, err
-	}
-
-	result := MultiTranslationResult{Translations: out}
-	if resp.UsageMetadata != nil {
-		result.InputTokens = int(resp.UsageMetadata.PromptTokenCount)
-		result.OutputTokens = int(resp.UsageMetadata.CandidatesTokenCount)
-		if result.InputTokens == 0 && result.OutputTokens == 0 {
-			result.InputTokens = int(resp.UsageMetadata.TotalTokenCount)
-		}
-	}
-	if result.InputTokens == 0 && result.OutputTokens == 0 {
-		estimate := EstimateTranslationTokens(systemInstruction+userPrompt, raw)
-		result.InputTokens = estimate
-	}
-	return result, nil
+	return preparedTranslation{targetLanguages: normalized, systemInstruction: systemInstruction, userPrompt: userPrompt, protector: p}, nil
 }
 
 type translationResponse struct {
@@ -153,46 +122,6 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 		out[targetLanguage] = protector.Restore(text)
 	}
 	return out, nil
-}
-
-func multiTranslationGenerateConfig(targetLanguages []string, systemInstruction string) *genai.GenerateContentConfig {
-	itemCount := int64(len(targetLanguages))
-	minTextLength := int64(1)
-	return &genai.GenerateContentConfig{
-		SystemInstruction: genai.NewContentFromText(systemInstruction, genai.RoleUser),
-		Temperature:       genai.Ptr[float32](0.2),
-		ResponseMIMEType:  "application/json",
-		ResponseSchema: &genai.Schema{
-			Type: genai.TypeObject,
-			Properties: map[string]*genai.Schema{
-				"translations": {
-					Type:     genai.TypeArray,
-					MinItems: &itemCount,
-					MaxItems: &itemCount,
-					Items: &genai.Schema{
-						Type: genai.TypeObject,
-						Properties: map[string]*genai.Schema{
-							"language": {
-								Type:   genai.TypeString,
-								Format: "enum",
-								Enum:   targetLanguages,
-							},
-							"translated_text": {
-								Type:        genai.TypeString,
-								MinLength:   &minTextLength,
-								Description: "The <final_message> translated into this item's language.",
-							},
-						},
-						Required:         []string{"language", "translated_text"},
-						PropertyOrdering: []string{"language", "translated_text"},
-					},
-				},
-			},
-			Required:         []string{"translations"},
-			PropertyOrdering: []string{"translations"},
-		},
-		ThinkingConfig: &genai.ThinkingConfig{ThinkingBudget: genai.Ptr[int32](0)},
-	}
 }
 
 func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryEntry, hasHistory, hasReplyChain, hasStyleInstructions bool) string {

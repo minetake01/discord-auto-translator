@@ -9,7 +9,9 @@ import (
 
 func TestLoadConfigRequiresTokens(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "")
-	t.Setenv("GEMINI_API_KEY", "")
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
+	t.Setenv("CLOUDFLARE_API_TOKEN", "")
+	t.Setenv("CLOUDFLARE_AI_GATEWAY_ID", "")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 	if err == nil || !strings.Contains(err.Error(), "DISCORD_TOKEN") {
@@ -20,7 +22,7 @@ func TestLoadConfigRequiresTokens(t *testing.T) {
 func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nGEMINI_API_KEY=file-key\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nGEMINI_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nCLOUDFLARE_ACCOUNT_ID=account-id\nCLOUDFLARE_API_TOKEN=api-token\nCLOUDFLARE_AI_GATEWAY_ID=gateway-id\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nTRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -32,8 +34,8 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	if cfg.DiscordToken != "existing-token" {
 		t.Fatalf("DiscordToken = %q, want existing-token", cfg.DiscordToken)
 	}
-	if cfg.GeminiAPIKey != "file-key" {
-		t.Fatalf("GeminiAPIKey = %q, want file-key", cfg.GeminiAPIKey)
+	if cfg.CloudflareAccountID != "account-id" || cfg.CloudflareAPIToken != "api-token" || cfg.CloudflareAIGatewayID != "gateway-id" {
+		t.Fatalf("unexpected Cloudflare config: account=%q token=%q gateway=%q", cfg.CloudflareAccountID, cfg.CloudflareAPIToken, cfg.CloudflareAIGatewayID)
 	}
 	if cfg.DBPath != "./from-file.db" {
 		t.Fatalf("DBPath = %q", cfg.DBPath)
@@ -44,8 +46,8 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	if cfg.PublicBaseURL != "https://example.test" {
 		t.Fatalf("PublicBaseURL = %q", cfg.PublicBaseURL)
 	}
-	if cfg.GeminiRateLimitTokensPerMin != 12345 {
-		t.Fatalf("GeminiRateLimitTokensPerMin = %d", cfg.GeminiRateLimitTokensPerMin)
+	if cfg.TranslationRateLimitTokensPerMin != 12345 {
+		t.Fatalf("TranslationRateLimitTokensPerMin = %d", cfg.TranslationRateLimitTokensPerMin)
 	}
 	if cfg.AvatarRateLimitRequestsPerMin != 60 {
 		t.Fatalf("AvatarRateLimitRequestsPerMin = %d", cfg.AvatarRateLimitRequestsPerMin)
@@ -54,18 +56,18 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	t.Setenv("GEMINI_API_KEY", "key")
-	t.Setenv("GEMINI_RATE_LIMIT_TOKENS_PER_MIN", "not-a-number")
+	setRequiredCloudflareConfig(t)
+	t.Setenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
-	if err == nil || !strings.Contains(err.Error(), "GEMINI_RATE_LIMIT_TOKENS_PER_MIN") {
+	if err == nil || !strings.Contains(err.Error(), "TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN") {
 		t.Fatalf("got %v, want rate limit parse error", err)
 	}
 }
 
 func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	t.Setenv("GEMINI_API_KEY", "key")
+	setRequiredCloudflareConfig(t)
 	t.Setenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -93,7 +95,7 @@ func TestLoadConfigGuildDataRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			t.Setenv("GEMINI_API_KEY", "key")
+			setRequiredCloudflareConfig(t)
 			t.Setenv("GUILD_DATA_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -132,7 +134,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			t.Setenv("GEMINI_API_KEY", "key")
+			setRequiredCloudflareConfig(t)
 			t.Setenv("MESSAGE_LINK_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -154,7 +156,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	t.Setenv("GEMINI_API_KEY", "key")
+	setRequiredCloudflareConfig(t)
 	t.Setenv("HTTP_ADDR", "not-a-listen-addr")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -165,11 +167,40 @@ func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	t.Setenv("GEMINI_API_KEY", "key")
+	setRequiredCloudflareConfig(t)
 	t.Setenv("PUBLIC_BASE_URL", "ftp://example.com")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 	if err == nil || !strings.Contains(err.Error(), "PUBLIC_BASE_URL") {
 		t.Fatalf("got %v, want PUBLIC_BASE_URL error", err)
 	}
+}
+
+func TestLoadConfigRequiresEveryCloudflareValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		missing string
+	}{
+		{name: "account", missing: "CLOUDFLARE_ACCOUNT_ID"},
+		{name: "token", missing: "CLOUDFLARE_API_TOKEN"},
+		{name: "gateway", missing: "CLOUDFLARE_AI_GATEWAY_ID"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISCORD_TOKEN", "discord-token")
+			setRequiredCloudflareConfig(t)
+			t.Setenv(tt.missing, "")
+			_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+			if err == nil || !strings.Contains(err.Error(), tt.missing) {
+				t.Fatalf("error = %v, want %s", err, tt.missing)
+			}
+		})
+	}
+}
+
+func setRequiredCloudflareConfig(t *testing.T) {
+	t.Helper()
+	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "account-id")
+	t.Setenv("CLOUDFLARE_API_TOKEN", "api-token")
+	t.Setenv("CLOUDFLARE_AI_GATEWAY_ID", "gateway-id")
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const defaultWebhookName = "Gemini Auto Translator"
+const defaultWebhookName = "Discord Auto Translator"
 
 var reservedWebhookNamePattern = regexp.MustCompile(`(?i)discord`)
 

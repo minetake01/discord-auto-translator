@@ -4,7 +4,7 @@
 
 Un bot Discord qui permet à des personnes parlant des langues différentes de discuter ensemble dans le même serveur.
 
-Associez un salon par langue en formant un **groupe de traduction**. Chaque message posté dans un salon est immédiatement traduit par Google Gemini et dupliqué dans tous les autres salons du groupe — avec le nom et l'avatar de l'auteur d'origine — de sorte que chaque salon ressemble à une conversation naturelle dans sa propre langue.
+Associez un salon par langue en formant un **groupe de traduction**. Chaque message posté dans un salon est immédiatement traduit par `@cf/google/gemma-4-26b-a4b-it` via Cloudflare AI Gateway et dupliqué dans tous les autres salons du groupe — avec le nom et l'avatar de l'auteur d'origine — de sorte que chaque salon ressemble à une conversation naturelle dans sa propre langue.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-fr (Français)
@@ -14,16 +14,18 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 - **Tout reste synchronisé** — pas seulement les nouveaux messages : les modifications, suppressions, réponses, messages transférés, réactions, épingles, fils (salons texte / forum / média) et messages ne contenant que des pièces jointes sont tous dupliqués dans le groupe.
 - **Les messages semblent envoyés par leur auteur** — les messages dupliqués sont envoyés via webhooks avec le nom et l'avatar de l'auteur original.
-- **Traductions naturelles** — Gemini utilise le nom du salon, le sujet et l'historique récent de la conversation comme contexte ; un glossaire par serveur permet de fixer les traductions préférées pour les noms et le jargon.
+- **Traductions naturelles** — Gemma 4 utilise le nom du salon, le sujet et l'historique récent de la conversation comme contexte ; un glossaire par serveur permet de fixer les traductions préférées pour les noms et le jargon.
 - **Gestion intelligente des liens** — les liens et mentions pointant vers des salons ou messages gérés sont réécrits vers leurs équivalents dans chaque langue, et les URL disposant d'alternatives `hreflang` sont remplacées par la version dans la langue cible.
-- **Efficace et sécurisé** — les messages sans texte à traduire (URL, mentions, emojis personnalisés, code) sont dupliqués sans appeler l'API Gemini ; des limites de taux de jetons par serveur s'appliquent ; les URL, mentions et blocs de code sont protégés contre les injections de prompt.
+- **Efficace et sécurisé** — les messages sans texte à traduire (URL, mentions, emojis personnalisés, code) sont dupliqués sans appeler l'API de traduction ; des limites de taux de jetons par serveur s'appliquent ; les URL, mentions et blocs de code sont protégés contre les injections de prompt. En cas d'échec de traduction : fail-closed (pas de duplication, notification localisée dans le salon source).
 - **Interface localisée** — les réponses aux commandes suivent la langue du client Discord de l'utilisateur, et les notifications de salon utilisent la langue configurée pour ce salon (13 langues, anglais par défaut).
 
 ## Prérequis
 
 - Go 1.24 ou version ultérieure
 - Un compte bot Discord avec l'intent privilégié `MESSAGE CONTENT` activé
-- Une clé API Google Gemini
+- Un ID de compte Cloudflare
+- Un jeton API Cloudflare par environnement de déploiement
+- Un ID Cloudflare AI Gateway
 
 ## Installation
 
@@ -45,9 +47,14 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
    - L'entier de permissions correspondant est `2252126768139328`
    - Pour synchroniser également les réactions d'emojis personnalisés provenant d'autres serveurs, autorisez en plus `Use External Emojis` ; l'entier de permissions devient alors `2252126768401472`
 
-### 2. Obtenir une clé API Gemini
+### 2. Configurer Cloudflare Workers AI et AI Gateway
 
-Obtenez une clé API sur [Google AI Studio](https://aistudio.google.com/).
+1. Créez **un** jeton API Cloudflare par environnement de déploiement ; le périmètre est défini par l'opérateur.
+2. Créez un [AI Gateway](https://developers.cloudflare.com/ai-gateway/get-started/) pour ce compte et notez son ID (`CLOUDFLARE_AI_GATEWAY_ID`).
+3. Dans le tableau de bord Gateway, **activez le cache** et **désactivez la journalisation des payloads** (métadonnées uniquement).
+4. Laissez retry, fallback, routage dynamique, DLP et guardrails **désactivés** — le bot ne les utilise pas.
+
+Définissez `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` et `CLOUDFLARE_AI_GATEWAY_ID` dans `.env`. Ajustez optionnellement le débit avec `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (défaut `100000`).
 
 ### 3. Configurer les variables d'environnement
 
@@ -59,11 +66,13 @@ Modifiez `.env` et définissez les valeurs suivantes :
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-GEMINI_API_KEY=your-gemini-api-key
+CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
+CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
+CLOUDFLARE_AI_GATEWAY_ID=your-cloudflare-ai-gateway-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
-GEMINI_RATE_LIMIT_TOKENS_PER_MIN=100000
+TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
@@ -72,14 +81,34 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variable | Obligatoire | Description |
 |---|---|---|
 | `DISCORD_TOKEN` | Oui | Token du bot Discord |
-| `GEMINI_API_KEY` | Oui | Clé API Gemini |
+| `CLOUDFLARE_ACCOUNT_ID` | Oui | ID de compte Cloudflare pour Workers AI / AI Gateway |
+| `CLOUDFLARE_API_TOKEN` | Oui | Un jeton API par environnement de déploiement (périmètre défini par l'opérateur) |
+| `CLOUDFLARE_AI_GATEWAY_ID` | Oui | ID AI Gateway ; valeur différente par environnement si besoin |
 | `DB_PATH` | Non | Chemin vers le fichier SQLite (défaut : `./translator.db`) |
 | `HTTP_ADDR` | Non | Adresse du serveur de badge d'avatar (défaut : `:8080`) |
 | `PUBLIC_BASE_URL` | Non | URL de base publique pour les badges d'anneau d'avatar. Si non définie, les messages reflétés utilisent l'URL d'avatar Discord d'origine et le serveur de badge n'est pas utilisé |
-| `GEMINI_RATE_LIMIT_TOKENS_PER_MIN` | Non | Limite de jetons Gemini par serveur et par minute (défaut : `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Non | Limite de jetons Gemma 4 par serveur et par minute (défaut : `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Non | Limite de requêtes par IP et par minute pour le point de terminaison de badge `/avatar` (défaut : `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Non | Nombre de jours de conservation des `message_links` dans SQLite avant purge automatique. `0` (défaut) désactive la purge ; p. ex. `60` supprime les liens de plus de 60 jours au démarrage et toutes les 24 heures |
 | `GUILD_DATA_RETENTION_DAYS` | Non | Nombre de jours de conservation dans SQLite des données d'un serveur après le retrait du bot. `0` (défaut) désactive la purge ; p. ex. `30` purge au démarrage et toutes les 24 heures les données des serveurs retirés depuis plus de 30 jours. Un retour avant l'échéance annule la purge prévue |
+
+### Contrat opérationnel Cloudflare AI Gateway
+
+La traduction utilise `@cf/google/gemma-4-26b-a4b-it` via le [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) configuré. L'ID du modèle est fixé dans le code et ne peut pas être modifié par variable d'environnement.
+
+Le bot achemine toujours les requêtes de traduction via `CLOUDFLARE_AI_GATEWAY_ID`. Configurez **un** jeton API Cloudflare (`CLOUDFLARE_API_TOKEN`) par environnement de déploiement via variable d'environnement ; le périmètre est défini par l'opérateur.
+
+Paramètres de requête fixes : chat completions non streaming, délai HTTP **10 s**, **temperature 0.2**, **max_tokens 16384**, schéma JSON strict multilingue. Les paramètres reasoning/thinking sont omis (défaut du fournisseur).
+
+**Gateway (à maintenir dans votre tableau de bord) :**
+
+- **Cache** — activé ; le bot envoie le corps complet de la requête, sans en-tête de contournement de cache ni clé de cache personnalisée
+- **Journalisation** — métadonnées uniquement ; journalisation des payloads désactivée ; le bot envoie `cf-aig-collect-log-payload: false` et `cf-aig-metadata` avec seulement `guild_id` et `message_id`
+- **Fonctionnalités désactivées** — retry, fallback, routage dynamique, DLP et guardrails non utilisés
+
+Le bot ne journalise pas les prompts, réponses ni le jeton API. Le déploiement et le choix d'environnement (ID Gateway / compte) relèvent de l'utilisateur. Échecs de traduction et dépassements de limite : **fail-closed** — pas de duplication, notification localisée dans le salon source.
+
+L'offre Cloudflare Workers AI pour ce modèle étant en bêta, cette migration n'exécute pas de test A/B en direct ni de porte de qualité automatisée.
 
 ### 4. Démarrer
 
@@ -147,7 +176,7 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 
 - `language` utilise des codes BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Maximum 50 entrées de glossaire par serveur
-- `attribute` propose "nom de personne", "nom de lieu", "argot", "abréviation" et "terme technique", mais toute valeur peut être saisie librement. L'attribut est utilisé comme contexte pour que Gemini comprenne la signification du terme
+- `attribute` propose "nom de personne", "nom de lieu", "argot", "abréviation" et "terme technique", mais toute valeur peut être saisie librement. L'attribut est utilisé comme contexte pour que Gemma 4 comprenne la signification du terme
 - Les termes ordinaires ne sont ajoutés aux instructions système que si le message à traduire contient `term` (insensible à la casse). Les termes avec `always_include:true` sont toujours ajoutés
 - Si l'option `channel` est omise, la commande s'applique au salon dans lequel elle est exécutée
 - Types de salons pris en charge : texte, annonces, forum et média
