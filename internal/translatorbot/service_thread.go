@@ -7,21 +7,21 @@ import (
 )
 
 type threadCreateRequest struct {
-	GuildID                string
-	SourceChannelID        string
-	SourceThreadID         string
-	SourceMessageID        string
-	Name                   string
-	InitialMessageID       string
-	InitialMessageAuthor   string
-	InitialMessageUsername string
-	InitialMessageAvatar   string
+	GuildID                 string
+	SourceChannelID         string
+	SourceThreadID          string
+	SourceMessageID         string
+	Name                    string
+	InitialMessageID        string
+	InitialMessageAuthor    string
+	InitialMessageUsername  string
+	InitialMessageAvatar    string
 	InitialMessageRoleColor int
-	InitialMessageText     string
-	InitialMessageFiles    []DiscordAttachment
-	InitialMessageStickers []DiscordSticker
-	InitialMessageTTS      bool
-	DeferWithoutSourceMsg  bool
+	InitialMessageText      string
+	InitialMessageFiles     []DiscordAttachment
+	InitialMessageStickers  []DiscordSticker
+	InitialMessageTTS       bool
+	DeferWithoutSourceMsg   bool
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
@@ -91,7 +91,14 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel) (bool, error) {
 	languages := []string{target.Language}
 	contextFn := func() TranslationContext {
-		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, req.InitialMessageID, "", "", req.InitialMessageUsername, req.Name)
+		messageID := req.InitialMessageID
+		if messageID == "" {
+			messageID = req.SourceMessageID
+		}
+		if messageID == "" {
+			messageID = req.SourceThreadID
+		}
+		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, messageID, "", "", req.InitialMessageUsername, req.Name)
 	}
 	nameTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.Name, languages, contextFn)
 	if err != nil {
@@ -289,7 +296,7 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 			continue
 		}
 		contextFn := func() TranslationContext {
-			return TranslationContext{StyleInstructions: s.groupStyleInstructions(ctx, guildID, groupID)}
+			return TranslationContext{GuildID: guildID, MessageID: sourceThreadID, StyleInstructions: s.groupStyleInstructions(ctx, guildID, groupID)}
 		}
 		languages := make([]string, 0, len(pending))
 		for _, p := range pending {

@@ -37,12 +37,18 @@ func TestCurrentUserIDUsesRESTBeforeGatewayOpen(t *testing.T) {
 }
 
 func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
-	got := sanitizeWebhookName("Discord Gemini Auto Translator")
+	got := sanitizeWebhookName("Discord Auto Translator")
 	if strings.Contains(strings.ToLower(got), "discord") {
 		t.Fatalf("sanitized name still contains reserved word: %q", got)
 	}
-	if got != "D-scord Gemini Auto Translator" {
+	if got != "D-scord Auto Translator" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestDefaultWebhookNameIsProviderNeutral(t *testing.T) {
+	if defaultWebhookName != "Discord Auto Translator" {
+		t.Fatalf("defaultWebhookName = %q", defaultWebhookName)
 	}
 }
 

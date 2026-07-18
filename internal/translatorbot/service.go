@@ -213,6 +213,8 @@ func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, h
 
 func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
 	translationContext := TranslationContext{
+		GuildID:   guildID,
+		MessageID: excludeMessageID,
 		ServerName: bestEffortString(func() (string, error) {
 			return s.discord.GuildName(guildID)
 		}),

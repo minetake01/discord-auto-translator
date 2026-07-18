@@ -4,8 +4,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	"google.golang.org/genai"
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
@@ -254,40 +252,32 @@ func TestLanguageSuggestionsAllowRepresentativeCodes(t *testing.T) {
 }
 
 func TestMultiTranslationGenerateConfigSchema(t *testing.T) {
-	cfg := multiTranslationGenerateConfig([]string{"en", "ja", "zh-CN"}, "system instruction")
-	schema := cfg.ResponseSchema
-	if schema == nil {
-		t.Fatal("expected response schema")
-	}
-
+	schema := multiTranslationJSONSchema([]string{"en", "ja", "zh-CN"})
 	wantTopRequired := []string{"translations"}
-	if !slices.Equal(schema.Required, wantTopRequired) {
-		t.Fatalf("top-level Required = %#v, want %#v", schema.Required, wantTopRequired)
+	if !slices.Equal(schema["required"].([]string), wantTopRequired) || schema["additionalProperties"] != false {
+		t.Fatalf("unexpected top-level schema: %#v", schema)
 	}
-
+	properties := schema["properties"].(map[string]any)
 	for _, lang := range []string{"en", "ja", "zh-CN"} {
-		if _, ok := schema.Properties[lang]; ok {
+		if _, ok := properties[lang]; ok {
 			t.Fatalf("language code %q must not be a top-level property", lang)
 		}
 	}
-
-	translations := schema.Properties["translations"]
-	if translations == nil {
-		t.Fatal("missing translations property")
-	}
-	if translations.Type != genai.TypeArray || translations.MinItems == nil || *translations.MinItems != 3 || translations.MaxItems == nil || *translations.MaxItems != 3 {
+	translations := properties["translations"].(map[string]any)
+	if translations["type"] != "array" || translations["minItems"] != 3 || translations["maxItems"] != 3 {
 		t.Fatalf("unexpected translations array constraints: %#v", translations)
 	}
-	item := translations.Items
-	if item == nil || !slices.Equal(item.Required, []string{"language", "translated_text"}) {
+	item := translations["items"].(map[string]any)
+	if item["additionalProperties"] != false || !slices.Equal(item["required"].([]string), []string{"language", "translated_text"}) {
 		t.Fatalf("unexpected item schema: %#v", item)
 	}
-	language := item.Properties["language"]
-	if language == nil || language.Format != "enum" || !slices.Equal(language.Enum, []string{"en", "ja", "zh-CN"}) {
+	itemProperties := item["properties"].(map[string]any)
+	language := itemProperties["language"].(map[string]any)
+	if !slices.Equal(language["enum"].([]string), []string{"en", "ja", "zh-CN"}) {
 		t.Fatalf("unexpected language schema: %#v", language)
 	}
-	text := item.Properties["translated_text"]
-	if text == nil || text.MinLength == nil || *text.MinLength != 1 {
+	text := itemProperties["translated_text"].(map[string]any)
+	if text["minLength"] != 1 {
 		t.Fatalf("unexpected translated_text schema: %#v", text)
 	}
 }

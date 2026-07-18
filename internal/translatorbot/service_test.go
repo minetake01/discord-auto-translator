@@ -600,7 +600,7 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	if len(translator.contexts) != 1 {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
-	if got := translator.contexts[0]; got.ServerName != "Ship Room" || got.ServerDescription != "Release coordination server" || got.ChannelName != "announcements-ja" || got.ChannelTopic != "Japanese announcements" {
+	if got := translator.contexts[0]; got.GuildID != "guild" || got.MessageID != "100000000000000001" || got.ServerName != "Ship Room" || got.ServerDescription != "Release coordination server" || got.ChannelName != "announcements-ja" || got.ChannelTopic != "Japanese announcements" {
 		t.Fatalf("unexpected translation context: %#v", got)
 	}
 }
@@ -984,6 +984,9 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "[en] topic" {
 		t.Fatalf("unexpected thread sync: %#v", discord.threads)
 	}
+	if len(translator.contexts) != 1 || translator.contexts[0].GuildID != "guild" || translator.contexts[0].MessageID != "100000000000000005" {
+		t.Fatalf("thread name metadata context: %#v", translator.contexts)
+	}
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000017", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
@@ -1008,7 +1011,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 			break
 		}
 	}
-	if msgContext == nil || msgContext.ThreadName != "topic" {
+	if msgContext == nil || msgContext.GuildID != "guild" || msgContext.MessageID != "100000000000000017" || msgContext.ThreadName != "topic" {
 		t.Fatalf("unexpected thread name in context: %#v", translator.contexts)
 	}
 
