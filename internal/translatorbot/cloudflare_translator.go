@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	cloudflareModel            = "@cf/google/gemma-4-26b-a4b-it"
-	cloudflareAPIBaseURL       = "https://api.cloudflare.com/client/v4"
-	maxCloudflareResponseBytes = 1 << 20
+	cloudflareModel                        = "@cf/google/gemma-4-26b-a4b-it"
+	cloudflareAPIBaseURL                   = "https://api.cloudflare.com/client/v4"
+	maxCloudflareResponseBytes             = 1 << 20
+	translationCompletionBaseTokens        = 1024
+	translationCompletionTokensPerLanguage = 5000
 )
 
 type CloudflareTranslator struct {
@@ -36,12 +38,17 @@ func newCloudflareTranslator(baseURL, accountID, apiToken, gatewayID string, cli
 }
 
 type cloudflareChatRequest struct {
-	Model          string                   `json:"model"`
-	Messages       []cloudflareChatMessage  `json:"messages"`
-	Temperature    float64                  `json:"temperature"`
-	Stream         bool                     `json:"stream"`
-	MaxTokens      int                      `json:"max_tokens"`
-	ResponseFormat cloudflareResponseFormat `json:"response_format"`
+	Model               string                       `json:"model"`
+	Messages            []cloudflareChatMessage      `json:"messages"`
+	Temperature         float64                      `json:"temperature"`
+	Stream              bool                         `json:"stream"`
+	MaxCompletionTokens int                          `json:"max_completion_tokens"`
+	ChatTemplateKwargs  cloudflareChatTemplateKwargs `json:"chat_template_kwargs"`
+	ResponseFormat      cloudflareResponseFormat     `json:"response_format"`
+}
+
+type cloudflareChatTemplateKwargs struct {
+	EnableThinking bool `json:"enable_thinking"`
 }
 
 type cloudflareChatMessage struct {
@@ -86,9 +93,10 @@ func (t *CloudflareTranslator) TranslateMulti(ctx context.Context, targetLanguag
 			{Role: "system", Content: prepared.systemInstruction},
 			{Role: "user", Content: prepared.userPrompt},
 		},
-		Temperature: 0.2,
-		Stream:      false,
-		MaxTokens:   16384,
+		Temperature:         0.2,
+		Stream:              false,
+		MaxCompletionTokens: maxTranslationCompletionTokens(len(prepared.targetLanguages)),
+		ChatTemplateKwargs:  cloudflareChatTemplateKwargs{EnableThinking: false},
 		ResponseFormat: cloudflareResponseFormat{Type: "json_schema", JSONSchema: cloudflareJSONSchema{
 			Name: "translation_response", Strict: true, Schema: multiTranslationJSONSchema(prepared.targetLanguages),
 		}},
@@ -149,6 +157,13 @@ func (t *CloudflareTranslator) TranslateMulti(ctx context.Context, targetLanguag
 		result.InputTokens = EstimateTranslationTokens(prepared.systemInstruction+prepared.userPrompt, raw)
 	}
 	return result, nil
+}
+
+// maxTranslationCompletionTokens reserves a fixed allowance for reasoning and
+// the response envelope, plus enough room per language for a translation of a
+// Discord Nitro-sized (4,000 character) source message and JSON overhead.
+func maxTranslationCompletionTokens(languageCount int) int {
+	return translationCompletionBaseTokens + translationCompletionTokensPerLanguage*languageCount
 }
 
 func multiTranslationJSONSchema(targetLanguages []string) map[string]any {
