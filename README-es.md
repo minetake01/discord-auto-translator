@@ -4,7 +4,7 @@
 
 Un bot de Discord que permite a personas que hablan diferentes idiomas chatear juntas en el mismo servidor.
 
-Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje publicado en un canal se traduce al instante con `@cf/google/gemma-4-26b-a4b-it` vía Cloudflare AI Gateway y se replica en todos los demás canales del grupo, conservando el nombre y el avatar del autor original, de modo que cada canal se lee como una conversación natural en su propio idioma.
+Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje publicado en un canal se traduce al instante con `google.gemma-4-26b-a4b` vía Amazon Bedrock y se replica en todos los demás canales del grupo, conservando el nombre y el avatar del autor original, de modo que cada canal se lee como una conversación natural en su propio idioma.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-es (Español)
@@ -14,7 +14,7 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 - **Todo permanece sincronizado** — no solo los mensajes nuevos: ediciones, eliminaciones, respuestas, mensajes reenviados, reacciones, anclajes, hilos (canales de texto / foro / multimedia) y mensajes con solo archivos adjuntos se replican en todo el grupo.
 - **Los mensajes parecen enviados por su autor** — los mensajes replicados se envían mediante webhooks con el nombre y el avatar del autor original.
-- **Traducciones naturales** — Gemma 4 usa el nombre del canal, el tema y el historial reciente de la conversación como contexto; un glosario por servidor permite fijar las traducciones preferidas para nombres y jerga.
+- **Traducciones naturales** — Gemma 4 26B-A4B usa el nombre del canal, el tema y el historial reciente de la conversación como contexto; un glosario por servidor permite fijar las traducciones preferidas para nombres y jerga.
 - **Gestión inteligente de enlaces** — los enlaces y menciones que apuntan a canales o mensajes gestionados se reescriben hacia sus equivalentes en cada idioma, y las URL con alternativas `hreflang` se sustituyen por la versión en el idioma de destino.
 - **Eficiente y seguro** — los mensajes sin texto traducible (URL, menciones, emojis personalizados, código) se replican sin llamar a la API de traducción; se aplican límites de tasa de tokens por servidor; las URL, menciones y bloques de código están protegidos contra inyección de prompts. Ante fallos de traducción: fail-closed (sin replicar, notificación localizada en el canal de origen).
 - **Interfaz localizada** — las respuestas a los comandos siguen el idioma del cliente de Discord del usuario, y las notificaciones de canal usan el idioma configurado para ese canal (13 idiomas, inglés como respaldo).
@@ -23,9 +23,8 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 - Go 1.24 o superior
 - Una cuenta de bot de Discord con el intent privilegiado `MESSAGE CONTENT` habilitado
-- Un ID de cuenta de Cloudflare
-- Un token de API de Cloudflare por entorno de despliegue
-- Un ID de Cloudflare AI Gateway
+- Una cuenta de AWS con acceso a Amazon Bedrock y una clave IAM autorizada a crear inferencias en el proyecto Mantle predeterminado de `us-west-2`.
+- Un ID de Amazon Bedrock
 
 ## Configuración
 
@@ -47,14 +46,9 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
    - El entero de permisos para lo anterior es `2252126768139328`
    - Para sincronizar también reacciones de emojis personalizados de otros servidores, concede además `Use External Emojis`; el entero de permisos pasará a ser `2252126768401472`
 
-### 2. Configurar Cloudflare Workers AI y AI Gateway
+### 2. Configurar Amazon Bedrock
 
-1. Crea **un** token de API de Cloudflare por entorno de despliegue; el alcance lo define el operador.
-2. Crea un [AI Gateway](https://developers.cloudflare.com/ai-gateway/get-started/) para esa cuenta y anota su ID (`CLOUDFLARE_AI_GATEWAY_ID`).
-3. En el panel del Gateway, **habilita la caché** y **deshabilita el registro de payloads** (solo metadatos).
-4. Mantén retry, fallback, enrutamiento dinámico, DLP y guardrails **deshabilitados** — el bot no los usa.
-
-Configura `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` y `CLOUDFLARE_AI_GATEWAY_ID` en `.env`. Opcionalmente ajusta el rendimiento con `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (predeterminado `100000`).
+Habilita `google.gemma-4-26b-a4b` en Amazon Bedrock en `us-west-2`. Crea un usuario IAM con únicamente `bedrock-mantle:CreateInference` para el modelo y configura `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY` en `.env`. El modelo, la región, el tiempo de espera de 30 segundos y el límite de 4096 tokens están fijados en el código.
 
 ### 3. Configurar las variables de entorno
 
@@ -66,9 +60,8 @@ Edita `.env` y establece lo siguiente:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
-CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
-CLOUDFLARE_AI_GATEWAY_ID=your-cloudflare-ai-gateway-id
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -81,34 +74,19 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variable | Obligatorio | Descripción |
 |---|---|---|
 | `DISCORD_TOKEN` | Sí | Token del bot de Discord |
-| `CLOUDFLARE_ACCOUNT_ID` | Sí | ID de cuenta de Cloudflare para Workers AI / AI Gateway |
-| `CLOUDFLARE_API_TOKEN` | Sí | Un token de API por entorno de despliegue (alcance definido por el operador) |
-| `CLOUDFLARE_AI_GATEWAY_ID` | Sí | ID de AI Gateway; valor distinto por entorno si hace falta |
+| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
+| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
 | `DB_PATH` | No | Ruta al archivo SQLite (predeterminado: `./translator.db`) |
 | `HTTP_ADDR` | No | Dirección del servidor de insignia de avatar (predeterminado: `:8080`) |
 | `PUBLIC_BASE_URL` | No | URL base pública para insignias de anillo en avatares. Si no se establece, los mensajes reflejados usan la URL de avatar original de Discord y el servidor de insignias no se utiliza |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | Límite de tokens de Gemma 4 por servidor y por minuto (predeterminado: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | Límite de tokens de Gemma 4 26B-A4B por servidor y por minuto (predeterminado: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Límite de solicitudes por IP y por minuto para el endpoint de insignia `/avatar` (predeterminado: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Días de retención de `message_links` en SQLite antes de la purga automática. `0` (predeterminado) desactiva la purga; p. ej. `60` elimina enlaces de más de 60 días al inicio y cada 24 horas |
 | `GUILD_DATA_RETENTION_DAYS` | No | Días que se conservan en SQLite los datos de un servidor tras retirar el bot. `0` (predeterminado) desactiva la purga; p. ej. `30` elimina al inicio y cada 24 horas los datos de servidores retirados hace más de 30 días. Volver a unir el bot antes del vencimiento cancela la purga programada |
 
-### Contrato operativo de Cloudflare AI Gateway
+### Contrato operativo de Amazon Bedrock
 
-La traducción usa `@cf/google/gemma-4-26b-a4b-it` a través del [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) configurado. El ID del modelo está fijado en el código y no puede cambiarse por variable de entorno.
-
-El bot enruta siempre las solicitudes de traducción mediante `CLOUDFLARE_AI_GATEWAY_ID`. Configura **un** token de API de Cloudflare (`CLOUDFLARE_API_TOKEN`) por entorno de despliegue mediante variable de entorno; el alcance lo define el operador.
-
-Parámetros fijos de solicitud: chat completions sin streaming, tiempo de espera HTTP **10 s**, **temperature 0.2**, **max_tokens 16384**, esquema JSON estricto multilingüe. Se omiten parámetros reasoning/thinking (valor predeterminado del proveedor).
-
-**Gateway (mantener en tu panel):**
-
-- **Caché** — habilitada; el bot envía el cuerpo completo de la solicitud, sin cabecera de bypass de caché ni clave de caché personalizada
-- **Registro** — solo metadatos; registro de payloads deshabilitado; el bot envía `cf-aig-collect-log-payload: false` y `cf-aig-metadata` solo con `guild_id` y `message_id`
-- **Funciones deshabilitadas** — no se usan retry, fallback, enrutamiento dinámico, DLP ni guardrails
-
-El bot no registra prompts, respuestas ni el token de API. El despliegue y la elección de entorno (ID de Gateway / cuenta) son responsabilidad del usuario. Fallos de traducción y exceso de límite: **fail-closed** — no se replica el mensaje; el canal de origen recibe una notificación localizada.
-
-Al estar la oferta de Cloudflare Workers AI para este modelo en beta, esta migración no ejecuta pruebas A/B en vivo ni puertas de calidad automatizadas.
+La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `us-west-2`: espera de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; no hay reintentos, división ni fallback. El bot no registra prompts, respuestas ni credenciales. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
 
 ### 4. Ejecutar
 
@@ -176,7 +154,7 @@ Por defecto, los comandos de barra diagonal de administración solo pueden ejecu
 
 - `language` usa códigos BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Máximo 50 entradas de glosario por servidor
-- `attribute` sugiere "nombre de persona", "nombre de lugar", "argot", "abreviatura" y "término técnico", pero se puede introducir cualquier valor libremente. El atributo se usa como contexto para que Gemma 4 entienda el significado del término
+- `attribute` sugiere "nombre de persona", "nombre de lugar", "argot", "abreviatura" y "término técnico", pero se puede introducir cualquier valor libremente. El atributo se usa como contexto para que Gemma 4 26B-A4B entienda el significado del término
 - Los términos normales se añaden a las instrucciones del sistema solo si el mensaje a traducir contiene `term` (sin distinción de mayúsculas). Los términos con `always_include:true` siempre se añaden
 - Si se omite la opción `channel`, el comando se aplica al canal en el que se ejecutó
 - Tipos de canal admitidos: texto, anuncios, foro y multimedia

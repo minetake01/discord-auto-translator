@@ -9,9 +9,8 @@ import (
 
 func TestLoadConfigRequiresTokens(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "")
-	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
-	t.Setenv("CLOUDFLARE_API_TOKEN", "")
-	t.Setenv("CLOUDFLARE_AI_GATEWAY_ID", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 	if err == nil || !strings.Contains(err.Error(), "DISCORD_TOKEN") {
@@ -22,7 +21,7 @@ func TestLoadConfigRequiresTokens(t *testing.T) {
 func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nCLOUDFLARE_ACCOUNT_ID=account-id\nCLOUDFLARE_API_TOKEN=api-token\nCLOUDFLARE_AI_GATEWAY_ID=gateway-id\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nTRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nAWS_ACCESS_KEY_ID=access-key-id\nAWS_SECRET_ACCESS_KEY=secret-access-key\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nTRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -34,8 +33,8 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	if cfg.DiscordToken != "existing-token" {
 		t.Fatalf("DiscordToken = %q, want existing-token", cfg.DiscordToken)
 	}
-	if cfg.CloudflareAccountID != "account-id" || cfg.CloudflareAPIToken != "api-token" || cfg.CloudflareAIGatewayID != "gateway-id" {
-		t.Fatalf("unexpected Cloudflare config: account=%q token=%q gateway=%q", cfg.CloudflareAccountID, cfg.CloudflareAPIToken, cfg.CloudflareAIGatewayID)
+	if cfg.AWSAccessKeyID != "access-key-id" || cfg.AWSSecretAccessKey != "secret-access-key" {
+		t.Fatalf("unexpected AWS config: access=%q secret=%q", cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey)
 	}
 	if cfg.DBPath != "./from-file.db" {
 		t.Fatalf("DBPath = %q", cfg.DBPath)
@@ -56,7 +55,7 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredCloudflareConfig(t)
+	setRequiredAWSConfig(t)
 	t.Setenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -67,7 +66,7 @@ func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredCloudflareConfig(t)
+	setRequiredAWSConfig(t)
 	t.Setenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -95,7 +94,7 @@ func TestLoadConfigGuildDataRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			setRequiredCloudflareConfig(t)
+			setRequiredAWSConfig(t)
 			t.Setenv("GUILD_DATA_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -134,7 +133,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			setRequiredCloudflareConfig(t)
+			setRequiredAWSConfig(t)
 			t.Setenv("MESSAGE_LINK_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -156,7 +155,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredCloudflareConfig(t)
+	setRequiredAWSConfig(t)
 	t.Setenv("HTTP_ADDR", "not-a-listen-addr")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -167,7 +166,7 @@ func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredCloudflareConfig(t)
+	setRequiredAWSConfig(t)
 	t.Setenv("PUBLIC_BASE_URL", "ftp://example.com")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -176,19 +175,18 @@ func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRequiresEveryCloudflareValue(t *testing.T) {
+func TestLoadConfigRequiresEveryAWSValue(t *testing.T) {
 	tests := []struct {
 		name    string
 		missing string
 	}{
-		{name: "account", missing: "CLOUDFLARE_ACCOUNT_ID"},
-		{name: "token", missing: "CLOUDFLARE_API_TOKEN"},
-		{name: "gateway", missing: "CLOUDFLARE_AI_GATEWAY_ID"},
+		{name: "access key", missing: "AWS_ACCESS_KEY_ID"},
+		{name: "secret key", missing: "AWS_SECRET_ACCESS_KEY"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "discord-token")
-			setRequiredCloudflareConfig(t)
+			setRequiredAWSConfig(t)
 			t.Setenv(tt.missing, "")
 			_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 			if err == nil || !strings.Contains(err.Error(), tt.missing) {
@@ -198,9 +196,8 @@ func TestLoadConfigRequiresEveryCloudflareValue(t *testing.T) {
 	}
 }
 
-func setRequiredCloudflareConfig(t *testing.T) {
+func setRequiredAWSConfig(t *testing.T) {
 	t.Helper()
-	t.Setenv("CLOUDFLARE_ACCOUNT_ID", "account-id")
-	t.Setenv("CLOUDFLARE_API_TOKEN", "api-token")
-	t.Setenv("CLOUDFLARE_AI_GATEWAY_ID", "gateway-id")
+	t.Setenv("AWS_ACCESS_KEY_ID", "access-key-id")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-access-key")
 }

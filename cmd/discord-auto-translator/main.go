@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,9 +19,24 @@ import (
 )
 
 func main() {
-	cfg, err := translatorbot.LoadConfig(".env")
+	startup, err := parseStartupOptions(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
+	}
+	cfg, err := translatorbot.LoadConfig(startup.envFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	translator, err := translatorbot.NewBedrockTranslator(context.Background(), cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if startup.bedrockPrewarm {
+		if err := prewarmBedrock(context.Background(), translator); err != nil {
+			log.Fatal(err)
+		}
+		log.Println("Amazon Bedrock Gemma model access and response contract are ready")
+		return
 	}
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
 	if err != nil {
@@ -36,7 +53,6 @@ func main() {
 		log.Fatal(err)
 	}
 	lifecycle := newGuildLifecycleHandler(store, dg.State)
-	translator := translatorbot.NewCloudflareTranslator(cfg.CloudflareAccountID, cfg.CloudflareAPIToken, cfg.CloudflareAIGatewayID)
 	service := translatorbot.NewService(store, api, translator)
 	service.SetSelfBotUserID(selfBotUserID)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
@@ -208,6 +224,39 @@ func main() {
 	if err := store.Close(); err != nil {
 		log.Printf("store close: %v", err)
 	}
+}
+
+type startupOptions struct {
+	envFile        string
+	bedrockPrewarm bool
+}
+
+type bedrockWarmer interface {
+	WarmUp(context.Context) error
+}
+
+func prewarmBedrock(ctx context.Context, warmer bedrockWarmer) error {
+	prewarmCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	return warmer.WarmUp(prewarmCtx)
+}
+
+func parseStartupOptions(args []string) (startupOptions, error) {
+	fs := flag.NewFlagSet("discord-auto-translator", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var options startupOptions
+	fs.StringVar(&options.envFile, "env-file", ".env", "path to the environment file")
+	fs.BoolVar(&options.bedrockPrewarm, "bedrock-prewarm", false, "validate Bedrock model access and the response contract, then exit")
+	if err := fs.Parse(args); err != nil {
+		return startupOptions{}, err
+	}
+	if fs.NArg() != 0 {
+		return startupOptions{}, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	if strings.TrimSpace(options.envFile) == "" {
+		return startupOptions{}, errors.New("--env-file must not be empty")
+	}
+	return options, nil
 }
 
 func attachmentsFromDiscord(attachments []*discordgo.MessageAttachment) []translatorbot.DiscordAttachment {

@@ -4,7 +4,7 @@
 
 บอท Discord ที่ให้คนพูดภาษาต่างกันสามารถคุยด้วยกันในเซิร์ฟเวอร์เดียวกันได้
 
-เชื่อมต่อแต่ละช่องทางตามภาษาให้เป็น **กลุ่มแปลภาษา** ทุกข้อความที่โพสต์ในช่องทางหนึ่งจะถูกแปลทันทีโดย `@cf/google/gemma-4-26b-a4b-it` ผ่าน Cloudflare AI Gateway และสะท้อนไปยังช่องทางอื่น ๆ ทั้งหมดในกลุ่ม โดยยังคงชื่อและรูปอวาตาร์ของผู้ส่งต้นฉบับไว้ ทำให้แต่ละช่องทางอ่านได้เหมือนการสนทนาธรรมชาติในภาษาของตัวเอง
+เชื่อมต่อแต่ละช่องทางตามภาษาให้เป็น **กลุ่มแปลภาษา** ทุกข้อความที่โพสต์ในช่องทางหนึ่งจะถูกแปลทันทีโดย `google.gemma-4-26b-a4b` ผ่าน Amazon Bedrock และสะท้อนไปยังช่องทางอื่น ๆ ทั้งหมดในกลุ่ม โดยยังคงชื่อและรูปอวาตาร์ของผู้ส่งต้นฉบับไว้ ทำให้แต่ละช่องทางอ่านได้เหมือนการสนทนาธรรมชาติในภาษาของตัวเอง
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-th (ภาษาไทย)
@@ -14,7 +14,7 @@
 
 - **ทุกอย่างซิงค์กัน** — ไม่ใช่แค่ข้อความใหม่ แต่การแก้ไข การลบ การตอบกลับ ข้อความที่ส่งต่อ รีแอ็กชัน การปักหมุด เธรด (ช่องทางข้อความ / ฟอรัม / มีเดีย) และข้อความที่มีแต่ไฟล์แนบ ล้วนถูกสะท้อนไปยังทั้งกลุ่ม
 - **ข้อความดูเหมือนส่งมาจากผู้ส่งตัวจริง** — ข้อความที่สะท้อนจะส่งผ่านเว็บฮุกโดยใช้ชื่อและรูปอวาตาร์ของผู้เขียนต้นฉบับ
-- **การแปลที่เป็นธรรมชาติ** — Gemma 4 ใช้ชื่อช่องทาง หัวข้อ และประวัติการสนทนาล่าสุดเป็นบริบท นอกจากนี้คำศัพท์เฉพาะของเซิร์ฟเวอร์ยังช่วยกำหนดการแปลที่ต้องการสำหรับชื่อและศัพท์เฉพาะได้
+- **การแปลที่เป็นธรรมชาติ** — Gemma 4 26B-A4B ใช้ชื่อช่องทาง หัวข้อ และประวัติการสนทนาล่าสุดเป็นบริบท นอกจากนี้คำศัพท์เฉพาะของเซิร์ฟเวอร์ยังช่วยกำหนดการแปลที่ต้องการสำหรับชื่อและศัพท์เฉพาะได้
 - **จัดการลิงก์อย่างชาญฉลาด** — ลิงก์และการกล่าวถึงที่ชี้ไปยังช่องทางหรือข้อความที่จัดการอยู่จะถูกเขียนใหม่ให้ตรงกับช่องทางในแต่ละภาษา และ URL ที่มีทางเลือก `hreflang` จะถูกแทนที่ด้วยเวอร์ชันภาษาเป้าหมาย
 - **มีประสิทธิภาพและปลอดภัย** — ข้อความที่ไม่มีข้อความให้แปล (URL เมนชัน อีโมจิที่กำหนดเอง โค้ด) จะถูกสะท้อนโดยไม่เรียก API แปล มีการจำกัดอัตราโทเค็นต่อเซิร์ฟเวอร์ และ URL เมนชัน และบล็อกโค้ดได้รับการปกป้องจาก prompt injection เมื่อแปลล้มเหลว: fail-closed (ไม่สะท้อน แจ้งเตือนในช่องต้นทาง)
 - **อินเทอร์เฟซที่แปลเป็นภาษาท้องถิ่น** — การตอบสนองคำสั่งจะเป็นไปตามภาษาไคลเอนต์ Discord ของผู้ใช้ และการแจ้งเตือนช่องทางจะใช้ภาษาที่กำหนดไว้สำหรับช่องทางนั้น (รองรับ 13 ภาษา ใช้ภาษาอังกฤษเป็นค่าสำรอง)
@@ -23,9 +23,8 @@
 
 - Go 1.24 หรือใหม่กว่า
 - บัญชีบอท Discord ที่เปิดใช้งาน intent สิทธิพิเศษ `MESSAGE CONTENT`
-- Cloudflare account ID
-- Cloudflare API token หนึ่งรายการต่อสภาพแวดล้อมการ deploy
-- Cloudflare AI Gateway ID
+- บัญชี AWS ที่ใช้ Amazon Bedrock ได้ และคีย์ IAM ที่อนุญาตให้สร้าง inference ใน Mantle Project เริ่มต้นของ `us-west-2`
+- Amazon Bedrock ID
 
 ## การตั้งค่า
 
@@ -47,14 +46,9 @@
    - ค่าจำนวนเต็มของสิทธิ์สำหรับข้างต้นคือ `2252126768139328`
    - หากต้องการซิงค์รีแอ็กชันอีโมจิที่กำหนดเองจากเซิร์ฟเวอร์อื่นด้วย ให้อนุญาต `Use External Emojis` เพิ่มเติม ค่าจำนวนเต็มของสิทธิ์จะเป็น `2252126768401472`
 
-### 2. ตั้งค่า Cloudflare Workers AI และ AI Gateway
+### 2. ตั้งค่า Amazon Bedrock
 
-1. สร้าง Cloudflare API token **หนึ่งรายการ** ต่อสภาพแวดล้อมการ deploy โดยผู้ดำเนินการกำหนดขอบเขต
-2. สร้าง [AI Gateway](https://developers.cloudflare.com/ai-gateway/get-started/) สำหรับบัญชีนั้นและบันทึก ID (`CLOUDFLARE_AI_GATEWAY_ID`)
-3. ในแดชบอร์ด Gateway **เปิดใช้แคช** และ **ปิดการบันทึก payload** (เฉพาะ metadata)
-4. ปล่อย retry, fallback, dynamic routing, DLP และ guardrails **ปิดอยู่** — บอทไม่ใช้
-
-ตั้งค่า `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` และ `CLOUDFLARE_AI_GATEWAY_ID` ใน `.env` ปรับ throughput ได้ด้วย `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (ค่าเริ่มต้น `100000`)
+เปิดใช้ `google.gemma-4-26b-a4b` ใน Amazon Bedrock ภูมิภาค `us-west-2` สร้างผู้ใช้ IAM ที่มีเฉพาะ `bedrock-mantle:CreateInference` สำหรับโมเดล แล้วกำหนด `AWS_ACCESS_KEY_ID` และ `AWS_SECRET_ACCESS_KEY` ใน `.env` โมเดล ภูมิภาค timeout 30 วินาที และขีดจำกัด 4096 token ถูกกำหนดในโค้ด
 
 ### 3. กำหนดค่าตัวแปรสภาพแวดล้อม
 
@@ -66,9 +60,8 @@ cp .env.example .env
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
-CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
-CLOUDFLARE_AI_GATEWAY_ID=your-cloudflare-ai-gateway-id
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -81,34 +74,19 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | ตัวแปร | จำเป็น | คำอธิบาย |
 |---|---|---|
 | `DISCORD_TOKEN` | ใช่ | โทเค็นบอท Discord |
-| `CLOUDFLARE_ACCOUNT_ID` | ใช่ | Cloudflare account ID สำหรับ Workers AI / AI Gateway |
-| `CLOUDFLARE_API_TOKEN` | ใช่ | API token หนึ่งรายการต่อสภาพแวดล้อมการ deploy (ขอบเขตกำหนดโดยผู้ดำเนินการ) |
-| `CLOUDFLARE_AI_GATEWAY_ID` | ใช่ | AI Gateway ID ใช้ค่าต่างกันต่อสภาพแวดล้อมได้ |
+| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
+| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
 | `DB_PATH` | ไม่ | เส้นทางไฟล์ SQLite (ค่าเริ่มต้น: `./translator.db`) |
 | `HTTP_ADDR` | ไม่ | ที่อยู่เซิร์ฟเวอร์แบดจ์อวาตาร์ (ค่าเริ่มต้น: `:8080`) |
 | `PUBLIC_BASE_URL` | ไม่ | URL พื้นฐานสาธารณะสำหรับแบดจ์วงแหวนอวาตาร์ หากไม่ตั้งค่า ข้อความที่สะท้อนจะใช้ URL อวาตาร์ Discord เดิม และเซิร์ฟเวอร์แบดจ์จะไม่ถูกใช้งาน |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | ไม่ | จำกัดโทเค็น Gemma 4 ต่อเซิร์ฟเวอร์ต่อนาที (ค่าเริ่มต้น: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | ไม่ | จำกัดโทเค็น Gemma 4 26B-A4B ต่อเซิร์ฟเวอร์ต่อนาที (ค่าเริ่มต้น: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | ไม่ | จำกัดคำขอต่อ IP ต่อนาทีสำหรับ endpoint แบดจ์ `/avatar` (ค่าเริ่มต้น: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | ไม่ | จำนวนวันเก็บ `message_links` ใน SQLite ก่อนลบอัตโนมัติ `0` (ค่าเริ่มต้น) ปิดการลบ เช่น `60` จะลบลิงก์ที่เก่ากว่า 60 วันตอนเริ่มและทุก 24 ชั่วโมง |
 | `GUILD_DATA_RETENTION_DAYS` | ไม่ | จำนวนวันที่เก็บข้อมูล SQLite ของเซิร์ฟเวอร์หลังนำบอทออก `0` (ค่าเริ่มต้น) ปิดการลบ เช่น `30` จะลบข้อมูลของเซิร์ฟเวอร์ที่นำบอทออกเกิน 30 วันตอนเริ่มและทุก 24 ชั่วโมง หากเข้าร่วมใหม่ก่อนครบกำหนดจะยกเลิกการลบที่ตั้งไว้ |
 
-### สัญญาการดำเนินงาน Cloudflare AI Gateway
+### สัญญาการดำเนินงาน Amazon Bedrock
 
-การแปลใช้ `@cf/google/gemma-4-26b-a4b-it` ผ่าน [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) ที่กำหนดค่าไว้ รหัสโมเดลถูกตรึงในโค้ดและเปลี่ยนผ่านตัวแปรสภาพแวดล้อมไม่ได้
-
-บอทส่งคำขอแปลผ่าน `CLOUDFLARE_AI_GATEWAY_ID` เสมอ กำหนด Cloudflare API token **หนึ่งรายการ** (`CLOUDFLARE_API_TOKEN`) ต่อสภาพแวดล้อมการ deploy ผ่านตัวแปรสภาพแวดล้อม โดยผู้ดำเนินการกำหนดขอบเขต
-
-พารามิเตอร์คำขอคงที่: chat completions แบบ non-streaming, HTTP timeout **10 วินาที**, **temperature 0.2**, **max_tokens 16384**, strict JSON schema หลายภาษา ไม่ส่งพารามิเตอร์ reasoning/thinking (ค่าเริ่มต้นของผู้ให้บริการ)
-
-**Gateway (ต้องคงการตั้งค่าในแดชบอร์ด):**
-
-- **แคช** — เปิดใช้ บอทส่ง request body เต็ม ไม่ส่ง cache bypass header หรือ custom cache key
-- **การบันทึก** — เฉพาะ metadata ปิด payload logging บอทส่ง `cf-aig-collect-log-payload: false` และ `cf-aig-metadata` เฉพาะ `guild_id` กับ `message_id`
-- **ฟีเจอร์ที่ปิด** — ไม่ใช้ retry, fallback, dynamic routing, DLP, guardrails
-
-บอทไม่บันทึก prompt คำตอบ หรือ API token การ deploy และการเลือกสภาพแวดล้อม (Gateway ID / บัญชี) เป็นความรับผิดชอบของผู้ใช้ ความล้มเหลวในการแปลและเกิน rate limit: **fail-closed** — ไม่สะท้อนข้อความ แจ้งเตือนในช่องต้นทาง
-
-เนื่องจาก Cloudflare Workers AI สำหรับโมเดลนี้อยู่ในช่วง beta การย้ายครั้งนี้ไม่รัน A/B test สดหรือ quality gate อัตโนมัติ
+การแปลใช้ Mantle Responses API แบบไม่สตรีมกับ `google.gemma-4-26b-a4b` ใน `us-west-2` โดยมี timeout **30 วินาที**, **provider-default temperature 1.0**, **max_output_tokens 4096** และ JSON ที่กำกับด้วย schema และตรวจสอบอย่างเข้มงวดโดย Bot ทุกภาษาถูกสร้างในคำขอเดียว ขีดจำกัด 4K การหยุดผิดปกติ หรือ JSON ไม่ถูกต้องจะทำให้ทั้งหมดล้มเหลวแบบ fail-closed ไม่มี retry การแบ่ง หรือ fallback บอทไม่บันทึก prompt คำตอบ หรือข้อมูลรับรอง การ deploy บน GCE ตรวจสอบข้อมูลรับรอง การเข้าถึงโมเดล และสัญญาการตอบกลับ ก่อนแทนที่ด้วย `--bedrock-prewarm` ภายในห้านาที
 
 ### 4. เรียกใช้
 
@@ -176,7 +154,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 - `language` ใช้รหัส BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` เป็นต้น)
 - สูงสุด 50 รายการอภิธานศัพท์ต่อเซิร์ฟเวอร์
-- `attribute` แนะนำ "ชื่อบุคคล" "ชื่อสถานที่" "คำแสลง" "ตัวย่อ" และ "คำศัพท์เทคนิค" แต่สามารถป้อนค่าใดก็ได้อย่างอิสระ คุณลักษณะนี้ใช้เป็นบริบทให้ Gemma 4 เข้าใจความหมายของคำศัพท์
+- `attribute` แนะนำ "ชื่อบุคคล" "ชื่อสถานที่" "คำแสลง" "ตัวย่อ" และ "คำศัพท์เทคนิค" แต่สามารถป้อนค่าใดก็ได้อย่างอิสระ คุณลักษณะนี้ใช้เป็นบริบทให้ Gemma 4 26B-A4B เข้าใจความหมายของคำศัพท์
 - คำศัพท์ทั่วไปจะถูกเพิ่มในคำสั่งระบบเฉพาะเมื่อข้อความที่จะแปลมี `term` (ไม่คำนึงตัวพิมพ์เล็ก/ใหญ่) คำศัพท์ที่มี `always_include:true` จะถูกเพิ่มเสมอ
 - หากละเว้นตัวเลือก `channel` คำสั่งจะใช้กับช่องทางที่เรียกใช้คำสั่ง
 - ประเภทช่องทางที่รองรับ: ข้อความ ข่าวสาร ฟอรัม และมีเดีย
