@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -20,13 +21,16 @@ import (
 
 const (
 	bedrockModel          = "google.gemma-4-26b-a4b"
-	bedrockRegion         = "us-west-2"
 	bedrockService        = "bedrock-mantle"
-	bedrockResponsesURL   = "https://bedrock-mantle.us-west-2.api.aws/openai/v1/responses"
 	bedrockMaxTokens      = 4096
 	bedrockRequestTimeout = 30 * time.Second
 
 	bedrockTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
+)
+
+var (
+	validBedrockRegion    = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)+-[0-9]+$`)
+	validBedrockProjectID = regexp.MustCompile(`^(?:default|proj_[a-z0-9]+)$`)
 )
 
 type bedrockHTTPClient interface {
@@ -38,10 +42,13 @@ type bedrockRequestSigner interface {
 }
 
 type BedrockTranslator struct {
-	client      bedrockHTTPClient
-	signer      bedrockRequestSigner
-	credentials aws.CredentialsProvider
-	now         func() time.Time
+	client       bedrockHTTPClient
+	signer       bedrockRequestSigner
+	credentials  aws.CredentialsProvider
+	region       string
+	projectID    string
+	responsesURL string
+	now          func() time.Time
 }
 
 type bedrockResponsesRequest struct {
@@ -94,19 +101,37 @@ type bedrockErrorEnvelope struct {
 	} `json:"error"`
 }
 
-func NewBedrockTranslator(_ context.Context, accessKeyID, secretAccessKey string) (*BedrockTranslator, error) {
+func NewBedrockTranslator(_ context.Context, accessKeyID, secretAccessKey, region, projectID string) (*BedrockTranslator, error) {
 	if strings.TrimSpace(accessKeyID) == "" || strings.TrimSpace(secretAccessKey) == "" {
 		return nil, errors.New("AWS credentials are required")
+	}
+	region = strings.TrimSpace(region)
+	if !validBedrockRegion.MatchString(region) {
+		return nil, errors.New("AWS Bedrock region is invalid")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if !validBedrockProjectID.MatchString(projectID) {
+		return nil, errors.New("AWS Bedrock project ID is invalid")
 	}
 	return newBedrockTranslator(
 		http.DefaultClient,
 		v4.NewSigner(),
 		credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
+		region,
+		projectID,
 	), nil
 }
 
-func newBedrockTranslator(client bedrockHTTPClient, signer bedrockRequestSigner, provider aws.CredentialsProvider) *BedrockTranslator {
-	return &BedrockTranslator{client: client, signer: signer, credentials: provider, now: time.Now}
+func newBedrockTranslator(client bedrockHTTPClient, signer bedrockRequestSigner, provider aws.CredentialsProvider, region, projectID string) *BedrockTranslator {
+	return &BedrockTranslator{
+		client:       client,
+		signer:       signer,
+		credentials:  provider,
+		region:       region,
+		projectID:    projectID,
+		responsesURL: fmt.Sprintf("https://bedrock-mantle.%s.api.aws/openai/v1/responses", region),
+		now:          time.Now,
+	}
 }
 
 func (t *BedrockTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
@@ -151,18 +176,19 @@ func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared prep
 	if err != nil {
 		return MultiTranslationResult{}, errors.New("encode Amazon Bedrock translation request")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, bedrockResponsesURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.responsesURL, bytes.NewReader(body))
 	if err != nil {
 		return MultiTranslationResult{}, errors.New("create Amazon Bedrock translation request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("OpenAI-Project", t.projectID)
 	creds, err := t.credentials.Retrieve(ctx)
 	if err != nil {
 		return MultiTranslationResult{}, errors.New("retrieve AWS credentials")
 	}
 	sum := sha256.Sum256(body)
-	if err := t.signer.SignHTTP(ctx, creds, req, hex.EncodeToString(sum[:]), bedrockService, bedrockRegion, t.now()); err != nil {
+	if err := t.signer.SignHTTP(ctx, creds, req, hex.EncodeToString(sum[:]), bedrockService, t.region, t.now()); err != nil {
 		return MultiTranslationResult{}, errors.New("sign Amazon Bedrock translation request")
 	}
 	response, err := t.client.Do(req)

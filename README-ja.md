@@ -24,7 +24,7 @@
 - Go 1.24 以上
 - Discord ボットアカウント（`MESSAGE CONTENT` 特権インテントを有効化済み）
 - Amazon Bedrock を利用できる AWS アカウント
-- `us-west-2` のBedrock MantleデフォルトProjectで推論作成を許可した IAM アクセスキー
+- `your-aws-bedrock-region` のBedrock Mantle Project `your-aws-bedrock-project-id` で推論作成を許可した IAM アクセスキー
 
 ## セットアップ
 
@@ -48,11 +48,11 @@
 
 ### 2. Amazon Bedrock の設定
 
-1. AWSコンソールを `us-west-2` に切り替え、管理者権限で Amazon Bedrock のModel catalogから `google.gemma-4-26b-a4b` を開き、Playgroundで一度実行します。現在のBedrockは対応モデルを既定で利用可能にし、第三者モデルで必要なMarketplace契約を初回呼び出し時に自動処理するため、独立した「有効化」ボタンがない場合があります。契約処理には最大15分ほどかかることがあります。
-2. Bot専用 IAM ユーザーを作成し、AWS管理ポリシー `AmazonBedrockMantleInferenceAccess` を付与します。動作確認後に実Project ARNを使ったカスタムポリシーへ絞り込めます。
-3. そのユーザーのアクセスキーを作成し、`.env` に `AWS_ACCESS_KEY_ID` と `AWS_SECRET_ACCESS_KEY` を設定します。rootユーザーのアクセスキーは使用しません。
+1. AWSコンソールを `your-aws-bedrock-region` に切り替え、管理者権限で Amazon Bedrock のModel catalogから `google.gemma-4-26b-a4b` を開き、Playgroundで一度実行します。現在のBedrockは対応モデルを既定で利用可能にし、第三者モデルで必要なMarketplace契約を初回呼び出し時に自動処理するため、独立した「有効化」ボタンがない場合があります。契約処理には最大15分ほどかかることがあります。
+2. Bot専用 IAM ユーザーを作成し、AWS管理ポリシー `AmazonBedrockMantleInferenceAccess` を付与します。動作確認後、`arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id` に限定したカスタムポリシーへ絞り込みます。
+3. そのユーザーのアクセスキーを作成し、`.env` に `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION`、`AWS_BEDROCK_PROJECT_ID` を設定します。rootユーザーのアクセスキーは使用しません。
 
-モデル・リージョン・タイムアウト・出力上限はコード固定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。
+モデル・タイムアウト・出力上限はコード固定です。リージョンとProject IDはデプロイ先ごとの必須設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。
 
 ### 3. 環境変数の設定
 
@@ -66,6 +66,8 @@ cp .env.example .env
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -80,6 +82,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | 必須 | Discord ボットトークン |
 | `AWS_ACCESS_KEY_ID` | 必須 | Bedrock 専用 IAM ユーザーのアクセスキー ID |
 | `AWS_SECRET_ACCESS_KEY` | 必須 | Bedrock 専用 IAM ユーザーのシークレットアクセスキー |
+| `AWS_BEDROCK_REGION` | 必須 | Bedrock Mantleリージョン（例: `your-aws-bedrock-region`） |
+| `AWS_BEDROCK_PROJECT_ID` | 必須 | Bedrock Mantle Project ID（例: `your-aws-bedrock-project-id`） |
 | `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
 | `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |
@@ -90,7 +94,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 運用契約
 
-翻訳は `us-west-2` の `google.gemma-4-26b-a4b` を非ストリーミング Mantle Responses API で実行します。固定パラメータは実行時タイムアウト **30 秒**、**provider-default temperature 1.0**、**max_output_tokens 4096**、`store=false` です。Gemma 4はBedrock Structured Outputs非対応のため、固定JSON Schemaをsystem instructionへ含め、返された複数言語の `translations` 配列をBotが厳密検証します。
+翻訳は `AWS_BEDROCK_REGION` の `google.gemma-4-26b-a4b` を非ストリーミング Mantle Responses API で実行します。すべてのリクエストは `OpenAI-Project` ヘッダーで `AWS_BEDROCK_PROJECT_ID` に割り当てます。固定パラメータは実行時タイムアウト **30 秒**、**provider-default temperature 1.0**、**max_output_tokens 4096**、`store=false` です。Gemma 4はBedrock Structured Outputs非対応のため、固定JSON Schemaをsystem instructionへ含め、返された複数言語の `translations` 配列をBotが厳密検証します。
 
 対象言語すべてを1回のリクエストで生成します。4K出力上限への到達、正常以外の終了理由、不正JSON、言語タグの欠落・順序違い、空の翻訳、余分なフィールドは全体失敗です。retry、リクエスト分割、別プロバイダーへのfallback、互換経路はありません。
 

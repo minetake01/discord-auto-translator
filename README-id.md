@@ -23,7 +23,7 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
 
 - Go 1.24 atau lebih baru
 - Akun bot Discord dengan intent istimewa `MESSAGE CONTENT` diaktifkan
-- Akun AWS dengan akses Amazon Bedrock dan kunci IAM yang dapat membuat inferensi pada Project Mantle default di `us-west-2`.
+- Akun AWS dengan akses Amazon Bedrock dan kunci IAM yang dapat membuat inferensi pada Project Mantle `your-aws-bedrock-project-id` di `your-aws-bedrock-region`.
 - ID Amazon Bedrock
 
 ## Pengaturan
@@ -48,7 +48,7 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
 
 ### 2. Konfigurasi Amazon Bedrock
 
-Aktifkan `google.gemma-4-26b-a4b` di Amazon Bedrock wilayah `us-west-2`. Buat pengguna IAM dengan hanya `bedrock-mantle:CreateInference` untuk model tersebut, lalu atur `AWS_ACCESS_KEY_ID` dan `AWS_SECRET_ACCESS_KEY` di `.env`. Model, region, timeout 30 detik, dan batas 4096 token ditetapkan di kode.
+Aktifkan `google.gemma-4-26b-a4b` di Amazon Bedrock wilayah `your-aws-bedrock-region`. Buat pengguna IAM dengan hanya `bedrock-mantle:CreateInference` untuk model tersebut, lalu atur `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, dan `AWS_BEDROCK_PROJECT_ID` di `.env`. Model, timeout 30 detik, dan batas 4096 token ditetapkan di kode; region dan Project ID adalah konfigurasi deployment lokal yang wajib.
 
 ### 3. Konfigurasi variabel lingkungan
 
@@ -62,6 +62,8 @@ Edit `.env` dan atur nilai berikut:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Ya | Token bot Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | Tidak | Jalur ke file SQLite (default: `./translator.db`) |
 | `HTTP_ADDR` | Tidak | Alamat server badge avatar (default: `:8080`) |
 | `PUBLIC_BASE_URL` | Tidak | URL dasar publik untuk badge cincin avatar. Jika tidak diatur, pesan yang dicerminkan menggunakan URL avatar Discord asli dan server badge tidak digunakan |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Kontrak operasional Amazon Bedrock
 
-Terjemahan memakai Mantle Responses API non-streaming dengan `google.gemma-4-26b-a4b` di `us-west-2`: timeout **30 detik**, **provider-default temperature 1.0**, **max_output_tokens 4096**, dan JSON berpanduan schema yang divalidasi ketat oleh bot. Semua bahasa dibuat dalam satu permintaan. Batas 4K, penghentian abnormal, atau JSON tidak valid membuat semuanya gagal secara fail-closed; tidak ada retry, pemisahan, atau fallback. Bot tidak mencatat prompt, respons, atau kredensial. Deployment GCE memvalidasi kredensial, akses model, dan kontrak respons sebelum penggantian melalui `--bedrock-prewarm` dengan batas lima menit.
+Terjemahan memakai Mantle Responses API non-streaming dengan `google.gemma-4-26b-a4b` di `your-aws-bedrock-region`; setiap permintaan ditetapkan ke Project `your-aws-bedrock-project-id` melalui header `OpenAI-Project`: timeout **30 detik**, **provider-default temperature 1.0**, **max_output_tokens 4096**, dan JSON berpanduan schema yang divalidasi ketat oleh bot. Semua bahasa dibuat dalam satu permintaan. Batas 4K, penghentian abnormal, atau JSON tidak valid membuat semuanya gagal secara fail-closed; tidak ada retry, pemisahan, atau fallback. Bot tidak mencatat prompt, respons, atau kredensial. Deployment GCE memvalidasi kredensial, akses model, dan kontrak respons sebelum penggantian melalui `--bedrock-prewarm` dengan batas lima menit.
 
 ### 4. Jalankan
 

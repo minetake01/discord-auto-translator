@@ -23,7 +23,7 @@
 
 - Go 1.24 或更高版本
 - 已启用 `MESSAGE CONTENT` 特权 Intent 的 Discord 机器人账号
-- 可使用 Amazon Bedrock 的 AWS 账户，以及允许在 `us-west-2` 默认 Mantle Project 中创建推理的 IAM 访问密钥
+- 可使用 Amazon Bedrock 的 AWS 账户，以及允许在 `your-aws-bedrock-region` 的 Mantle Project `your-aws-bedrock-project-id` 中创建推理的 IAM 访问密钥
 - Amazon Bedrock ID
 
 ## 安装配置
@@ -48,7 +48,7 @@
 
 ### 2. 配置 Amazon Bedrock
 
-在 `us-west-2` 的 Amazon Bedrock 中启用 `google.gemma-4-26b-a4b`。创建仅对该模型拥有 `bedrock-mantle:CreateInference` 权限的 IAM 用户，并在 `.env` 中设置 `AWS_ACCESS_KEY_ID` 和 `AWS_SECRET_ACCESS_KEY`。模型、区域、30 秒超时和 4096 token 上限固定在代码中。
+在 `your-aws-bedrock-region` 的 Amazon Bedrock 中启用 `google.gemma-4-26b-a4b`。创建仅对该模型拥有 `bedrock-mantle:CreateInference` 权限的 IAM 用户，并在 `.env` 中设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 和 `AWS_BEDROCK_PROJECT_ID`。模型、30 秒超时和 4096 token 上限固定在代码中；区域和 Project ID 是必需的本地部署设置。
 
 ### 3. 配置环境变量
 
@@ -62,6 +62,8 @@ cp .env.example .env
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | 是 | Discord 机器人令牌 |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | 否 | SQLite 文件路径（默认: `./translator.db`） |
 | `HTTP_ADDR` | 否 | 头像徽章服务器地址（默认: `:8080`） |
 | `PUBLIC_BASE_URL` | 否 | 头像环徽章的公开基础 URL。未设置时，镜像消息使用 Discord 原始头像 URL，不会使用徽章服务器 |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 运营约定
 
-翻译使用 `us-west-2` 中 `google.gemma-4-26b-a4b` 的非流式 Mantle Responses API，固定 **30 秒**超时、**provider-default temperature 1.0**、**max_output_tokens 4096** 和由 schema 指引并由 Bot 严格校验的 JSON。所有语言在一次请求中生成。4K 上限、异常停止或无效 JSON 会使整体 fail-closed；没有重试、拆分或 fallback。Bot 不记录 prompt、响应或凭据。GCE 部署在替换前使用五分钟期限的 `--bedrock-prewarm` 验证凭据、模型访问权限和响应契约。
+翻译使用 `your-aws-bedrock-region` 中 `google.gemma-4-26b-a4b` 的非流式 Mantle Responses API，并通过 `OpenAI-Project` 标头将所有请求分配给 Project `your-aws-bedrock-project-id`，固定 **30 秒**超时、**provider-default temperature 1.0**、**max_output_tokens 4096** 和由 schema 指引并由 Bot 严格校验的 JSON。所有语言在一次请求中生成。4K 上限、异常停止或无效 JSON 会使整体 fail-closed；没有重试、拆分或 fallback。Bot 不记录 prompt、响应或凭据。GCE 部署在替换前使用五分钟期限的 `--bedrock-prewarm` 验证凭据、模型访问权限和响应契约。
 
 ### 4. 启动
 

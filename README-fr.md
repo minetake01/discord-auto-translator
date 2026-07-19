@@ -23,7 +23,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 - Go 1.24 ou version ultérieure
 - Un compte bot Discord avec l'intent privilégié `MESSAGE CONTENT` activé
-- Un compte AWS avec accès à Amazon Bedrock et une clé IAM autorisée à créer des inférences dans le projet Mantle par défaut de `us-west-2`.
+- Un compte AWS avec accès à Amazon Bedrock et une clé IAM autorisée à créer des inférences dans le Project Mantle `your-aws-bedrock-project-id` de `your-aws-bedrock-region`.
 - Un ID Amazon Bedrock
 
 ## Installation
@@ -48,7 +48,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 ### 2. Configurer Amazon Bedrock
 
-Activez `google.gemma-4-26b-a4b` dans Amazon Bedrock en région `us-west-2`. Créez un utilisateur IAM avec uniquement `bedrock-mantle:CreateInference` pour ce modèle et définissez `AWS_ACCESS_KEY_ID` et `AWS_SECRET_ACCESS_KEY` dans `.env`. Le modèle, la région, le délai de 30 secondes et la limite de 4096 jetons sont fixés dans le code.
+Activez `google.gemma-4-26b-a4b` dans Amazon Bedrock en région `your-aws-bedrock-region`. Créez un utilisateur IAM avec uniquement `bedrock-mantle:CreateInference` pour ce modèle et définissez `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` et `AWS_BEDROCK_PROJECT_ID` dans `.env`. Le modèle, le délai de 30 secondes et la limite de 4096 jetons sont fixés dans le code ; la région et le Project ID sont des paramètres locaux obligatoires du déploiement.
 
 ### 3. Configurer les variables d'environnement
 
@@ -62,6 +62,8 @@ Modifiez `.env` et définissez les valeurs suivantes :
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Oui | Token du bot Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | Non | Chemin vers le fichier SQLite (défaut : `./translator.db`) |
 | `HTTP_ADDR` | Non | Adresse du serveur de badge d'avatar (défaut : `:8080`) |
 | `PUBLIC_BASE_URL` | Non | URL de base publique pour les badges d'anneau d'avatar. Si non définie, les messages reflétés utilisent l'URL d'avatar Discord d'origine et le serveur de badge n'est pas utilisé |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contrat opérationnel Amazon Bedrock
 
-La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `us-west-2` : délai de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; aucun retry, découpage ou fallback. Le bot ne journalise ni prompts, ni réponses, ni identifiants. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
+La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `your-aws-bedrock-region` : délai de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; aucun retry, découpage ou fallback. Le bot ne journalise ni prompts, ni réponses, ni identifiants. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
 
 ### 4. Démarrer
 
