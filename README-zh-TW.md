@@ -4,7 +4,7 @@
 
 一個讓使用不同語言的使用者能在同一個 Discord 伺服器中一起聊天的機器人。
 
-為每種語言準備一個頻道，並將它們連結為一個**翻譯群組**。當某個頻道有新訊息時，`@cf/google/gemma-4-26b-a4b-it`（經 Cloudflare AI Gateway）會立即翻譯並鏡像到群組內所有其他頻道 — 保留原發送者的名稱與頭像 — 讓每個頻道讀起來都像是以該語言進行的自然對話。
+為每種語言準備一個頻道，並將它們連結為一個**翻譯群組**。當某個頻道有新訊息時，`google.gemma-4-26b-a4b`（經 Amazon Bedrock）會立即翻譯並鏡像到群組內所有其他頻道 — 保留原發送者的名稱與頭像 — 讓每個頻道讀起來都像是以該語言進行的自然對話。
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
@@ -14,7 +14,7 @@
 
 - **全面同步** — 不只是新訊息：編輯、刪除、回覆、轉發訊息、表情反應、釘選、討論串（文字 / 論壇 / 媒體頻道）以及僅含附件的訊息，都會在整個群組內鏡像同步。
 - **訊息如同本人發送** — 鏡像訊息透過 Webhook 發送，顯示原作者的名稱與頭像。
-- **自然的翻譯** — Gemma 4 會參考頻道名稱、主題與最近的對話紀錄作為上下文；每個伺服器還可設定詞彙表，為人名與專業術語指定固定譯法。
+- **自然的翻譯** — Gemma 4 26B-A4B 會參考頻道名稱、主題與最近的對話紀錄作為上下文；每個伺服器還可設定詞彙表，為人名與專業術語指定固定譯法。
 - **智慧連結處理** — 指向受管理頻道或訊息的連結與提及會被改寫為各語言頻道的對應目標；具有 `hreflang` 替代版本的 URL 會替換為目標語言版本。
 - **高效且安全** — 沒有可翻譯文字的訊息（僅含 URL、提及、自訂表情、程式碼）會直接鏡像而不呼叫翻譯 API；每個伺服器有權杖速率限制；URL、提及與程式碼區塊受到提示詞注入防護。翻譯失敗時採 fail-closed（不鏡像，於來源頻道發送本地化通知）。
 - **在地化介面** — 指令回應依使用者的 Discord 用戶端語言顯示，頻道通知使用頻道設定的語言（支援 13 種語言，未支援語言以英文顯示）。
@@ -23,9 +23,8 @@
 
 - Go 1.24 或更新版本
 - 已啟用 `MESSAGE CONTENT` 特權 Intent 的 Discord 機器人帳號
-- Cloudflare 帳戶 ID
-- 每個部署環境一個 Cloudflare API 權杖
-- Cloudflare AI Gateway ID
+- 可使用 Amazon Bedrock 的 AWS 帳戶，以及允許在 `us-west-2` 預設 Mantle Project 中建立推論的 IAM 存取金鑰
+- Amazon Bedrock ID
 
 ## 安裝設定
 
@@ -47,14 +46,9 @@
    - 上述權限的整數值為 `2252126768139328`
    - 若也要同步來自其他伺服器的自訂表情反應，請額外授予 `Use External Emojis`，此時權限整數值為 `2252126768401472`
 
-### 2. 設定 Cloudflare Workers AI 與 AI Gateway
+### 2. 設定 Amazon Bedrock
 
-1. 為每個部署環境建立 **一個** Cloudflare API 權杖，範圍由營運方自行設定。
-2. 在該帳戶下建立 [AI Gateway](https://developers.cloudflare.com/ai-gateway/get-started/) 並記錄其 ID（`CLOUDFLARE_AI_GATEWAY_ID`）。
-3. 在 Gateway 控制台中 **啟用快取**、**停用載荷日誌**（僅中繼資料）。
-4. 保持 retry、fallback、動態路由、DLP、guardrails **停用** — 本機器人不使用它們。
-
-在 `.env` 中設定 `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_AI_GATEWAY_ID`。可透過 `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（預設 `100000`）調整每伺服器權杖吞吐。
+在 `us-west-2` 的 Amazon Bedrock 中啟用 `google.gemma-4-26b-a4b`。建立僅對該模型擁有 `bedrock-mantle:CreateInference` 權限的 IAM 使用者，並在 `.env` 設定 `AWS_ACCESS_KEY_ID` 與 `AWS_SECRET_ACCESS_KEY`。模型、區域、30 秒逾時與 4096 token 上限固定於程式碼中。
 
 ### 3. 設定環境變數
 
@@ -66,9 +60,8 @@ cp .env.example .env
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-CLOUDFLARE_ACCOUNT_ID=your-cloudflare-account-id
-CLOUDFLARE_API_TOKEN=your-cloudflare-api-token
-CLOUDFLARE_AI_GATEWAY_ID=your-cloudflare-ai-gateway-id
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -81,34 +74,19 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | 變數 | 必要 | 說明 |
 |---|---|---|
 | `DISCORD_TOKEN` | 必要 | Discord 機器人權杖 |
-| `CLOUDFLARE_ACCOUNT_ID` | 是 | Workers AI / AI Gateway 的 Cloudflare 帳戶 ID |
-| `CLOUDFLARE_API_TOKEN` | 是 | 每個部署環境一個 API 權杖（範圍由營運方設定） |
-| `CLOUDFLARE_AI_GATEWAY_ID` | 是 | AI Gateway ID；可依環境使用不同值 |
+| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
+| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
 | `DB_PATH` | 選用 | SQLite 檔案路徑（預設: `./translator.db`） |
 | `HTTP_ADDR` | 選用 | 頭像徽章伺服器位址（預設: `:8080`） |
 | `PUBLIC_BASE_URL` | 選用 | 頭像環徽章的公開基礎 URL。未設定時，鏡像訊息使用 Discord 原始頭像 URL，不會使用徽章伺服器 |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 選用 | 每個伺服器每分鐘的 Gemma 4 權杖上限（預設: `100000`） |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 選用 | 每個伺服器每分鐘的 Gemma 4 26B-A4B 權杖上限（預設: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 選用 | `/avatar` 徽章端點的每 IP 每分鐘請求上限（預設: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 選用 | SQLite 中 `message_links` 自動清理前的保留天數。`0`（預設）停用清理；例如 `60` 會在啟動時及每 24 小時刪除超過 60 天的連結 |
 | `GUILD_DATA_RETENTION_DAYS` | 選用 | Bot 從伺服器移除後，該伺服器 SQLite 資料的保留天數。`0`（預設）停用清理；例如 `30` 會在啟動時及每 24 小時刪除已移除超過 30 天的伺服器資料。到期前重新加入會取消排定的刪除 |
 
-### Cloudflare AI Gateway 營運約定
+### Amazon Bedrock 營運約定
 
-翻譯透過已設定的 [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/) 呼叫 `@cf/google/gemma-4-26b-a4b-it`。模型 ID 在程式碼中固定，無法透過環境變數變更。
-
-機器人始終透過 `CLOUDFLARE_AI_GATEWAY_ID` 路由翻譯請求。每個部署環境透過環境變數設定 **一個** Cloudflare API 權杖（`CLOUDFLARE_API_TOKEN`），範圍由營運方自行設定。
-
-固定請求參數：非串流 chat completions、HTTP 逾時 **10 秒**、**temperature 0.2**、**max_tokens 16384**、多語言 strict JSON schema。不傳送 reasoning/thinking 參數（使用提供商預設）。
-
-**Gateway（需在控制台保持如下設定）:**
-
-- **快取** — 啟用；機器人傳送完整請求本文，不傳送 cache bypass 標頭或自訂 cache key
-- **日誌** — 僅中繼資料；Gateway 載荷日誌停用；機器人傳送 `cf-aig-collect-log-payload: false`，`cf-aig-metadata` 僅含 `guild_id` 與 `message_id`
-- **停用功能** — 不使用 retry、fallback、動態路由、DLP、guardrails
-
-機器人不記錄提示詞、回應或 API 權杖。部署與環境選擇（Gateway ID / 帳戶）由使用者自行負責。翻譯失敗或超出速率限制時 **fail-closed** — 不鏡像訊息，於來源頻道發送本地化通知。
-
-因 Cloudflare Workers AI 對該模型的提供處於 beta，本次遷移不執行即時 A/B 測試或自動品質閘門。
+翻譯使用 `us-west-2` 中 `google.gemma-4-26b-a4b` 的非串流 Mantle Responses API，固定 **30 秒**逾時、**provider-default temperature 1.0**、**max_output_tokens 4096** 與由 schema 指引並由 Bot 嚴格驗證的 JSON。所有語言在一次請求中產生。4K 上限、異常停止或無效 JSON 會使整體 fail-closed；沒有重試、分割或 fallback。Bot 不記錄 prompt、回應或憑證。GCE 部署在替換前使用五分鐘期限的 `--bedrock-prewarm` 驗證憑證、模型存取權與回應契約。
 
 ### 4. 啟動
 
@@ -176,7 +154,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每個伺服器最多可註冊 50 筆詞彙
-- `attribute` 會提示「人名」「地名」「俚語」「縮寫」「專業術語」等候選，也可自由輸入任意屬性。指定的屬性將作為 Gemma 4 判斷詞彙含義的上下文
+- `attribute` 會提示「人名」「地名」「俚語」「縮寫」「專業術語」等候選，也可自由輸入任意屬性。指定的屬性將作為 Gemma 4 26B-A4B 判斷詞彙含義的上下文
 - 一般詞彙僅在待翻譯內文包含 `term`（不分大小寫）時才會加入系統指令；`always_include:true` 的詞彙則永遠加入
 - 省略 `channel` 選項時，指令作用於執行指令的頻道
 - 支援的頻道類型：文字、公告、論壇、媒體

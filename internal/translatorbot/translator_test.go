@@ -1,7 +1,6 @@
 package translatorbot
 
 import (
-	"slices"
 	"strings"
 	"testing"
 )
@@ -248,37 +247,6 @@ func TestLanguageSuggestionsAllowRepresentativeCodes(t *testing.T) {
 	got := LanguageSuggestions("zh", 25)
 	if len(got) != 2 || got[0] != "zh-CN" || got[1] != "zh-TW" {
 		t.Fatalf("unexpected suggestions: %#v", got)
-	}
-}
-
-func TestMultiTranslationGenerateConfigSchema(t *testing.T) {
-	schema := multiTranslationJSONSchema([]string{"en", "ja", "zh-CN"})
-	wantTopRequired := []string{"translations"}
-	if !slices.Equal(schema["required"].([]string), wantTopRequired) || schema["additionalProperties"] != false {
-		t.Fatalf("unexpected top-level schema: %#v", schema)
-	}
-	properties := schema["properties"].(map[string]any)
-	for _, lang := range []string{"en", "ja", "zh-CN"} {
-		if _, ok := properties[lang]; ok {
-			t.Fatalf("language code %q must not be a top-level property", lang)
-		}
-	}
-	translations := properties["translations"].(map[string]any)
-	if translations["type"] != "array" || translations["minItems"] != 3 || translations["maxItems"] != 3 {
-		t.Fatalf("unexpected translations array constraints: %#v", translations)
-	}
-	item := translations["items"].(map[string]any)
-	if item["additionalProperties"] != false || !slices.Equal(item["required"].([]string), []string{"language", "translated_text"}) {
-		t.Fatalf("unexpected item schema: %#v", item)
-	}
-	itemProperties := item["properties"].(map[string]any)
-	language := itemProperties["language"].(map[string]any)
-	if !slices.Equal(language["enum"].([]string), []string{"en", "ja", "zh-CN"}) {
-		t.Fatalf("unexpected language schema: %#v", language)
-	}
-	text := itemProperties["translated_text"].(map[string]any)
-	if text["minLength"] != 1 {
-		t.Fatalf("unexpected translated_text schema: %#v", text)
 	}
 }
 

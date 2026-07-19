@@ -3,11 +3,14 @@ module discord-auto-translator
 go 1.24
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.42.1
+	github.com/aws/aws-sdk-go-v2/credentials v1.19.29
 	github.com/bwmarrin/discordgo v0.29.0
 	modernc.org/sqlite v1.38.2
 )
 
 require (
+	github.com/aws/smithy-go v1.27.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

@@ -252,6 +252,12 @@ Invoke-Checked "gcloud" @scpArgs
 
 $remoteDeployCommand = @"
 set -eu
+chmod 700 '$RemoteStagingDir/$BinaryName'
+if [ -f '$RemoteStagingDir/$envBaseName' ]; then
+    '$RemoteStagingDir/$BinaryName' --env-file '$RemoteStagingDir/$envBaseName' --bedrock-prewarm
+else
+    '$RemoteStagingDir/$BinaryName' --env-file '$($config.AppDir)/.env' --bedrock-prewarm
+fi
 sudo mkdir -p '$($config.AppDir)'
 sudo install -m 755 '$RemoteStagingDir/$BinaryName' '$($config.AppDir)/$BinaryName'
 if [ -f '$RemoteStagingDir/$envBaseName' ]; then

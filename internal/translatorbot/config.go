@@ -16,9 +16,8 @@ const MaxRetentionDays = int((1<<63 - 1) / (24 * time.Hour))
 
 type Config struct {
 	DiscordToken                     string
-	CloudflareAccountID              string
-	CloudflareAPIToken               string
-	CloudflareAIGatewayID            string
+	AWSAccessKeyID                   string
+	AWSSecretAccessKey               string
 	DBPath                           string
 	HTTPAddr                         string
 	PublicBaseURL                    string
@@ -31,13 +30,12 @@ type Config struct {
 func LoadConfig(path string) (Config, error) {
 	_ = loadDotEnv(path)
 	cfg := Config{
-		DiscordToken:          os.Getenv("DISCORD_TOKEN"),
-		CloudflareAccountID:   os.Getenv("CLOUDFLARE_ACCOUNT_ID"),
-		CloudflareAPIToken:    os.Getenv("CLOUDFLARE_API_TOKEN"),
-		CloudflareAIGatewayID: os.Getenv("CLOUDFLARE_AI_GATEWAY_ID"),
-		DBPath:                os.Getenv("DB_PATH"),
-		HTTPAddr:              os.Getenv("HTTP_ADDR"),
-		PublicBaseURL:         strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		DiscordToken:       os.Getenv("DISCORD_TOKEN"),
+		AWSAccessKeyID:     os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		DBPath:             os.Getenv("DB_PATH"),
+		HTTPAddr:           os.Getenv("HTTP_ADDR"),
+		PublicBaseURL:      strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
 	}
 	if raw := strings.TrimSpace(os.Getenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN")); raw != "" {
 		limit, err := strconv.Atoi(raw)
@@ -92,14 +90,11 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.DiscordToken == "" {
 		return cfg, errors.New("DISCORD_TOKEN is required")
 	}
-	if cfg.CloudflareAccountID == "" {
-		return cfg, errors.New("CLOUDFLARE_ACCOUNT_ID is required")
+	if cfg.AWSAccessKeyID == "" {
+		return cfg, errors.New("AWS_ACCESS_KEY_ID is required")
 	}
-	if cfg.CloudflareAPIToken == "" {
-		return cfg, errors.New("CLOUDFLARE_API_TOKEN is required")
-	}
-	if cfg.CloudflareAIGatewayID == "" {
-		return cfg, errors.New("CLOUDFLARE_AI_GATEWAY_ID is required")
+	if cfg.AWSSecretAccessKey == "" {
+		return cfg, errors.New("AWS_SECRET_ACCESS_KEY is required")
 	}
 	if err := validateHTTPAddr(cfg.HTTPAddr); err != nil {
 		return cfg, err
