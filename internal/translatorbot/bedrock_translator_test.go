@@ -17,6 +17,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
+const (
+	testBedrockRegion    = "test-region-1"
+	testBedrockProjectID = "proj_testproject123"
+)
+
 type bedrockRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f bedrockRoundTripFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
@@ -25,12 +30,13 @@ type recordingSigner struct {
 	calls       atomic.Int32
 	service     string
 	region      string
+	projectID   string
 	payloadHash string
 }
 
-func (s *recordingSigner) SignHTTP(_ context.Context, _ aws.Credentials, _ *http.Request, payloadHash, service, region string, _ time.Time, _ ...func(*v4.SignerOptions)) error {
+func (s *recordingSigner) SignHTTP(_ context.Context, _ aws.Credentials, req *http.Request, payloadHash, service, region string, _ time.Time, _ ...func(*v4.SignerOptions)) error {
 	s.calls.Add(1)
-	s.service, s.region, s.payloadHash = service, region, payloadHash
+	s.service, s.region, s.projectID, s.payloadHash = service, region, req.Header.Get("OpenAI-Project"), payloadHash
 	return nil
 }
 
@@ -42,19 +48,41 @@ func successfulBedrockResponse(raw string, inputTokens, outputTokens int) string
 func fmtInt(value int) string { return strconv.Itoa(value) }
 
 func testTranslator(client bedrockHTTPClient, signer bedrockRequestSigner) *BedrockTranslator {
-	translator := newBedrockTranslator(client, signer, credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""))
+	translator := newBedrockTranslator(client, signer, credentials.NewStaticCredentialsProvider("AKID", "SECRET", ""), testBedrockRegion, testBedrockProjectID)
 	translator.now = func() time.Time { return time.Unix(123, 0) }
 	return translator
+}
+
+func TestNewBedrockTranslatorRejectsInvalidLocation(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		region    string
+		projectID string
+	}{
+		{name: "empty region", projectID: testBedrockProjectID},
+		{name: "invalid region", region: "test-region-1/path", projectID: testBedrockProjectID},
+		{name: "empty project ID", region: testBedrockRegion},
+		{name: "invalid project ID", region: testBedrockRegion, projectID: "project-name"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewBedrockTranslator(context.Background(), "AKID", "SECRET", tt.region, tt.projectID); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
 }
 
 func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	signer := &recordingSigner{}
 	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		if req.Method != http.MethodPost || req.URL.String() != bedrockResponsesURL {
+		if req.Method != http.MethodPost || req.URL.String() != "https://bedrock-mantle.test-region-1.api.aws/openai/v1/responses" {
 			t.Fatalf("request = %s %s", req.Method, req.URL)
 		}
 		if req.Header.Get("Content-Type") != "application/json" || req.Header.Get("Accept") != "application/json" {
 			t.Fatalf("headers = %#v", req.Header)
+		}
+		if req.Header.Get("OpenAI-Project") != testBedrockProjectID {
+			t.Fatalf("OpenAI-Project = %q, want %q", req.Header.Get("OpenAI-Project"), testBedrockProjectID)
 		}
 		var input bedrockResponsesRequest
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
@@ -80,7 +108,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	if result.Translations["en"] != "Hello <@42>" || result.InputTokens != 1 || result.OutputTokens != 2 {
 		t.Fatalf("result = %#v", result)
 	}
-	if signer.calls.Load() != 1 || signer.service != bedrockService || signer.region != bedrockRegion || len(signer.payloadHash) != 64 {
+	if signer.calls.Load() != 1 || signer.service != bedrockService || signer.region != testBedrockRegion || signer.projectID != testBedrockProjectID || len(signer.payloadHash) != 64 {
 		t.Fatalf("signature = %#v", signer)
 	}
 }

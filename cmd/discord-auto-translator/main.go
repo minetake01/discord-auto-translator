@@ -27,7 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	translator, err := translatorbot.NewBedrockTranslator(context.Background(), cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey)
+	translator, err := translatorbot.NewBedrockTranslator(context.Background(), cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBedrockRegion, cfg.AWSBedrockProjectID)
 	if err != nil {
 		log.Fatal(err)
 	}

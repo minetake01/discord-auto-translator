@@ -23,7 +23,7 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 - Go 1.24 o superior
 - Una cuenta de bot de Discord con el intent privilegiado `MESSAGE CONTENT` habilitado
-- Una cuenta de AWS con acceso a Amazon Bedrock y una clave IAM autorizada a crear inferencias en el proyecto Mantle predeterminado de `us-west-2`.
+- Una cuenta de AWS con acceso a Amazon Bedrock y una clave IAM autorizada a crear inferencias en el proyecto Mantle predeterminado de `your-aws-bedrock-region`.
 - Un ID de Amazon Bedrock
 
 ## Configuración
@@ -48,7 +48,7 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 ### 2. Configurar Amazon Bedrock
 
-Habilita `google.gemma-4-26b-a4b` en Amazon Bedrock en `us-west-2`. Crea un usuario IAM con únicamente `bedrock-mantle:CreateInference` para el modelo y configura `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY` en `.env`. El modelo, la región, el tiempo de espera de 30 segundos y el límite de 4096 tokens están fijados en el código.
+Habilita `google.gemma-4-26b-a4b` en Amazon Bedrock en `your-aws-bedrock-region`. Crea un usuario IAM con únicamente `bedrock-mantle:CreateInference` para el modelo y configura `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` y `AWS_BEDROCK_PROJECT_ID` en `.env`. El modelo, el tiempo de espera de 30 segundos y el límite de 4096 tokens están fijados en el código; la región y el Project ID son ajustes locales obligatorios del despliegue.
 
 ### 3. Configurar las variables de entorno
 
@@ -62,6 +62,8 @@ Edita `.env` y establece lo siguiente:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Sí | Token del bot de Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | No | Ruta al archivo SQLite (predeterminado: `./translator.db`) |
 | `HTTP_ADDR` | No | Dirección del servidor de insignia de avatar (predeterminado: `:8080`) |
 | `PUBLIC_BASE_URL` | No | URL base pública para insignias de anillo en avatares. Si no se establece, los mensajes reflejados usan la URL de avatar original de Discord y el servidor de insignias no se utiliza |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contrato operativo de Amazon Bedrock
 
-La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `us-west-2`: espera de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; no hay reintentos, división ni fallback. El bot no registra prompts, respuestas ni credenciales. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
+La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `your-aws-bedrock-region`; cada solicitud se asigna al Project `your-aws-bedrock-project-id` mediante el encabezado `OpenAI-Project`: espera de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; no hay reintentos, división ni fallback. El bot no registra prompts, respuestas ni credenciales. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
 
 ### 4. Ejecutar
 

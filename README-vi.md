@@ -23,7 +23,7 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 
 - Go 1.24 trở lên
 - Tài khoản bot Discord với intent đặc quyền `MESSAGE CONTENT` được bật
-- Tài khoản AWS có quyền dùng Amazon Bedrock và khóa IAM được phép tạo suy luận trong Mantle Project mặc định tại `us-west-2`.
+- Tài khoản AWS có quyền dùng Amazon Bedrock và khóa IAM được phép tạo suy luận trong Mantle Project `your-aws-bedrock-project-id` tại `your-aws-bedrock-region`.
 - ID Amazon Bedrock
 
 ## Cài đặt
@@ -48,11 +48,11 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 
 ### 2. Cấu hình Amazon Bedrock
 
-1. Bật `google.gemma-4-26b-a4b` trong Amazon Bedrock tại `us-west-2`.
-2. Tạo người dùng IAM riêng và chỉ cho phép `bedrock-mantle:CreateInference` trên `arn:aws:bedrock-mantle:us-west-2:<account-id>:project/default`.
+1. Bật `google.gemma-4-26b-a4b` trong Amazon Bedrock tại `your-aws-bedrock-region`.
+2. Tạo người dùng IAM riêng và chỉ cho phép `bedrock-mantle:CreateInference` trên `arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id`.
 3. Tạo access key rồi đặt `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY` trong `.env`.
 
-Model, region, timeout và giới hạn đầu ra được cố định trong mã. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`) có thể điều chỉnh giới hạn token theo máy chủ.
+Model, timeout và giới hạn đầu ra được cố định trong mã. Region và Project ID là cấu hình deployment cục bộ bắt buộc qua `AWS_BEDROCK_REGION` và `AWS_BEDROCK_PROJECT_ID`. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`) có thể điều chỉnh giới hạn token theo máy chủ.
 ### 3. Cấu hình biến môi trường
 
 ```sh
@@ -65,6 +65,8 @@ Chỉnh sửa `.env` và đặt các giá trị sau:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -79,6 +81,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Có | Token bot Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | Không | Đường dẫn đến tệp SQLite (mặc định: `./translator.db`) |
 | `HTTP_ADDR` | Không | Địa chỉ máy chủ badge ảnh đại diện (mặc định: `:8080`) |
 | `PUBLIC_BASE_URL` | Không | URL cơ sở công khai cho badge vòng ảnh đại diện. Nếu không đặt, tin nhắn phản chiếu dùng URL ảnh đại diện Discord gốc và máy chủ badge không được sử dụng |
@@ -89,7 +93,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Hợp đồng vận hành Amazon Bedrock
 
-Bản dịch dùng Mantle Responses API không streaming với `google.gemma-4-26b-a4b` tại `us-west-2`: timeout **30 giây**, **provider-default temperature 1.0**, **max_output_tokens 4096** và JSON theo schema được bot kiểm tra nghiêm ngặt. Mọi ngôn ngữ được tạo trong một yêu cầu. Giới hạn 4K, dừng bất thường hoặc JSON không hợp lệ làm toàn bộ thất bại theo fail-closed; không retry, chia nhỏ hay fallback. Bot không ghi prompt, phản hồi hoặc thông tin xác thực. Deploy GCE xác minh thông tin xác thực, quyền truy cập mô hình và hợp đồng phản hồi trước khi thay thế bằng `--bedrock-prewarm` với giới hạn năm phút.
+Bản dịch dùng Mantle Responses API không streaming với `google.gemma-4-26b-a4b` tại `your-aws-bedrock-region`; mọi yêu cầu được gán cho Project `your-aws-bedrock-project-id` qua header `OpenAI-Project`: timeout **30 giây**, **provider-default temperature 1.0**, **max_output_tokens 4096** và JSON theo schema được bot kiểm tra nghiêm ngặt. Mọi ngôn ngữ được tạo trong một yêu cầu. Giới hạn 4K, dừng bất thường hoặc JSON không hợp lệ làm toàn bộ thất bại theo fail-closed; không retry, chia nhỏ hay fallback. Bot không ghi prompt, phản hồi hoặc thông tin xác thực. Deploy GCE xác minh thông tin xác thực, quyền truy cập mô hình và hợp đồng phản hồi trước khi thay thế bằng `--bedrock-prewarm` với giới hạn năm phút.
 
 ### 4. Chạy
 

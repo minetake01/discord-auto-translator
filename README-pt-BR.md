@@ -23,7 +23,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 - Go 1.24 ou superior
 - Uma conta de bot do Discord com o intent privilegiado `MESSAGE CONTENT` habilitado
-- Uma conta AWS com acesso ao Amazon Bedrock e uma chave IAM autorizada a criar inferência no Project Mantle padrão em `us-west-2`.
+- Uma conta AWS com acesso ao Amazon Bedrock e uma chave IAM autorizada a criar inferência no Project Mantle `your-aws-bedrock-project-id` em `your-aws-bedrock-region`.
 - Um ID de Amazon Bedrock
 
 ## Configuração
@@ -48,7 +48,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 ### 2. Configurar Amazon Bedrock
 
-Habilite `google.gemma-4-26b-a4b` no Amazon Bedrock em `us-west-2`. Crie um usuário IAM somente com `bedrock-mantle:CreateInference` para o modelo e defina `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` no `.env`. Modelo, região, timeout de 30 segundos e limite de 4096 tokens são fixos no código.
+Habilite `google.gemma-4-26b-a4b` no Amazon Bedrock em `your-aws-bedrock-region`. Crie um usuário IAM somente com `bedrock-mantle:CreateInference` para o modelo e defina `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID` no `.env`. Modelo, timeout de 30 segundos e limite de 4096 tokens são fixos no código; região e Project ID são configurações locais obrigatórias do deploy.
 
 ### 3. Configurar variáveis de ambiente
 
@@ -62,6 +62,8 @@ Edite o `.env` e defina o seguinte:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Sim | Token do bot do Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | Não | Caminho para o arquivo SQLite (padrão: `./translator.db`) |
 | `HTTP_ADDR` | Não | Endereço do servidor de badge de avatar (padrão: `:8080`) |
 | `PUBLIC_BASE_URL` | Não | URL base pública para badges de anel em avatares. Se não definida, mensagens espelhadas usam a URL de avatar original do Discord e o servidor de badge não é utilizado |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contrato operacional do Amazon Bedrock
 
-A tradução usa a Mantle Responses API sem streaming com `google.gemma-4-26b-a4b` em `us-west-2`: timeout de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON orientado por schema e validado rigorosamente pelo bot. Todos os idiomas são gerados em uma solicitação. Limite de 4K, término anormal ou JSON inválido fazem tudo falhar em modo fail-closed; não há retry, divisão ou fallback. O bot não registra prompts, respostas ou credenciais. O deploy GCE valida credenciais, acesso ao modelo e o contrato de resposta antes da substituição com `--bedrock-prewarm` e limite de cinco minutos.
+A tradução usa a Mantle Responses API sem streaming com `google.gemma-4-26b-a4b` em `your-aws-bedrock-region`; cada solicitação é atribuída ao Project `your-aws-bedrock-project-id` pelo cabeçalho `OpenAI-Project`: timeout de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON orientado por schema e validado rigorosamente pelo bot. Todos os idiomas são gerados em uma solicitação. Limite de 4K, término anormal ou JSON inválido fazem tudo falhar em modo fail-closed; não há retry, divisão ou fallback. O bot não registra prompts, respostas ou credenciais. O deploy GCE valida credenciais, acesso ao modelo e o contrato de resposta antes da substituição com `--bedrock-prewarm` e limite de cinco minutos.
 
 ### 4. Executar
 

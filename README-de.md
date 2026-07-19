@@ -23,7 +23,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 - Go 1.24 oder neuer
 - Ein Discord-Bot-Konto mit aktiviertem privilegierten Intent `MESSAGE CONTENT`
-- Ein AWS-Konto mit Zugriff auf Amazon Bedrock und ein IAM-Zugriffsschlüssel, der Inferenz im Mantle-Standardprojekt in `us-west-2` erstellen darf.
+- Ein AWS-Konto mit Zugriff auf Amazon Bedrock und ein IAM-Zugriffsschlüssel, der Inferenz im Mantle-Standardprojekt in `your-aws-bedrock-region` erstellen darf.
 
 ## Einrichtung
 
@@ -47,7 +47,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 ### 2. Amazon Bedrock einrichten
 
-Aktiviere `google.gemma-4-26b-a4b` in Amazon Bedrock in `us-west-2`. Erstelle einen IAM-Benutzer mit ausschließlich `bedrock-mantle:CreateInference` für das Modell und setze `AWS_ACCESS_KEY_ID` und `AWS_SECRET_ACCESS_KEY` in `.env`. Modell, Region, 30-Sekunden-Timeout und 4096-Token-Ausgabelimit sind im Code festgelegt.
+Aktiviere `google.gemma-4-26b-a4b` in Amazon Bedrock in `your-aws-bedrock-region`. Erstelle einen IAM-Benutzer mit ausschließlich `bedrock-mantle:CreateInference` für das Modell und setze `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` und `AWS_BEDROCK_PROJECT_ID` in `.env`. Modell, 30-Sekunden-Timeout und 4096-Token-Ausgabelimit sind im Code festgelegt; Region und Project ID sind erforderliche lokale Deployment-Einstellungen.
 
 ### 3. Umgebungsvariablen konfigurieren
 
@@ -61,6 +61,8 @@ Bearbeite `.env` und setze folgende Werte:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -75,6 +77,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Ja | Discord-Bot-Token |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | Nein | Pfad zur SQLite-Datei (Standard: `./translator.db`) |
 | `HTTP_ADDR` | Nein | Adresse des Avatar-Badge-Servers (Standard: `:8080`) |
 | `PUBLIC_BASE_URL` | Nein | Öffentliche Basis-URL für Avatar-Ring-Badges. Wenn nicht gesetzt, verwenden gespiegelte Nachrichten die ursprüngliche Discord-Avatar-URL und der Badge-Server wird nicht genutzt |
@@ -85,7 +89,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock — Betriebsvereinbarung
 
-Die Übersetzung verwendet die nicht streamende Mantle Responses API mit `google.gemma-4-26b-a4b` in `us-west-2`: Timeout **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** und schema-instruiertes JSON mit strikter Bot-Validierung. Alle Sprachen werden in einer Anfrage erzeugt. Beim 4K-Limit, anormalem Stopp oder ungültigem JSON schlägt alles fail-closed fehl; es gibt keine Wiederholungen, Aufteilung oder Provider-Fallbacks. Der Bot protokolliert keine Prompts, Antworten oder Zugangsdaten. Das GCE-Deployment prüft Anmeldedaten, Modellzugriff und Antwortvertrag vor dem Austausch mit `--bedrock-prewarm` und einem Fünf-Minuten-Limit.
+Die Übersetzung verwendet die nicht streamende Mantle Responses API mit `google.gemma-4-26b-a4b` in `your-aws-bedrock-region`; jede Anfrage wird über den Header `OpenAI-Project` dem Project `your-aws-bedrock-project-id` zugeordnet: Timeout **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** und schema-instruiertes JSON mit strikter Bot-Validierung. Alle Sprachen werden in einer Anfrage erzeugt. Beim 4K-Limit, anormalem Stopp oder ungültigem JSON schlägt alles fail-closed fehl; es gibt keine Wiederholungen, Aufteilung oder Provider-Fallbacks. Der Bot protokolliert keine Prompts, Antworten oder Zugangsdaten. Das GCE-Deployment prüft Anmeldedaten, Modellzugriff und Antwortvertrag vor dem Austausch mit `--bedrock-prewarm` und einem Fünf-Minuten-Limit.
 
 ### 4. Starten
 

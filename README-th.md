@@ -23,7 +23,7 @@
 
 - Go 1.24 หรือใหม่กว่า
 - บัญชีบอท Discord ที่เปิดใช้งาน intent สิทธิพิเศษ `MESSAGE CONTENT`
-- บัญชี AWS ที่ใช้ Amazon Bedrock ได้ และคีย์ IAM ที่อนุญาตให้สร้าง inference ใน Mantle Project เริ่มต้นของ `us-west-2`
+- บัญชี AWS ที่ใช้ Amazon Bedrock ได้ และคีย์ IAM ที่อนุญาตให้สร้าง inference ใน Mantle Project `your-aws-bedrock-project-id` ของ `your-aws-bedrock-region`
 - Amazon Bedrock ID
 
 ## การตั้งค่า
@@ -48,7 +48,7 @@
 
 ### 2. ตั้งค่า Amazon Bedrock
 
-เปิดใช้ `google.gemma-4-26b-a4b` ใน Amazon Bedrock ภูมิภาค `us-west-2` สร้างผู้ใช้ IAM ที่มีเฉพาะ `bedrock-mantle:CreateInference` สำหรับโมเดล แล้วกำหนด `AWS_ACCESS_KEY_ID` และ `AWS_SECRET_ACCESS_KEY` ใน `.env` โมเดล ภูมิภาค timeout 30 วินาที และขีดจำกัด 4096 token ถูกกำหนดในโค้ด
+เปิดใช้ `google.gemma-4-26b-a4b` ใน Amazon Bedrock ภูมิภาค `your-aws-bedrock-region` สร้างผู้ใช้ IAM ที่มีเฉพาะ `bedrock-mantle:CreateInference` สำหรับโมเดล แล้วกำหนด `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` และ `AWS_BEDROCK_PROJECT_ID` ใน `.env` โมเดล timeout 30 วินาที และขีดจำกัด 4096 token ถูกกำหนดในโค้ด ส่วนภูมิภาคและ Project ID เป็นการตั้งค่า deployment ในเครื่องที่จำเป็น
 
 ### 3. กำหนดค่าตัวแปรสภาพแวดล้อม
 
@@ -62,6 +62,8 @@ cp .env.example .env
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | ใช่ | โทเค็นบอท Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | ไม่ | เส้นทางไฟล์ SQLite (ค่าเริ่มต้น: `./translator.db`) |
 | `HTTP_ADDR` | ไม่ | ที่อยู่เซิร์ฟเวอร์แบดจ์อวาตาร์ (ค่าเริ่มต้น: `:8080`) |
 | `PUBLIC_BASE_URL` | ไม่ | URL พื้นฐานสาธารณะสำหรับแบดจ์วงแหวนอวาตาร์ หากไม่ตั้งค่า ข้อความที่สะท้อนจะใช้ URL อวาตาร์ Discord เดิม และเซิร์ฟเวอร์แบดจ์จะไม่ถูกใช้งาน |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### สัญญาการดำเนินงาน Amazon Bedrock
 
-การแปลใช้ Mantle Responses API แบบไม่สตรีมกับ `google.gemma-4-26b-a4b` ใน `us-west-2` โดยมี timeout **30 วินาที**, **provider-default temperature 1.0**, **max_output_tokens 4096** และ JSON ที่กำกับด้วย schema และตรวจสอบอย่างเข้มงวดโดย Bot ทุกภาษาถูกสร้างในคำขอเดียว ขีดจำกัด 4K การหยุดผิดปกติ หรือ JSON ไม่ถูกต้องจะทำให้ทั้งหมดล้มเหลวแบบ fail-closed ไม่มี retry การแบ่ง หรือ fallback บอทไม่บันทึก prompt คำตอบ หรือข้อมูลรับรอง การ deploy บน GCE ตรวจสอบข้อมูลรับรอง การเข้าถึงโมเดล และสัญญาการตอบกลับ ก่อนแทนที่ด้วย `--bedrock-prewarm` ภายในห้านาที
+การแปลใช้ Mantle Responses API แบบไม่สตรีมกับ `google.gemma-4-26b-a4b` ใน `your-aws-bedrock-region` โดยกำหนดทุกคำขอให้กับ Project `your-aws-bedrock-project-id` ผ่านส่วนหัว `OpenAI-Project` และมี timeout **30 วินาที**, **provider-default temperature 1.0**, **max_output_tokens 4096** และ JSON ที่กำกับด้วย schema และตรวจสอบอย่างเข้มงวดโดย Bot ทุกภาษาถูกสร้างในคำขอเดียว ขีดจำกัด 4K การหยุดผิดปกติ หรือ JSON ไม่ถูกต้องจะทำให้ทั้งหมดล้มเหลวแบบ fail-closed ไม่มี retry การแบ่ง หรือ fallback บอทไม่บันทึก prompt คำตอบ หรือข้อมูลรับรอง การ deploy บน GCE ตรวจสอบข้อมูลรับรอง การเข้าถึงโมเดล และสัญญาการตอบกลับ ก่อนแทนที่ด้วย `--bedrock-prewarm` ภายในห้านาที
 
 ### 4. เรียกใช้
 

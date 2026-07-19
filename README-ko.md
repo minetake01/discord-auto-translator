@@ -23,7 +23,7 @@
 
 - Go 1.24 이상
 - `MESSAGE CONTENT` 특권 인텐트가 활성화된 Discord 봇 계정
-- Amazon Bedrock을 사용할 수 있고 `us-west-2`의 기본 Mantle Project에서 추론 생성을 허용한 IAM 액세스 키가 있는 AWS 계정
+- Amazon Bedrock을 사용할 수 있고 `your-aws-bedrock-region`의 Mantle Project `your-aws-bedrock-project-id`에서 추론 생성을 허용한 IAM 액세스 키가 있는 AWS 계정
 - Amazon Bedrock ID
 
 ## 설정
@@ -48,7 +48,7 @@
 
 ### 2. Amazon Bedrock 구성
 
-`us-west-2` Amazon Bedrock에서 `google.gemma-4-26b-a4b`를 활성화합니다. 해당 모델의 `bedrock-mantle:CreateInference`만 허용한 IAM 사용자를 만들고 `.env`에 `AWS_ACCESS_KEY_ID`와 `AWS_SECRET_ACCESS_KEY`를 설정합니다. 모델, 리전, 30초 타임아웃, 4096 token 한도는 코드에 고정됩니다.
+`your-aws-bedrock-region` Amazon Bedrock에서 `google.gemma-4-26b-a4b`를 활성화합니다. 해당 모델의 `bedrock-mantle:CreateInference`만 허용한 IAM 사용자를 만들고 `.env`에 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, `AWS_BEDROCK_PROJECT_ID`를 설정합니다. 모델, 30초 타임아웃, 4096 token 한도는 코드에 고정되며 리전과 Project ID는 필수 로컬 배포 설정입니다.
 
 ### 3. 환경 변수 설정
 
@@ -62,6 +62,8 @@ cp .env.example .env
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,6 +78,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | 필수 | Discord 봇 토큰 |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | 선택 | SQLite 파일 경로(기본값: `./translator.db`) |
 | `HTTP_ADDR` | 선택 | 아바타 배지 서버 주소(기본값: `:8080`) |
 | `PUBLIC_BASE_URL` | 선택 | 아바타 링 배지용 공개 기본 URL. 미설정 시 미러링된 메시지는 Discord 원본 아바타 URL을 사용하며 배지 서버는 사용되지 않습니다 |
@@ -86,7 +90,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 운영 계약
 
-번역은 `us-west-2`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며 **30초**, **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 retry, 분할, fallback은 없습니다. Bot은 prompt, 응답, 인증 정보를 기록하지 않습니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
+번역은 `your-aws-bedrock-region`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며, 모든 요청을 `OpenAI-Project` 헤더를 통해 Project `your-aws-bedrock-project-id`에 할당합니다. **30초**, **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 retry, 분할, fallback은 없습니다. Bot은 prompt, 응답, 인증 정보를 기록하지 않습니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
 
 ### 4. 실행
 

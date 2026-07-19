@@ -24,7 +24,7 @@ Link one channel per language into a **translation group**. Every message posted
 - Go 1.24 or later
 - A Discord bot account with the `MESSAGE CONTENT` privileged intent enabled
 - An AWS account with Amazon Bedrock model access
-- An IAM access key allowed to create inference on the Bedrock Mantle default Project in `us-west-2`
+- An IAM access key allowed to create inference on Bedrock Mantle Project `your-aws-bedrock-project-id` in `your-aws-bedrock-region`
 
 ## Setup
 
@@ -48,11 +48,11 @@ Link one channel per language into a **translation group**. Every message posted
 
 ### 2. Configure Amazon Bedrock
 
-1. Switch the AWS console to `us-west-2`, open `google.gemma-4-26b-a4b` from the Amazon Bedrock model catalog as an administrator, and run it once in the playground. Current Bedrock model access is enabled by default and any required third-party Marketplace agreement is initiated by the first invocation, so there may be no separate Enable button. Agreement processing can take up to about 15 minutes.
-2. Create a dedicated IAM user for the bot and attach the AWS managed policy `AmazonBedrockMantleInferenceAccess`. After validation, you can replace it with a custom policy scoped to the actual Project ARN.
-3. Create an access key for that user and set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` in `.env`. Never use a root-user access key.
+1. Switch the AWS console to `your-aws-bedrock-region`, open `google.gemma-4-26b-a4b` from the Amazon Bedrock model catalog as an administrator, and run it once in the playground. Current Bedrock model access is enabled by default and any required third-party Marketplace agreement is initiated by the first invocation, so there may be no separate Enable button. Agreement processing can take up to about 15 minutes.
+2. Create a dedicated IAM user for the bot and attach the AWS managed policy `AmazonBedrockMantleInferenceAccess`. After validation, replace it with a custom policy scoped to `arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id`.
+3. Create an access key for that user and set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, and `AWS_BEDROCK_PROJECT_ID` in `.env`. Never use a root-user access key.
 
-The model, region, timeout, and output limit are fixed in code. Optionally tune per-guild token throughput with `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`).
+The model, timeout, and output limit are fixed in code. The region and Project ID are required deployment-local settings. Optionally tune per-guild token throughput with `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`).
 
 ### 3. Configure environment variables
 
@@ -66,6 +66,8 @@ Edit `.env` and set the following:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -80,6 +82,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | No | Path to the SQLite file (default: `./translator.db`) |
 | `HTTP_ADDR` | No | Address of the avatar badge server (default: `:8080`) |
 | `PUBLIC_BASE_URL` | No | Public base URL for avatar ring badges. If unset, mirrored messages use the original Discord avatar URL and the badge server is not used |
@@ -90,7 +94,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock operational contract
 
-Translation uses the non-streaming Mantle Responses API with model `google.gemma-4-26b-a4b` in `us-west-2`. Fixed request parameters are a **30 s** runtime timeout, **provider-default temperature 1.0**, **max_output_tokens 4096**, and `store=false`. Gemma 4 does not support Bedrock Structured Outputs, so the fixed JSON Schema is included in the system instruction and the bot strictly validates the resulting multi-language `translations` array.
+Translation uses the non-streaming Mantle Responses API with model `google.gemma-4-26b-a4b` in `AWS_BEDROCK_REGION`. Every request is assigned to `AWS_BEDROCK_PROJECT_ID` through the `OpenAI-Project` header. Fixed request parameters are a **30 s** runtime timeout, **provider-default temperature 1.0**, **max_output_tokens 4096**, and `store=false`. Gemma 4 does not support Bedrock Structured Outputs, so the fixed JSON Schema is included in the system instruction and the bot strictly validates the resulting multi-language `translations` array.
 
 The bot sends one request for all target languages. If the 4K output limit is reached, Bedrock stops for any non-normal reason, or the response has malformed JSON, missing or reordered language tags, empty translations, or extra fields, the whole translation fails. There is no retry, request splitting, provider fallback, or compatibility path.
 

@@ -23,7 +23,7 @@ Collega un canale per lingua formando un **gruppo di traduzione**. Ogni messaggi
 
 - Go 1.24 o versione successiva
 - Un account bot Discord con l'intent privilegiato `MESSAGE CONTENT` abilitato
-- Un account AWS con accesso ad Amazon Bedrock e una chiave IAM autorizzata a creare inferenze nel Project Mantle predefinito in `us-west-2`.
+- Un account AWS con accesso ad Amazon Bedrock e una chiave IAM autorizzata a creare inferenze nel Project Mantle `your-aws-bedrock-project-id` in `your-aws-bedrock-region`.
 - Un ID Amazon Bedrock
 
 ## Configurazione
@@ -48,11 +48,11 @@ Collega un canale per lingua formando un **gruppo di traduzione**. Ogni messaggi
 
 ### 2. Configurare Amazon Bedrock
 
-1. Abilita `google.gemma-4-26b-a4b` in Amazon Bedrock nella regione `us-west-2`.
-2. Crea un utente IAM dedicato e consenti solo `bedrock-mantle:CreateInference` su `arn:aws:bedrock-mantle:us-west-2:<account-id>:project/default`.
+1. Abilita `google.gemma-4-26b-a4b` in Amazon Bedrock nella regione `your-aws-bedrock-region`.
+2. Crea un utente IAM dedicato e consenti solo `bedrock-mantle:CreateInference` su `arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id`.
 3. Crea una chiave di accesso e imposta `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` in `.env`.
 
-Modello, regione, timeout e limite di output sono fissi nel codice. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (predefinito `100000`) regola facoltativamente il limite di token per server.
+Modello, timeout e limite di output sono fissi nel codice. Regione e Project ID sono impostazioni locali obbligatorie tramite `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID`. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (predefinito `100000`) regola facoltativamente il limite di token per server.
 ### 3. Configurare le variabili d'ambiente
 
 ```sh
@@ -65,6 +65,8 @@ Modifica `.env` e imposta i seguenti valori:
 DISCORD_TOKEN=your-discord-bot-token
 AWS_ACCESS_KEY_ID=your-aws-access-key-id
 AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_BEDROCK_REGION=your-aws-bedrock-region
+AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -79,6 +81,8 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `DISCORD_TOKEN` | Sì | Token del bot Discord |
 | `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
 | `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
+| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
+| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
 | `DB_PATH` | No | Percorso del file SQLite (predefinito: `./translator.db`) |
 | `HTTP_ADDR` | No | Indirizzo del server di badge avatar (predefinito: `:8080`) |
 | `PUBLIC_BASE_URL` | No | URL base pubblico per i badge ad anello degli avatar. Se non impostato, i messaggi rispecchiati usano l'URL avatar Discord originale e il server di badge non viene utilizzato |
@@ -89,7 +93,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contratto operativo Amazon Bedrock
 
-La traduzione usa Mantle Responses API non streaming con `google.gemma-4-26b-a4b` in `us-west-2`: timeout **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON guidato dallo schema e convalidato rigorosamente dal bot. Tutte le lingue sono generate in una richiesta. Limite 4K, arresto anomalo o JSON non valido fanno fallire tutto in modalità fail-closed; non esistono retry, suddivisione o fallback. Il bot non registra prompt, risposte o credenziali. Il deploy GCE convalida credenziali, accesso al modello e contratto di risposta prima della sostituzione tramite `--bedrock-prewarm` con limite di cinque minuti.
+La traduzione usa Mantle Responses API non streaming con `google.gemma-4-26b-a4b` in `your-aws-bedrock-region`; ogni richiesta viene assegnata al Project `your-aws-bedrock-project-id` tramite l'header `OpenAI-Project`: timeout **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON guidato dallo schema e convalidato rigorosamente dal bot. Tutte le lingue sono generate in una richiesta. Limite 4K, arresto anomalo o JSON non valido fanno fallire tutto in modalità fail-closed; non esistono retry, suddivisione o fallback. Il bot non registra prompt, risposte o credenziali. Il deploy GCE convalida credenziali, accesso al modello e contratto di risposta prima della sostituzione tramite `--bedrock-prewarm` con limite di cinque minuti.
 
 ### 4. Avviare
 
