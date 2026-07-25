@@ -248,14 +248,15 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | max_output_tokens | 4096（アプリケーション固定上限） |
 | 出力形式 | 固定JSON Schemaをsystem instructionへ含める。Gemma 4はBedrock Structured Outputs非対応のため、既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する |
 
-**環境変数（必須）:** `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION`、`AWS_BEDROCK_PROJECT_ID`。専用 IAM ユーザーには `arn:aws:bedrock-mantle:${AWS_BEDROCK_REGION}:<account-id>:project/${AWS_BEDROCK_PROJECT_ID}` に対する `bedrock-mantle:CreateInference` を許可します。AWS公式の基本ポリシーでは `GetProject`、`ListProjects`、`ListTagsForResources` も併記されます。任意: `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）。
+**環境変数（必須）:** `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION`、`AWS_BEDROCK_PROJECT_ID`。専用 IAM ユーザーには `arn:aws:bedrock-mantle:${AWS_BEDROCK_REGION}:<account-id>:project/${AWS_BEDROCK_PROJECT_ID}` に対する `bedrock-mantle:CreateInference` を許可します。AWS公式の基本ポリシーでは `GetProject`、`ListProjects`、`ListTagsForResources` も併記されます。任意: `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
 
 **呼び出し契約:**
 
 - 全対象言語を1リクエストで生成し、再試行・分割・別プロバイダーへのfallbackは行わない
 - 全リクエストで同一の固定schemaをsystem instructionへ含める。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する
 - incomplete状態（`max_output_tokens`到達を含む）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
-- Mantleはrequest metadata非対応なので送信しない。プロンプト・応答・認証情報・AWSエラーメッセージをアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する
+- Mantleはrequest metadata非対応なので送信しない。既定ではプロンプト・応答・認証情報・AWSエラーメッセージをアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する
+- `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査用に1往復1行のJSON Linesを指定ファイルへ追記する。リクエストペイロード、生のレスポンス本文（reasoning itemやtoken内訳を含む）、HTTPステータス、所要時間、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、Mantleへ送るフィールドも変わらない
 - デプロイ時は5分期限で認証情報・モデルアクセス・レスポンス契約をprewarm検証し、成功後だけバイナリとenvを置換する
 
 ---
