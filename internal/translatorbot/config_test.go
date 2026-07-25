@@ -80,6 +80,34 @@ func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
 	}
 }
 
+func TestLoadConfigTranslationDebugLogPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "unset disables the debug log"},
+		{name: "blank disables the debug log", value: "   "},
+		{name: "trimmed path", value: " ./translation-debug.log ", want: "./translation-debug.log"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISCORD_TOKEN", "token")
+			setRequiredAWSConfig(t)
+			t.Setenv("TRANSLATION_DEBUG_LOG_PATH", tt.value)
+
+			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.TranslationDebugLogPath != tt.want {
+				t.Fatalf("TranslationDebugLogPath = %q, want %q", cfg.TranslationDebugLogPath, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigGuildDataRetentionDays(t *testing.T) {
 	tests := []struct {
 		name    string
