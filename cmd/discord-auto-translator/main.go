@@ -32,6 +32,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	if cfg.TranslationDebugLogPath != "" {
+		debugLog, err := translatorbot.OpenDebugLog(cfg.TranslationDebugLogPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer func() {
+			if err := debugLog.Close(); err != nil {
+				log.Printf("translation debug log close: %v", err)
+			}
+		}()
+		translator.SetDebugLog(debugLog)
+	}
 	if startup.bedrockPrewarm {
 		if err := prewarmBedrock(context.Background(), translator); err != nil {
 			log.Fatal(err)

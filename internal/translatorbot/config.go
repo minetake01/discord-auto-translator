@@ -23,6 +23,7 @@ type Config struct {
 	DBPath                           string
 	HTTPAddr                         string
 	PublicBaseURL                    string
+	TranslationDebugLogPath          string
 	TranslationRateLimitTokensPerMin int
 	AvatarRateLimitRequestsPerMin    int
 	MessageLinkRetentionDays         int
@@ -32,14 +33,15 @@ type Config struct {
 func LoadConfig(path string) (Config, error) {
 	_ = loadDotEnv(path)
 	cfg := Config{
-		DiscordToken:        os.Getenv("DISCORD_TOKEN"),
-		AWSAccessKeyID:      os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey:  os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBedrockRegion:    strings.TrimSpace(os.Getenv("AWS_BEDROCK_REGION")),
-		AWSBedrockProjectID: strings.TrimSpace(os.Getenv("AWS_BEDROCK_PROJECT_ID")),
-		DBPath:              os.Getenv("DB_PATH"),
-		HTTPAddr:            os.Getenv("HTTP_ADDR"),
-		PublicBaseURL:       strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		DiscordToken:            os.Getenv("DISCORD_TOKEN"),
+		AWSAccessKeyID:          os.Getenv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey:      os.Getenv("AWS_SECRET_ACCESS_KEY"),
+		AWSBedrockRegion:        strings.TrimSpace(os.Getenv("AWS_BEDROCK_REGION")),
+		AWSBedrockProjectID:     strings.TrimSpace(os.Getenv("AWS_BEDROCK_PROJECT_ID")),
+		DBPath:                  os.Getenv("DB_PATH"),
+		HTTPAddr:                os.Getenv("HTTP_ADDR"),
+		PublicBaseURL:           strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
+		TranslationDebugLogPath: strings.TrimSpace(os.Getenv("TRANSLATION_DEBUG_LOG_PATH")),
 	}
 	if raw := strings.TrimSpace(os.Getenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN")); raw != "" {
 		limit, err := strconv.Atoi(raw)

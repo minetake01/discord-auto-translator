@@ -54,6 +54,8 @@ type preparedTranslation struct {
 	systemInstruction string
 	userPrompt        string
 	protector         *Protector
+	guildID           string
+	messageID         string
 }
 
 func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -82,7 +84,14 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	protected := p.Protect(content)
 	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "")
 	userPrompt := BuildMultiTranslationUserPrompt(normalized, protected, translationContext)
-	return preparedTranslation{targetLanguages: normalized, systemInstruction: systemInstruction, userPrompt: userPrompt, protector: p}, nil
+	return preparedTranslation{
+		targetLanguages:   normalized,
+		systemInstruction: systemInstruction,
+		userPrompt:        userPrompt,
+		protector:         p,
+		guildID:           translationContext.GuildID,
+		messageID:         translationContext.MessageID,
+	}, nil
 }
 
 type translationResponse struct {
