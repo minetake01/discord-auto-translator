@@ -75,6 +75,7 @@ TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
+# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
 | Variable | Required | Description |
@@ -91,6 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Per-IP request limit per minute for the `/avatar` badge endpoint (default: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Days to retain `message_links` in SQLite before automatic purge. `0` (default) disables purging; set e.g. `60` to delete links older than 60 days at startup and every 24 hours |
 | `GUILD_DATA_RETENTION_DAYS` | No | Days to retain a guild's SQLite data after the bot is removed from that guild. `0` (default) disables purging; set e.g. `30` to purge data for guilds removed more than 30 days ago at startup and every 24 hours. Rejoining before expiry cancels the scheduled purge |
+| `TRANSLATION_DEBUG_LOG_PATH` | No | Debug only. Path of a JSON Lines file that receives one entry per translation round trip. Unset (default) writes nothing |
 
 ### Amazon Bedrock operational contract
 
@@ -98,9 +100,15 @@ Translation uses the non-streaming Mantle Responses API with model `google.gemma
 
 The bot sends one request for all target languages. If the 4K output limit is reached, Bedrock stops for any non-normal reason, or the response has malformed JSON, missing or reordered language tags, empty translations, or extra fields, the whole translation fails. There is no retry, request splitting, provider fallback, or compatibility path.
 
-The bot does not log prompts, responses, credentials, or provider error messages. Mantle does not support per-request Bedrock metadata, so no Discord IDs are sent as metadata. Safe provider diagnostics are limited to the error type, code, parameter name, and request ID. Translation failures and rate-limit breaches are **fail-closed** — the message is not mirrored and the source channel receives a localized notification.
+By default the bot does not log prompts, responses, credentials, or provider error messages. Mantle does not support per-request Bedrock metadata, so no Discord IDs are sent as metadata. Safe provider diagnostics are limited to the error type, code, parameter name, and request ID. Translation failures and rate-limit breaches are **fail-closed** — the message is not mirrored and the source channel receives a localized notification.
 
 Before replacing a running binary, the GCE deployment script invokes `--bedrock-prewarm` with a five-minute deadline to validate credentials, model access, and the response contract. The service itself applies the 30-second runtime deadline.
+
+### Translation debug log
+
+Setting `TRANSLATION_DEBUG_LOG_PATH` turns on a diagnosis-only log that appends one JSON object per Bedrock round trip: the request payload, the verbatim response body (including reasoning items and token usage details that the parser discards), the HTTP status, the elapsed time, the failure reason, and the guild and message IDs for correlating with Discord. Credentials are never recorded and the request sent to Mantle is unchanged.
+
+The file holds message content, so it is created with `0600` and rotated to `<path>.1` once it passes 64 MiB. The bot exits at startup if the file cannot be opened. Delete the log once the investigation is over, in line with the retention period stated in the privacy policy.
 
 ### 4. Run
 
