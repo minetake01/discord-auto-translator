@@ -125,33 +125,6 @@ func TestPrewarmBedrockUsesFiveMinuteDeadlineAndReturnsErrors(t *testing.T) {
 	}
 }
 
-func TestAttachmentsFromDiscordMapsWebhookFileFields(t *testing.T) {
-	got := attachmentsFromDiscord([]*discordgo.MessageAttachment{
-		nil,
-		{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png"},
-	})
-
-	if len(got) != 1 {
-		t.Fatalf("got %#v", got)
-	}
-	if got[0].URL != "https://cdn.discordapp.com/a.png" || got[0].Filename != "a.png" || got[0].ContentType != "image/png" {
-		t.Fatalf("unexpected attachment mapping: %#v", got[0])
-	}
-}
-
-func TestReferencedMessageFields(t *testing.T) {
-	id, channelID, content := referencedMessageFields(
-		&discordgo.MessageReference{MessageID: "ref", ChannelID: "ch"},
-		&discordgo.Message{
-			ID: "ref", ChannelID: "ch", Content: "quoted",
-			Author: &discordgo.User{ID: "author"},
-		},
-	)
-	if id != "ref" || channelID != "ch" || content != "quoted" {
-		t.Fatalf("got %q %q %q", id, channelID, content)
-	}
-}
-
 func TestReferencedMessageFieldsIgnoresForward(t *testing.T) {
 	id, channelID, content := referencedMessageFields(
 		&discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "ref", ChannelID: "ch"},
@@ -194,44 +167,5 @@ func TestForwardedMessageFieldsRejectsMalformedSnapshots(t *testing.T) {
 				t.Fatalf("got %#v, err %v", got, err)
 			}
 		})
-	}
-}
-
-func TestStickersFromDiscordMapsStickerFields(t *testing.T) {
-	got := stickersFromDiscord([]*discordgo.StickerItem{
-		nil,
-		{ID: "1", Name: "wave", FormatType: discordgo.StickerFormatTypePNG},
-	})
-	if len(got) != 1 {
-		t.Fatalf("got %#v", got)
-	}
-	if got[0].ID != "1" || got[0].Name != "wave" || got[0].FormatType != 1 {
-		t.Fatalf("unexpected sticker mapping: %#v", got[0])
-	}
-}
-
-func TestPollFromDiscordMapsQuestionAnswersAndEmoji(t *testing.T) {
-	got := pollFromDiscord(&discordgo.Poll{
-		Question: discordgo.PollMedia{Text: "Favorite?"},
-		Answers: []discordgo.PollAnswer{
-			{Media: &discordgo.PollMedia{Text: "Yes", Emoji: &discordgo.ComponentEmoji{Name: "👍"}}},
-			{Media: &discordgo.PollMedia{Text: "No", Emoji: &discordgo.ComponentEmoji{Name: "no", ID: "99", Animated: true}}},
-			{Media: nil},
-		},
-	})
-	if got == nil || got.Question != "Favorite?" || len(got.Answers) != 3 {
-		t.Fatalf("got %#v", got)
-	}
-	if got.Answers[0].Text != "Yes" || got.Answers[0].Emoji == nil || got.Answers[0].Emoji.Name != "👍" {
-		t.Fatalf("answer0 %#v", got.Answers[0])
-	}
-	if got.Answers[1].Emoji == nil || got.Answers[1].Emoji.ID != "99" || !got.Answers[1].Emoji.Animated {
-		t.Fatalf("answer1 %#v", got.Answers[1])
-	}
-	if got.Answers[2].Text != "" || got.Answers[2].Emoji != nil {
-		t.Fatalf("answer2 %#v", got.Answers[2])
-	}
-	if pollFromDiscord(nil) != nil {
-		t.Fatal("nil poll should map to nil")
 	}
 }

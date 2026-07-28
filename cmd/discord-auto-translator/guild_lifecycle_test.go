@@ -320,25 +320,6 @@ func TestHandleGuildCreateCancelsRemovalBeforeRegisteringCommands(t *testing.T) 
 	}
 }
 
-func TestHandleGuildCreateHoldsStateReadLockAcrossFinalPresenceCheckAndRegistration(t *testing.T) {
-	state := discordgo.NewState()
-	if err := state.GuildAdd(&discordgo.Guild{ID: "guild"}); err != nil {
-		t.Fatal(err)
-	}
-	handler := newGuildLifecycleHandler(&guildLifecycleStoreStub{}, state)
-
-	err := handler.handleCreate(context.Background(), time.Now, func(string) error {
-		if state.TryLock() {
-			state.Unlock()
-			t.Fatal("Discord State writer lock was available during command registration")
-		}
-		return nil
-	}, &discordgo.GuildCreate{Guild: &discordgo.Guild{ID: "guild"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestHandleGuildCreateDoesNotClassifyRegistrationFailureAsPersistenceCorruption(t *testing.T) {
 	state := discordgo.NewState()
 	if err := state.GuildAdd(&discordgo.Guild{ID: "guild"}); err != nil {

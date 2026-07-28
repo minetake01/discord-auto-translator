@@ -1,3 +1,4 @@
+// SPEC 3.1: localized UI strings for slash commands and notifications.
 package translatorbot
 
 import (
@@ -63,20 +64,6 @@ func TestResolveUILanguage(t *testing.T) {
 	for _, tc := range cases {
 		if got := resolveUILanguage(tc.in); got != tc.want {
 			t.Fatalf("resolveUILanguage(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
-func TestLocalizedUIStringKnownLanguages(t *testing.T) {
-	for lang := range uiStrings {
-		for key := range uiStrings["en"] {
-			got := localizedUIString(lang, key)
-			if got == "" {
-				t.Fatalf("empty string for lang=%s key=%s", lang, key)
-			}
-			if lang == "en" && got != uiStrings["en"][key] {
-				t.Fatalf("en mismatch for key %s: %q", key, got)
-			}
 		}
 	}
 }

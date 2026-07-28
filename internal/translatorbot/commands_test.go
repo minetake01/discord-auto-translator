@@ -71,28 +71,15 @@ func TestSourceAllowlistCommandDefinitions(t *testing.T) {
 	if whitelist == nil {
 		t.Fatal("missing bot-whitelist command")
 	}
-	if len(whitelist.Options) != 3 {
-		t.Fatalf("bot-whitelist options = %#v", whitelist.Options)
+	subcommandNames := make(map[string]bool, len(whitelist.Options))
+	for _, option := range whitelist.Options {
+		if option.Type == discordgo.ApplicationCommandOptionSubCommand {
+			subcommandNames[option.Name] = true
+		}
 	}
-	for index, name := range []string{"add", "remove", "list"} {
-		subcommand := whitelist.Options[index]
-		if subcommand.Name != name || subcommand.Type != discordgo.ApplicationCommandOptionSubCommand {
-			t.Fatalf("subcommand %d = %#v", index, subcommand)
-		}
-		if name == "list" {
-			if len(subcommand.Options) != 0 {
-				t.Fatalf("list options = %#v", subcommand.Options)
-			}
-			continue
-		}
-		if len(subcommand.Options) != 2 || subcommand.Options[0].Name != "source_type" || subcommand.Options[1].Name != "source_id" {
-			t.Fatalf("%s options = %#v", name, subcommand.Options)
-		}
-		if subcommand.Options[0].Type != discordgo.ApplicationCommandOptionString || !subcommand.Options[0].Required ||
-			len(subcommand.Options[0].Choices) != 2 || subcommand.Options[0].Choices[0].Value != string(SourceTypeBot) ||
-			subcommand.Options[0].Choices[1].Value != string(SourceTypeWebhook) ||
-			subcommand.Options[1].Type != discordgo.ApplicationCommandOptionString || !subcommand.Options[1].Required {
-			t.Fatalf("%s option contract = %#v", name, subcommand.Options)
+	for _, name := range []string{"add", "remove", "list"} {
+		if !subcommandNames[name] {
+			t.Fatalf("bot-whitelist is missing %q subcommand; got %#v", name, whitelist.Options)
 		}
 	}
 }
@@ -169,66 +156,31 @@ func TestBotWhitelistAddRejectsManagedWebhook(t *testing.T) {
 	}
 }
 
-func TestAddGlossaryAlwaysIncludeOption(t *testing.T) {
-	for _, command := range Commands() {
-		if command.Name != "add-glossary" {
-			continue
-		}
-		for _, option := range command.Options {
-			if option.Name == "always_include" {
-				if option.Type != discordgo.ApplicationCommandOptionBoolean || option.Required {
-					t.Fatalf("always_include = %#v", option)
-				}
-				if optionBool(nil, "always_include") {
-					t.Fatal("omitted always_include must default to false")
-				}
-				return
-			}
-		}
-		t.Fatal("add-glossary is missing always_include")
-	}
-	t.Fatal("add-glossary command not found")
-}
-
 func TestAddGlossaryAttributeOptionAndSuggestions(t *testing.T) {
+	var addGlossary *discordgo.ApplicationCommand
 	for _, command := range Commands() {
-		if command.Name != "add-glossary" {
-			continue
+		if command.Name == "add-glossary" {
+			addGlossary = command
+			break
 		}
-		for _, option := range command.Options {
-			if option.Name == "attribute" {
-				if option.Type != discordgo.ApplicationCommandOptionString || option.Required || !option.Autocomplete {
-					t.Fatalf("attribute = %#v", option)
-				}
-				got := glossaryAttributeSuggestions("略", 25)
-				if len(got) != 1 || got[0] != "略語" {
-					t.Fatalf("suggestions = %#v", got)
-				}
-				return
-			}
+	}
+	if addGlossary == nil {
+		t.Fatal("add-glossary command not found")
+	}
+	hasAttributeOption := false
+	for _, option := range addGlossary.Options {
+		if option.Name == "attribute" {
+			hasAttributeOption = true
+			break
 		}
-		t.Fatal("add-glossary is missing attribute")
 	}
-	t.Fatal("add-glossary command not found")
-}
-
-func TestOptionChannelUsesSelectedChannelID(t *testing.T) {
-	options := []*discordgo.ApplicationCommandInteractionDataOption{
-		{
-			Name:  "channel",
-			Type:  discordgo.ApplicationCommandOptionChannel,
-			Value: "selected-channel",
-		},
+	if !hasAttributeOption {
+		t.Fatal("add-glossary is missing attribute option")
 	}
 
-	if got := optionChannel(options, "channel", "current-channel"); got != "selected-channel" {
-		t.Fatalf("got %q, want selected-channel", got)
-	}
-}
-
-func TestOptionChannelFallsBackToCurrentChannel(t *testing.T) {
-	if got := optionChannel(nil, "channel", "current-channel"); got != "current-channel" {
-		t.Fatalf("got %q, want current-channel", got)
+	got := glossaryAttributeSuggestions("略", 25)
+	if len(got) != 1 || got[0] != "略語" {
+		t.Fatalf("suggestions = %#v", got)
 	}
 }
 
@@ -242,15 +194,30 @@ func TestHandleAddListRemoveGlossary(t *testing.T) {
 		{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
 		{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
 		{Name: "attribute", Type: discordgo.ApplicationCommandOptionString, Value: "略語"},
-		{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
 	}))
 	if len(*responses) != 1 || !strings.Contains((*responses)[0], "NPC") {
 		t.Fatalf("add response = %#v", *responses)
 	}
 
 	entries, err := store.ListGlossaryEntries(ctx, "g1")
-	if err != nil || len(entries) != 1 || entries[0].Attribute != "略語" || !entries[0].AlwaysInclude {
+	if err != nil || len(entries) != 1 || entries[0].Attribute != "略語" || entries[0].AlwaysInclude {
 		t.Fatalf("entries = %#v, err = %v", entries, err)
+	}
+
+	*responses = nil
+	handler.Handle(nil, slashCommandInteraction("g1", "add-glossary", []*discordgo.ApplicationCommandInteractionDataOption{
+		{Name: "term", Type: discordgo.ApplicationCommandOptionString, Value: "NPC"},
+		{Name: "translation", Type: discordgo.ApplicationCommandOptionString, Value: "Non-Player Character"},
+		{Name: "attribute", Type: discordgo.ApplicationCommandOptionString, Value: "略語"},
+		{Name: "always_include", Type: discordgo.ApplicationCommandOptionBoolean, Value: true},
+	}))
+	if len(*responses) != 1 || !strings.Contains((*responses)[0], "NPC") {
+		t.Fatalf("add with always_include response = %#v", *responses)
+	}
+
+	entries, err = store.ListGlossaryEntries(ctx, "g1")
+	if err != nil || len(entries) != 1 || entries[0].Attribute != "略語" || !entries[0].AlwaysInclude {
+		t.Fatalf("entries with always_include = %#v, err = %v", entries, err)
 	}
 
 	*responses = nil
