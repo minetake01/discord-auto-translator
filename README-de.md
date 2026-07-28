@@ -47,7 +47,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 ### 2. Amazon Bedrock einrichten
 
-Aktiviere `google.gemma-4-26b-a4b` in Amazon Bedrock in `your-aws-bedrock-region`. Erstelle einen IAM-Benutzer mit ausschließlich `bedrock-mantle:CreateInference` für das Modell und setze `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` und `AWS_BEDROCK_PROJECT_ID` in `.env`. Modell, 15-Sekunden-Timeout (genau 1 Wiederholung bei vorübergehenden Fehlern) und 4096-Token-Ausgabelimit sind im Code festgelegt; Region und Project ID sind erforderliche lokale Deployment-Einstellungen.
+Aktiviere `google.gemma-4-26b-a4b` in Amazon Bedrock in `your-aws-bedrock-region`. Erstelle einen IAM-Benutzer mit ausschließlich `bedrock-mantle:CreateInference` für das Modell und setze `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` und `AWS_BEDROCK_PROJECT_ID` in `.env`. Modell, 60-Sekunden-Timeout (genau 1 Wiederholung bei vorübergehenden Fehlern) und 4096-Token-Ausgabelimit sind im Code festgelegt; Region und Project ID sind erforderliche lokale Deployment-Einstellungen.
 
 ### 3. Umgebungsvariablen konfigurieren
 
@@ -91,7 +91,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock — Betriebsvereinbarung
 
-Die Übersetzung verwendet die nicht streamende Mantle Responses API mit `google.gemma-4-26b-a4b` in `your-aws-bedrock-region`; jede Anfrage wird über den Header `OpenAI-Project` dem Project `your-aws-bedrock-project-id` zugeordnet: Timeout **15 s** (genau 1 Wiederholung nach 1 s bei vorübergehenden Fehlern), **provider-default temperature 1.0**, **max_output_tokens 4096** und schema-instruiertes JSON mit strikter Bot-Validierung. Alle Sprachen werden in einer Anfrage erzeugt. Beim 4K-Limit, anormalem Stopp oder ungültigem JSON schlägt alles fail-closed fehl; genau 1 Wiederholung bei vorübergehenden Fehlern; keine Aufteilung oder Provider-Fallbacks. Standardmäßig protokolliert der Bot keine Prompts, Antworten oder Zugangsdaten; mit `TRANSLATION_DEBUG_LOG_PATH` schreibt er zur Fehlersuche Anfrage-Payload und rohe Antwort (inklusive Reasoning-Items) als JSON Lines. Das GCE-Deployment prüft Anmeldedaten, Modellzugriff und Antwortvertrag vor dem Austausch mit `--bedrock-prewarm` und einem Fünf-Minuten-Limit.
+Die Übersetzung verwendet die nicht streamende Mantle Responses API mit `google.gemma-4-26b-a4b` in `your-aws-bedrock-region`; jede Anfrage wird über den Header `OpenAI-Project` dem Project `your-aws-bedrock-project-id` zugeordnet: Timeout **60 s** (genau 1 Wiederholung nach 1 s bei vorübergehenden Fehlern), **provider-default temperature 1.0**, **max_output_tokens 4096** und schema-instruiertes JSON mit strikter Bot-Validierung. Alle Sprachen werden in einer Anfrage erzeugt. Beim 4K-Limit, anormalem Stopp oder ungültigem JSON schlägt alles fail-closed fehl; genau 1 Wiederholung bei vorübergehenden Fehlern; keine Aufteilung oder Provider-Fallbacks. Standardmäßig protokolliert der Bot keine Prompts, Antworten oder Zugangsdaten; mit `TRANSLATION_DEBUG_LOG_PATH` schreibt er zur Fehlersuche Anfrage-Payload und rohe Antwort (inklusive Reasoning-Items) als JSON Lines. Das GCE-Deployment prüft Anmeldedaten, Modellzugriff und Antwortvertrag vor dem Austausch mit `--bedrock-prewarm` und einem Fünf-Minuten-Limit.
 
 ### 4. Starten
 

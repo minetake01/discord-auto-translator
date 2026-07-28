@@ -24,7 +24,7 @@ const (
 	bedrockModel          = "google.gemma-4-26b-a4b"
 	bedrockService        = "bedrock-mantle"
 	bedrockMaxTokens      = 4096
-	bedrockRequestTimeout = 15 * time.Second
+	bedrockRequestTimeout = 60 * time.Second
 	bedrockRetryAttempts  = 2 // initial attempt + one retry
 	bedrockRetryBackoff   = 1 * time.Second
 
@@ -182,7 +182,7 @@ func (t *BedrockTranslator) TranslateMulti(ctx context.Context, targetLanguages 
 }
 
 // WarmUp verifies credentials, model access, and the fixed response contract
-// without starting Discord, SQLite, or the HTTP server. Uses the same 15s
+// without starting Discord, SQLite, or the HTTP server. Uses the same 60s
 // per-attempt timeout and single retry as TranslateMulti; the caller still
 // owns the overall deadline.
 func (t *BedrockTranslator) WarmUp(ctx context.Context) error {

@@ -96,13 +96,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock operational contract
 
-Translation uses the non-streaming Mantle Responses API with model `google.gemma-4-26b-a4b` in `AWS_BEDROCK_REGION`. Every request is assigned to `AWS_BEDROCK_PROJECT_ID` through the `OpenAI-Project` header. Fixed request parameters are a **15 s** per-attempt timeout, **one retry after 1 s** on timeout / transport errors / HTTP 429+5xx, **provider-default temperature 1.0**, **max_output_tokens 4096**, and `store=false`. Gemma 4 does not support Bedrock Structured Outputs, so the fixed JSON Schema is included in the system instruction and the bot strictly validates the resulting multi-language `translations` array.
+Translation uses the non-streaming Mantle Responses API with model `google.gemma-4-26b-a4b` in `AWS_BEDROCK_REGION`. Every request is assigned to `AWS_BEDROCK_PROJECT_ID` through the `OpenAI-Project` header. Fixed request parameters are a **60 s** per-attempt timeout, **one retry after 1 s** on timeout / transport errors / HTTP 429+5xx, **provider-default temperature 1.0**, **max_output_tokens 4096**, and `store=false`. Gemma 4 does not support Bedrock Structured Outputs, so the fixed JSON Schema is included in the system instruction and the bot strictly validates the resulting multi-language `translations` array.
 
 The bot sends one request for all target languages. Transient Mantle failures are retried once; contract violations (4K output limit, abnormal stop, malformed JSON, missing or reordered language tags, empty translations, or extra fields) and non-429 4xx responses are not. There is no request splitting, provider fallback, or compatibility path.
 
 By default the bot does not log prompts, responses, credentials, or provider error messages. Mantle does not support per-request Bedrock metadata, so no Discord IDs are sent as metadata. Safe provider diagnostics are limited to the error type, code, parameter name, and request ID. Translation failures and rate-limit breaches are **fail-closed** — the message is not mirrored and the source channel receives a localized notification.
 
-Before replacing a running binary, the GCE deployment script invokes `--bedrock-prewarm` with a five-minute deadline to validate credentials, model access, and the response contract. The service itself applies a 15-second per-attempt runtime deadline with one retry.
+Before replacing a running binary, the GCE deployment script invokes `--bedrock-prewarm` with a five-minute deadline to validate credentials, model access, and the response contract. The service itself applies a 60-second per-attempt runtime deadline with one retry.
 
 ### Translation debug log
 

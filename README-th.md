@@ -48,7 +48,7 @@
 
 ### 2. ตั้งค่า Amazon Bedrock
 
-เปิดใช้ `google.gemma-4-26b-a4b` ใน Amazon Bedrock ภูมิภาค `your-aws-bedrock-region` สร้างผู้ใช้ IAM ที่มีเฉพาะ `bedrock-mantle:CreateInference` สำหรับโมเดล แล้วกำหนด `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` และ `AWS_BEDROCK_PROJECT_ID` ใน `.env` โมเดล timeout 15 วินาที (retry 1 ครั้งเมื่อผิดพลาดชั่วคราว) และขีดจำกัด 4096 token ถูกกำหนดในโค้ด ส่วนภูมิภาคและ Project ID เป็นการตั้งค่า deployment ในเครื่องที่จำเป็น
+เปิดใช้ `google.gemma-4-26b-a4b` ใน Amazon Bedrock ภูมิภาค `your-aws-bedrock-region` สร้างผู้ใช้ IAM ที่มีเฉพาะ `bedrock-mantle:CreateInference` สำหรับโมเดล แล้วกำหนด `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` และ `AWS_BEDROCK_PROJECT_ID` ใน `.env` โมเดล timeout 60 วินาที (retry 1 ครั้งเมื่อผิดพลาดชั่วคราว) และขีดจำกัด 4096 token ถูกกำหนดในโค้ด ส่วนภูมิภาคและ Project ID เป็นการตั้งค่า deployment ในเครื่องที่จำเป็น
 
 ### 3. กำหนดค่าตัวแปรสภาพแวดล้อม
 
@@ -92,7 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### สัญญาการดำเนินงาน Amazon Bedrock
 
-การแปลใช้ Mantle Responses API แบบไม่สตรีมกับ `google.gemma-4-26b-a4b` ใน `your-aws-bedrock-region` โดยกำหนดทุกคำขอให้กับ Project `your-aws-bedrock-project-id` ผ่านส่วนหัว `OpenAI-Project` และมี timeout **15 วินาที** (retry 1 ครั้งหลังรอ 1 วินาทีเมื่อเกิดข้อผิดพลาดชั่วคราว), **provider-default temperature 1.0**, **max_output_tokens 4096** และ JSON ที่กำกับด้วย schema และตรวจสอบอย่างเข้มงวดโดย Bot ทุกภาษาถูกสร้างในคำขอเดียว ขีดจำกัด 4K การหยุดผิดปกติ หรือ JSON ไม่ถูกต้องจะทำให้ทั้งหมดล้มเหลวแบบ fail-closed retry ได้เพียง 1 ครั้งเมื่อผิดพลาดชั่วคราว ไม่มีการแบ่ง หรือ fallback โดยค่าเริ่มต้นบอทไม่บันทึก prompt คำตอบ หรือข้อมูลรับรอง แต่เมื่อตั้งค่า `TRANSLATION_DEBUG_LOG_PATH` บอทจะบันทึก payload ของคำขอและเนื้อหาคำตอบดิบ (รวมถึง reasoning item) เป็น JSON Lines เพื่อวิเคราะห์ปัญหา การ deploy บน GCE ตรวจสอบข้อมูลรับรอง การเข้าถึงโมเดล และสัญญาการตอบกลับ ก่อนแทนที่ด้วย `--bedrock-prewarm` ภายในห้านาที
+การแปลใช้ Mantle Responses API แบบไม่สตรีมกับ `google.gemma-4-26b-a4b` ใน `your-aws-bedrock-region` โดยกำหนดทุกคำขอให้กับ Project `your-aws-bedrock-project-id` ผ่านส่วนหัว `OpenAI-Project` และมี timeout **60 วินาที** (retry 1 ครั้งหลังรอ 1 วินาทีเมื่อเกิดข้อผิดพลาดชั่วคราว), **provider-default temperature 1.0**, **max_output_tokens 4096** และ JSON ที่กำกับด้วย schema และตรวจสอบอย่างเข้มงวดโดย Bot ทุกภาษาถูกสร้างในคำขอเดียว ขีดจำกัด 4K การหยุดผิดปกติ หรือ JSON ไม่ถูกต้องจะทำให้ทั้งหมดล้มเหลวแบบ fail-closed retry ได้เพียง 1 ครั้งเมื่อผิดพลาดชั่วคราว ไม่มีการแบ่ง หรือ fallback โดยค่าเริ่มต้นบอทไม่บันทึก prompt คำตอบ หรือข้อมูลรับรอง แต่เมื่อตั้งค่า `TRANSLATION_DEBUG_LOG_PATH` บอทจะบันทึก payload ของคำขอและเนื้อหาคำตอบดิบ (รวมถึง reasoning item) เป็น JSON Lines เพื่อวิเคราะห์ปัญหา การ deploy บน GCE ตรวจสอบข้อมูลรับรอง การเข้าถึงโมเดล และสัญญาการตอบกลับ ก่อนแทนที่ด้วย `--bedrock-prewarm` ภายในห้านาที
 
 ### 4. เรียกใช้
 
