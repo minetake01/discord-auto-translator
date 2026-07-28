@@ -100,3 +100,14 @@ func TestWebhookMessageURLOmitsQueryWithoutThreadID(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+func TestFetchedMessageFromDiscordIncludesEmbedTitleForQuotes(t *testing.T) {
+	got := fetchedMessageFromDiscord(&discordgo.Message{
+		Content: "> -# A poll has started. · [Vote](https://discord.com/channels/g/c/m)",
+		Embeds:  []*discordgo.MessageEmbed{{Title: "Favorite color?", Description: "1. Red"}},
+	})
+	want := "> -# A poll has started. · [Vote](https://discord.com/channels/g/c/m)\nFavorite color?"
+	if got.Content != want {
+		t.Fatalf("Content = %q, want %q", got.Content, want)
+	}
+}

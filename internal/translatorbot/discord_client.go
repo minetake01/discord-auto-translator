@@ -29,7 +29,7 @@ type DiscordAPI interface {
 	RemoveOwnReaction(channelID, messageID, emoji string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
-	CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error)
+	CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (threadID, initialMessageID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
 	EditThread(threadID, name string) error
 	DeleteThread(threadID string) error
@@ -41,6 +41,7 @@ type WebhookSend struct {
 	AvatarURL string
 	ThreadID  string
 	TTS       bool
+	Embeds    []*discordgo.MessageEmbed
 }
 
 type DiscordGoAPI struct {
@@ -105,7 +106,7 @@ func (d DiscordGoAPI) Message(channelID, messageID string) (DiscordFetchedMessag
 }
 
 func fetchedMessageFromDiscord(message *discordgo.Message) DiscordFetchedMessage {
-	result := DiscordFetchedMessage{Content: message.Content}
+	result := DiscordFetchedMessage{Content: contentWithEmbedQuoteText(message.Content, message.Embeds)}
 	if message.Author != nil {
 		result.AuthorDisplayName = strings.TrimSpace(message.Author.Username)
 	}
@@ -142,6 +143,7 @@ func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (str
 		Username:  sanitizeWebhookName(msg.Username),
 		AvatarURL: sanitizeWebhookAvatarURL(msg.AvatarURL),
 		TTS:       msg.TTS,
+		Embeds:    msg.Embeds,
 	}
 	m, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
 		if msg.ThreadID != "" {
@@ -251,12 +253,12 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
-func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (string, string, error) {
+func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
-		if strings.TrimSpace(initialMessage) == "" {
+		if strings.TrimSpace(initialMessage) == "" && len(embeds) == 0 {
 			initialMessage = name
 		}
-		message := &discordgo.MessageSend{Content: initialMessage}
+		message := &discordgo.MessageSend{Content: initialMessage, Embeds: embeds}
 		t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
 			Name:                name,
 			AutoArchiveDuration: 1440,
