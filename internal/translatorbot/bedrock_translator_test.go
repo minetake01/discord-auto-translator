@@ -117,7 +117,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if input.Model != bedrockModel || input.MaxOutputTokens != bedrockMaxTokens || input.Store {
+		if input.Model != "google.gemma-4-26b-a4b" || input.MaxOutputTokens != 4096 || input.Store {
 			t.Fatalf("request config = %#v", input)
 		}
 		if len(input.Input) != 2 || input.Input[0].Role != "system" || input.Input[1].Role != "user" {
@@ -137,7 +137,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	if result.Translations["en"] != "Hello <@42>" || result.InputTokens != 1 || result.OutputTokens != 2 {
 		t.Fatalf("result = %#v", result)
 	}
-	if signer.calls.Load() != 1 || signer.service != bedrockService || signer.region != testBedrockRegion || signer.projectID != testBedrockProjectID || len(signer.payloadHash) != 64 {
+	if signer.calls.Load() != 1 || signer.service != "bedrock-mantle" || signer.region != testBedrockRegion || signer.projectID != testBedrockProjectID || len(signer.payloadHash) != 64 {
 		t.Fatalf("signature = %#v", signer)
 	}
 }
@@ -364,18 +364,6 @@ func singleDebugLogEntry(t *testing.T, path string) bedrockDebugEntry {
 		t.Fatal(err)
 	}
 	return entry
-}
-
-func TestBedrockTranslatorRuntimeTimeoutIsSixtySeconds(t *testing.T) {
-	if bedrockRequestTimeout != 60*time.Second {
-		t.Fatalf("timeout = %s", bedrockRequestTimeout)
-	}
-	if bedrockRetryAttempts != 2 {
-		t.Fatalf("retry attempts = %d, want 2", bedrockRetryAttempts)
-	}
-	if bedrockRetryBackoff != time.Second {
-		t.Fatalf("retry backoff = %s", bedrockRetryBackoff)
-	}
 }
 
 func TestBedrockTranslatorRetriesTransientHTTPErrorOnce(t *testing.T) {

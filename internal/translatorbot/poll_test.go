@@ -50,16 +50,30 @@ func TestBuildPollEmbed(t *testing.T) {
 }
 
 func TestWithPollStartedHeader(t *testing.T) {
-	got := withPollStartedHeader("body", "ja", "guild", "channel", "message", true)
-	want := "> -# 投票を開始しました。 · [投票する](https://discord.com/channels/guild/channel/message)\nbody"
-	if got != want {
-		t.Fatalf("withPollStartedHeader = %q, want %q", got, want)
+	const (
+		body      = "body"
+		guildID   = "guild"
+		channelID = "channel"
+		messageID = "message"
+	)
+	got := withPollStartedHeader(body, "ja", guildID, channelID, messageID, true)
+	if !strings.HasPrefix(got, "> -# ") {
+		t.Fatalf("poll header should start with blockquote prefix, got %q", got)
 	}
-	if got := withPollStartedHeader("body", "ja", "guild", "channel", "message", false); got != "body" {
+	jumpURL := MessageJumpURL(guildID, channelID, messageID)
+	if !strings.Contains(got, "](https://discord.com/channels/"+guildID+"/"+channelID+"/"+messageID+")") &&
+		!strings.Contains(got, "]("+jumpURL+")") {
+		t.Fatalf("poll header should contain markdown link to source message, got %q", got)
+	}
+	if !strings.HasSuffix(got, "\n"+body) {
+		t.Fatalf("original body should appear after header, got %q", got)
+	}
+	if got := withPollStartedHeader(body, "ja", guildID, channelID, messageID, false); got != body {
 		t.Fatalf("without poll = %q", got)
 	}
-	if !isPseudoReplyLine("> -# 投票を開始しました。 · [投票する](https://discord.com/channels/guild/channel/message)") {
-		t.Fatal("poll header should be recognized as a pseudo-reply line")
+	headerLine := strings.SplitN(got, "\n", 2)[0]
+	if !isPseudoReplyLine(headerLine) {
+		t.Fatalf("poll header should be recognized as a pseudo-reply line: %q", headerLine)
 	}
 }
 

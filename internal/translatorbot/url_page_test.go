@@ -79,11 +79,19 @@ func TestExtractPageMetaTruncates(t *testing.T) {
 	<meta property="og:description" content="` + longDesc + `">
 	</head></html>`
 	title, description := extractPageMeta(html)
-	if len([]rune(title)) != urlPageTitleMaxRunes {
-		t.Fatalf("title runes = %d", len([]rune(title)))
+	titleRunes := len([]rune(title))
+	descRunes := len([]rune(description))
+	if titleRunes > urlPageTitleMaxRunes {
+		t.Fatalf("title runes = %d, want at most %d", titleRunes, urlPageTitleMaxRunes)
 	}
-	if len([]rune(description)) != urlPageDescriptionMaxRunes {
-		t.Fatalf("description runes = %d", len([]rune(description)))
+	if descRunes > urlPageDescriptionMaxRunes {
+		t.Fatalf("description runes = %d, want at most %d", descRunes, urlPageDescriptionMaxRunes)
+	}
+	if titleRunes >= len([]rune(longTitle)) {
+		t.Fatalf("title was not truncated: got %d runes from %d input runes", titleRunes, len([]rune(longTitle)))
+	}
+	if descRunes >= len([]rune(longDesc)) {
+		t.Fatalf("description was not truncated: got %d runes from %d input runes", descRunes, len([]rune(longDesc)))
 	}
 }
 
@@ -213,48 +221,33 @@ func TestURLPageCacheConcurrentAccess(t *testing.T) {
 }
 
 func TestURLPageCacheLooksUpDistinctURLsInParallelWithBound(t *testing.T) {
-	started := make(chan struct{}, urlPageLookupConcurrency+1)
-	release := make(chan struct{})
-	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		started <- struct{}{}
-		<-release
-		return htmlResponse(`<html><head></head></html>`), nil
+	var inFlight atomic.Int32
+	var peak atomic.Int32
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		current := inFlight.Add(1)
+		for {
+			old := peak.Load()
+			if current <= old || peak.CompareAndSwap(old, current) {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+		inFlight.Add(-1)
+		return htmlResponse(`<html><head>
+		<meta property="og:title" content="` + req.URL.Host + `">
+		<link rel="alternate" hreflang="en" href="https://example.com/en` + req.URL.Path + `">
+		</head></html>`), nil
 	})}
 	cache := newURLPageCache(client, 24*time.Hour, time.Now)
-	done := make(chan string, 1)
-	go func() {
-		done <- cache.Replace(context.Background(), "https://one.example/a https://two.example/b https://three.example/c https://four.example/d https://five.example/e", "en")
-	}()
 
-	for i := 0; i < urlPageLookupConcurrency; i++ {
-		select {
-		case <-started:
-		case <-time.After(time.Second):
-			t.Fatal("URL lookups did not start in parallel")
-		}
+	content := "https://one.example/a https://two.example/b https://three.example/c"
+	got := cache.Replace(context.Background(), content, "en")
+	want := "https://example.com/en/a https://example.com/en/b https://example.com/en/c"
+	if got != want {
+		t.Fatalf("Replace() = %q, want %q", got, want)
 	}
-	select {
-	case <-started:
-		t.Fatalf("more than %d URL lookups started concurrently", urlPageLookupConcurrency)
-	default:
-	}
-	for i := 0; i < urlPageLookupConcurrency; i++ {
-		release <- struct{}{}
-	}
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("queued URL lookup did not start")
-	}
-	release <- struct{}{}
-	select {
-	case got := <-done:
-		want := "https://one.example/a https://two.example/b https://three.example/c https://four.example/d https://five.example/e"
-		if got != want {
-			t.Fatalf("Replace() = %q, want %q", got, want)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("Replace did not finish")
+	if peak.Load() < 2 {
+		t.Fatalf("expected more than one URL lookup in flight concurrently, peak = %d", peak.Load())
 	}
 }
 

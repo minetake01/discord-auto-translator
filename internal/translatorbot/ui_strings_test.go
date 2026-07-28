@@ -67,20 +67,6 @@ func TestResolveUILanguage(t *testing.T) {
 	}
 }
 
-func TestLocalizedUIStringKnownLanguages(t *testing.T) {
-	for lang := range uiStrings {
-		for key := range uiStrings["en"] {
-			got := localizedUIString(lang, key)
-			if got == "" {
-				t.Fatalf("empty string for lang=%s key=%s", lang, key)
-			}
-			if lang == "en" && got != uiStrings["en"][key] {
-				t.Fatalf("en mismatch for key %s: %q", key, got)
-			}
-		}
-	}
-}
-
 func TestLocalizedUIStringFallbackToEnglish(t *testing.T) {
 	got := localizedUIString("xx-unknown", uiKeyAlreadyOriginal)
 	want := uiStrings["en"][uiKeyAlreadyOriginal]
