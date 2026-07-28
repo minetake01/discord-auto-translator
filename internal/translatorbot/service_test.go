@@ -724,8 +724,8 @@ func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
 		localizedUIString("en", uiKeyPollVote),
 		sourceURL,
 	)
-	wantBody := "[en] 好きな色は？\n1. 🔴 赤\n2. 青"
-	want := wantHeader + "\n\n" + wantBody
+	wantBody := "[en] ## 好きな色は？\n1. 🔴 赤\n2. 青"
+	want := wantHeader + "\n" + wantBody
 	if got := discord.sent[0].Content; got != want {
 		t.Fatalf("content = %q, want %q", got, want)
 	}
@@ -736,7 +736,7 @@ func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
 	if err != nil || len(links) != 1 {
 		t.Fatalf("links: %#v err=%v", links, err)
 	}
-	wantSnapshot := "好きな色は？\n1. 🔴 赤\n2. 青"
+	wantSnapshot := "## 好きな色は？\n1. 🔴 赤\n2. 青"
 	if links[0].SourceContentSnapshot != wantSnapshot {
 		t.Fatalf("snapshot = %q, want %q", links[0].SourceContentSnapshot, wantSnapshot)
 	}
