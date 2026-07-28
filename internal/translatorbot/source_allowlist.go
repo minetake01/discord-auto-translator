@@ -60,7 +60,7 @@ func (s *Store) AddAllowedSource(ctx context.Context, guildID string, sourceType
 		}
 	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO source_allowlists(guild_id,source_type,source_id,created_by,created_at) VALUES(?,?,?,?,?)`,
-		guildID, sourceType, sourceID, createdBy, time.Now().UTC().Unix())
+		guildID, sourceType, sourceID, createdBy, time.Now().UTC().UnixMilli())
 	if err != nil {
 		switch {
 		case strings.Contains(err.Error(), "translation output webhooks cannot be allowlisted"):
@@ -108,7 +108,7 @@ func (s *Store) ListAllowedSources(ctx context.Context, guildID string) ([]Allow
 		if err := rows.Scan(&source.GuildID, &source.Type, &source.ID, &source.CreatedBy, &createdAt); err != nil {
 			return nil, err
 		}
-		source.CreatedAt = time.Unix(createdAt, 0).UTC()
+		source.CreatedAt = time.UnixMilli(createdAt).UTC()
 		sources = append(sources, source)
 	}
 	return sources, rows.Err()

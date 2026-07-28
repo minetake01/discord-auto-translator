@@ -533,13 +533,14 @@ func (s *Service) targetAlreadySynced(ctx context.Context, sourceChannelID, sour
 
 // sendAndSaveLink posts a webhook message and persists its link. When the
 // link cannot be saved, the just-posted message is deleted as compensation.
-func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink) error {
+// ref may be zero when the source message is not a reply.
+func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) error {
 	msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
 	if err != nil {
 		return err
 	}
 	link.TargetMessageID = msgID
-	if err := s.store.SaveMessageLink(ctx, link); err != nil {
+	if err := s.store.SaveMessageLinkWithReference(ctx, link, ref); err != nil {
 		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, msgID, threadID)
 		return err
 	}

@@ -158,12 +158,11 @@ func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveMessageLink(ctx, MessageLink{
+	if err := store.SaveMessageLinkWithReference(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "en", GroupID: "g",
 		TargetChannelID: "ja", TargetMessageID: "100000000000000015", TargetLanguage: "ja",
 		SourceAuthorID: "bob", SourceContentSnapshot: "reply body",
-		ReferencedMessageID: "100000000000000014", ReferencedChannelID: "en",
-	}); err != nil {
+	}, MessageReference{MessageID: "100000000000000014", ChannelID: "en"}); err != nil {
 		t.Fatal(err)
 	}
 
