@@ -88,7 +88,23 @@ Gemma 4 26B-A4BはBedrock Structured Outputs非対応です。固定JSON Schema�
 - `main.go` が起動時にファイルを開き、開けなければ `log.Fatal` で停止します（`--bedrock-prewarm` でも有効）。書き込み失敗は翻訳を止めず stderr へ出します。
 - 本文全量を書くためディスクを圧迫します。`0600` で作成し、64 MiB を超えると `<path>.1` へ1世代だけローテートします。**プライバシーポリシーのメッセージ関連データ60日以内削除に合わせ、調査が終わったらログを削除してください。**
 
-失敗だけを絞り込む例:
+確認用 CLI（直近50件の要約。`.1` ローテートも自動読込。パス未指定時は `TRANSLATION_DEBUG_LOG_PATH` → `.env` → `./translation-debug.log`）:
+
+```sh
+go run ./cmd/inspect-translation-log
+go run ./cmd/inspect-translation-log --errors --detail
+go run ./cmd/inspect-translation-log --message-id <id> --detail
+```
+
+GCE 上のログを取る場合は、ローカル `.env` に `TRANSLATION_DEBUG_LOG_PATH` を書き、`-UploadEnv` で同期する（inspect 側では設定をいじらない）:
+
+```powershell
+.\deploy\deploy-gce.ps1 -UploadEnv
+# 翻訳を1回発生させてから:
+.\deploy\inspect-translation-log.ps1 -Remote -Errors -Detail
+```
+
+`jq` で失敗だけを絞り込む例:
 
 ```sh
 jq -c 'select(.error) | {time, guild_id, message_id, http_status, duration_ms, error}' translation-debug.log
