@@ -7,18 +7,19 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-func TestFormatPollAnswers(t *testing.T) {
-	got := formatPollAnswers(&DiscordPoll{
+func TestFormatTranslatedPollAnswers(t *testing.T) {
+	poll := &DiscordPoll{
 		Question: "好きな色は？",
 		Answers: []DiscordPollAnswer{
 			{Text: "赤", Emoji: &DiscordPollEmoji{Name: "🔴"}},
 			{Text: "青", Emoji: &DiscordPollEmoji{Name: "blue", ID: "123", Animated: true}},
 			{Text: "緑"},
 		},
-	})
-	want := "1. 🔴 赤\n2. <a:blue:123> 青\n3. 緑"
+	}
+	got := formatTranslatedPollAnswers(poll, []string{"Red", "Blue", "Green"})
+	want := "1. 🔴 Red\n2. <a:blue:123> Blue\n3. Green"
 	if got != want {
-		t.Fatalf("formatPollAnswers = %q, want %q", got, want)
+		t.Fatalf("formatTranslatedPollAnswers = %q, want %q", got, want)
 	}
 }
 
@@ -73,5 +74,21 @@ func TestContentWithEmbedQuoteText(t *testing.T) {
 	}
 	if first := firstLineWithoutPseudoReply(got); first != "好きな色は？" {
 		t.Fatalf("quote snippet = %q", first)
+	}
+}
+
+func TestParsePollTranslationResponse(t *testing.T) {
+	protector := NewProtector(NameMaps{})
+	raw := `{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`
+	got, err := parsePollTranslationResponse(raw, []string{"en"}, 2, protector)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["en"].Question != "Favorite?" || len(got["en"].Answers) != 2 || got["en"].Answers[0] != "Red" {
+		t.Fatalf("got %#v", got)
+	}
+	_, err = parsePollTranslationResponse(`{"translations":[{"language":"en","question":"Q","answers":["only-one"]}]}`, []string{"en"}, 2, protector)
+	if err == nil {
+		t.Fatal("expected answer count mismatch")
 	}
 }

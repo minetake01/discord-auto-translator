@@ -28,7 +28,8 @@ const (
 	bedrockRetryAttempts  = 2 // initial attempt + one retry
 	bedrockRetryBackoff   = 1 * time.Second
 
-	bedrockTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
+	bedrockTranslationJSONSchema     = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
+	bedrockPollTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`
 )
 
 var (
@@ -170,15 +171,34 @@ func (t *BedrockTranslator) SetDebugLog(debugLog *DebugLog) {
 	t.debugLog = debugLog
 }
 
-func (t *BedrockTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
-	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
-	if err != nil {
-		return MultiTranslationResult{}, err
-	}
+func (t *BedrockTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	return t.translatePreparedWithRetry(ctx, prepared)
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, bedrockTranslationJSONSchema)
+	if err != nil {
+		return MultiTranslationResult{}, err
+	}
+	translations, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector)
+	if err != nil {
+		return MultiTranslationResult{}, err
+	}
+	return MultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+}
+
+func (t *BedrockTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
+	if len(prepared.targetLanguages) == 0 {
+		return PollMultiTranslationResult{Translations: map[string]PollTranslation{}}, nil
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, bedrockPollTranslationJSONSchema)
+	if err != nil {
+		return PollMultiTranslationResult{}, err
+	}
+	translations, err := parsePollTranslationResponse(text, prepared.targetLanguages, prepared.answerCount, prepared.protector)
+	if err != nil {
+		return PollMultiTranslationResult{}, err
+	}
+	return PollMultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
 // WarmUp verifies credentials, model access, and the fixed response contract
@@ -190,35 +210,35 @@ func (t *BedrockTranslator) WarmUp(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = t.translatePreparedWithRetry(ctx, prepared)
+	_, _, _, err = t.invokePreparedWithRetry(ctx, prepared, bedrockTranslationJSONSchema)
 	if err != nil {
 		return fmt.Errorf("prewarm Amazon Bedrock model: %w", err)
 	}
 	return nil
 }
 
-func (t *BedrockTranslator) translatePreparedWithRetry(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+func (t *BedrockTranslator) invokePreparedWithRetry(ctx context.Context, prepared preparedTranslation, jsonSchema string) (text string, inputTokens, outputTokens int, err error) {
 	var lastErr error
 	for attempt := 0; attempt < bedrockRetryAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(ctx, bedrockRequestTimeout)
-		result, err := t.translatePrepared(attemptCtx, prepared)
+		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, jsonSchema)
 		cancel()
 		if err == nil {
-			return result, nil
+			return text, inputTokens, outputTokens, nil
 		}
 		lastErr = err
 		if attempt == bedrockRetryAttempts-1 || !isBedrockRetryable(err) || ctx.Err() != nil {
-			return MultiTranslationResult{}, lastErr
+			return "", 0, 0, lastErr
 		}
 		timer := time.NewTimer(bedrockRetryBackoff)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return MultiTranslationResult{}, ctx.Err()
+			return "", 0, 0, ctx.Err()
 		case <-timer.C:
 		}
 	}
-	return MultiTranslationResult{}, lastErr
+	return "", 0, 0, lastErr
 }
 
 func isBedrockRetryable(err error) bool {
@@ -236,8 +256,8 @@ func isBedrockRetryable(err error) bool {
 	return errors.As(err, &netErr)
 }
 
-func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared preparedTranslation) (result MultiTranslationResult, err error) {
-	systemInstruction := prepared.systemInstruction + "\nReturn only JSON matching this exact schema, without markdown fences: " + bedrockTranslationJSONSchema
+func (t *BedrockTranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, jsonSchema string) (text string, inputTokens, outputTokens int, err error) {
+	systemInstruction := prepared.systemInstruction + "\nReturn only JSON matching this exact schema, without markdown fences: " + jsonSchema
 	payload := bedrockResponsesRequest{
 		Model: bedrockModel,
 		Input: []bedrockInputMessage{
@@ -263,50 +283,50 @@ func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared prep
 	}()
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return MultiTranslationResult{}, errors.New("encode Amazon Bedrock translation request")
+		return "", 0, 0, errors.New("encode Amazon Bedrock translation request")
 	}
 	entry.Request = body
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.responsesURL, bytes.NewReader(body))
 	if err != nil {
-		return MultiTranslationResult{}, errors.New("create Amazon Bedrock translation request")
+		return "", 0, 0, errors.New("create Amazon Bedrock translation request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("OpenAI-Project", t.projectID)
 	creds, err := t.credentials.Retrieve(ctx)
 	if err != nil {
-		return MultiTranslationResult{}, errors.New("retrieve AWS credentials")
+		return "", 0, 0, errors.New("retrieve AWS credentials")
 	}
 	sum := sha256.Sum256(body)
 	if err := t.signer.SignHTTP(ctx, creds, req, hex.EncodeToString(sum[:]), bedrockService, t.region, t.now()); err != nil {
-		return MultiTranslationResult{}, errors.New("sign Amazon Bedrock translation request")
+		return "", 0, 0, errors.New("sign Amazon Bedrock translation request")
 	}
 	response, err := t.client.Do(req)
 	if err != nil {
-		return MultiTranslationResult{}, fmt.Errorf("Amazon Bedrock translation request: %w", err)
+		return "", 0, 0, fmt.Errorf("Amazon Bedrock translation request: %w", err)
 	}
 	if response == nil {
-		return MultiTranslationResult{}, errors.New("Amazon Bedrock response is nil")
+		return "", 0, 0, errors.New("Amazon Bedrock response is nil")
 	}
 	defer response.Body.Close()
 	entry.HTTPStatus = response.StatusCode
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
 	if err != nil {
-		return MultiTranslationResult{}, errors.New("read Amazon Bedrock translation response")
+		return "", 0, 0, errors.New("read Amazon Bedrock translation response")
 	}
 	entry.recordResponse(responseBody)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return MultiTranslationResult{}, bedrockHTTPError(response, responseBody)
+		return "", 0, 0, bedrockHTTPError(response, responseBody)
 	}
 	var output bedrockResponsesResponse
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	if err := decoder.Decode(&output); err != nil {
-		return MultiTranslationResult{}, errors.New("decode Amazon Bedrock translation response")
+		return "", 0, 0, errors.New("decode Amazon Bedrock translation response")
 	}
 	if err := ensureJSONEOF(decoder); err != nil {
-		return MultiTranslationResult{}, errors.New("decode Amazon Bedrock translation response")
+		return "", 0, 0, errors.New("decode Amazon Bedrock translation response")
 	}
-	return parseBedrockResponse(output, prepared)
+	return extractBedrockOutputText(output)
 }
 
 func (e *bedrockDebugEntry) recordResponse(body []byte) {
@@ -378,42 +398,37 @@ func firstSafeErrorField(values ...string) string {
 	return ""
 }
 
-func parseBedrockResponse(output bedrockResponsesResponse, prepared preparedTranslation) (MultiTranslationResult, error) {
+func extractBedrockOutputText(output bedrockResponsesResponse) (text string, inputTokens, outputTokens int, err error) {
 	if output.Status != "completed" {
-		return MultiTranslationResult{}, fmt.Errorf("Amazon Bedrock response status is %q", output.Status)
+		return "", 0, 0, fmt.Errorf("Amazon Bedrock response status is %q", output.Status)
 	}
 	if !isNullJSON(output.Error) || !isNullJSON(output.IncompleteDetails) {
-		return MultiTranslationResult{}, errors.New("Amazon Bedrock response reports an error or incomplete output")
+		return "", 0, 0, errors.New("Amazon Bedrock response reports an error or incomplete output")
 	}
-	var text string
 	messages := 0
 	for _, item := range output.Output {
 		if item.Type == "reasoning" {
 			if item.Status != "completed" {
-				return MultiTranslationResult{}, errors.New("Amazon Bedrock response has incomplete reasoning")
+				return "", 0, 0, errors.New("Amazon Bedrock response has incomplete reasoning")
 			}
 			continue // Gemma reasoning items are separate from the final message.
 		}
 		if item.Type != "message" {
-			return MultiTranslationResult{}, fmt.Errorf("Amazon Bedrock response has unsupported output type %q", item.Type)
+			return "", 0, 0, fmt.Errorf("Amazon Bedrock response has unsupported output type %q", item.Type)
 		}
 		messages++
 		if item.Status != "completed" || item.Role != "assistant" || len(item.Content) != 1 || item.Content[0].Type != "output_text" {
-			return MultiTranslationResult{}, errors.New("Amazon Bedrock response has an invalid message")
+			return "", 0, 0, errors.New("Amazon Bedrock response has an invalid message")
 		}
 		text = strings.TrimSpace(item.Content[0].Text)
 	}
 	if messages != 1 || text == "" {
-		return MultiTranslationResult{}, fmt.Errorf("Amazon Bedrock response has %d final messages, want 1", messages)
+		return "", 0, 0, fmt.Errorf("Amazon Bedrock response has %d final messages, want 1", messages)
 	}
 	if output.Usage == nil || output.Usage.InputTokens < 0 || output.Usage.OutputTokens < 0 {
-		return MultiTranslationResult{}, errors.New("Amazon Bedrock response has no valid token usage")
+		return "", 0, 0, errors.New("Amazon Bedrock response has no valid token usage")
 	}
-	translations, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector)
-	if err != nil {
-		return MultiTranslationResult{}, err
-	}
-	return MultiTranslationResult{Translations: translations, InputTokens: output.Usage.InputTokens, OutputTokens: output.Usage.OutputTokens}, nil
+	return text, output.Usage.InputTokens, output.Usage.OutputTokens, nil
 }
 
 func isNullJSON(raw json.RawMessage) bool {
