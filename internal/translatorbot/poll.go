@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -153,4 +154,42 @@ func contentWithEmbedQuoteText(content string, embeds []*discordgo.MessageEmbed)
 		return embedLine
 	}
 	return content + "\n" + embedLine
+}
+
+// pollResultPercent returns the integer percent for victor votes over total,
+// rounding half away from zero. totalVotes <= 0 yields 0.
+func pollResultPercent(victorVotes, totalVotes int) int {
+	if totalVotes <= 0 {
+		return 0
+	}
+	return int(math.Round(float64(victorVotes) * 100 / float64(totalVotes)))
+}
+
+// formatPollVictorLabel builds the display label for a winning answer,
+// combining optional emoji markup with the answer text.
+func formatPollVictorLabel(answerText string, emoji *DiscordPollEmoji) string {
+	answerText = strings.TrimSpace(answerText)
+	emojiMarkup := pollEmojiMarkup(emoji)
+	switch {
+	case emojiMarkup != "" && answerText != "":
+		return emojiMarkup + " " + answerText
+	case answerText != "":
+		return answerText
+	default:
+		return emojiMarkup
+	}
+}
+
+// pollResultBody builds the mirrored poll-result body (no pseudo-reply).
+// When the poll_result embed is missing, only the ended notice is returned.
+func pollResultBody(language string, result *DiscordPollResult, victorLabel string) string {
+	ended := localizedUIString(language, uiKeyPollEnded)
+	if result == nil || !result.HasEmbed {
+		return ended
+	}
+	if strings.TrimSpace(victorLabel) != "" {
+		percent := strconv.Itoa(pollResultPercent(result.VictorAnswerVotes, result.TotalVotes))
+		return ended + "\n" + localizedUIStringf(language, uiKeyPollResultVictor, victorLabel, percent)
+	}
+	return ended + "\n" + localizedUIString(language, uiKeyPollResultNoWinner)
 }

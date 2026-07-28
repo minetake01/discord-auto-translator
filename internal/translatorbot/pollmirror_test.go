@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -213,5 +214,185 @@ func TestParsePollTranslationResponse(t *testing.T) {
 	_, err = parsePollTranslationResponse(`{"translations":[{"language":"en","question":"Q","answers":["only-one"]}]}`, []string{"en"}, 2, protector)
 	if err == nil {
 		t.Fatal("expected answer count mismatch")
+	}
+}
+
+// SPEC 3.2 poll results
+func TestPollResultPercent(t *testing.T) {
+	if got := pollResultPercent(3, 5); got != 60 {
+		t.Fatalf("3/5 = %d, want 60", got)
+	}
+	if got := pollResultPercent(1, 3); got != 33 {
+		t.Fatalf("1/3 = %d, want 33", got)
+	}
+	if got := pollResultPercent(1, 0); got != 0 {
+		t.Fatalf("div zero = %d", got)
+	}
+}
+
+// SPEC 3.2 poll results
+func TestHandleMessageCreateCachesPollTranslationsAndMirrorsResult(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		messages: map[string]DiscordFetchedMessage{
+			"en\x00translated-poll": {Content: "> -# A poll has started. · [Vote](https://discord.com/channels/guild/ja/100000000000000050)\nFavorite color?"},
+		},
+	}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	expiry := time.Date(2026, time.August, 1, 12, 0, 0, 0, time.UTC)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000050", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Poll: &DiscordPoll{
+			Question: "好きな色は？",
+			Answers: []DiscordPollAnswer{
+				{Text: "赤", Emoji: &DiscordPollEmoji{Name: "🔴"}},
+				{Text: "青"},
+			},
+			Expiry: &expiry,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answers, ok, err := store.PollTranslatedAnswers(ctx, "ja", "100000000000000050", "en")
+	if err != nil || !ok || len(answers) != 2 || answers[0] != "[en] 赤" {
+		t.Fatalf("cache = %#v ok=%v err=%v", answers, ok, err)
+	}
+
+	discord.sent = nil
+	translator.pollContexts = nil
+	translator.contexts = nil
+	_ = store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000050", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated-poll", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "好きな色は？",
+	})
+
+	err = service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000060", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ReferencedMessageID: "100000000000000050", ReferencedMessageChannelID: "ja",
+		PollResult: &DiscordPollResult{
+			HasEmbed: true, VictorAnswerID: 1, VictorAnswerText: "赤",
+			VictorEmoji: &DiscordPollEmoji{Name: "🔴"},
+			VictorAnswerVotes: 3, TotalVotes: 5,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 0 || len(translator.pollContexts) != 0 {
+		t.Fatalf("poll result must not call translator: %#v %#v", translator.contexts, translator.pollContexts)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	wantBody := localizedUIString("en", uiKeyPollEnded) + "\n" +
+		localizedUIStringf("en", uiKeyPollResultVictor, "🔴 [en] 赤", "60")
+	if !strings.Contains(discord.sent[0].Content, wantBody) {
+		t.Fatalf("content = %q, want body %q", discord.sent[0].Content, wantBody)
+	}
+	if !strings.HasPrefix(discord.sent[0].Content, "> -#") {
+		t.Fatalf("expected pseudo-reply prefix: %q", discord.sent[0].Content)
+	}
+	if _, ok, err := store.PollTranslatedAnswers(ctx, "ja", "100000000000000050", "en"); err != nil || ok {
+		t.Fatalf("cache should be deleted after result, ok=%v err=%v", ok, err)
+	}
+}
+
+// SPEC 3.2 poll results
+func TestHandleMessageCreatePollResultNoWinner(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000061", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ReferencedMessageID: "100000000000000050", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "好きな色は？",
+		PollResult:               &DiscordPollResult{HasEmbed: true, TotalVotes: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	want := localizedUIString("en", uiKeyPollEnded) + "\n" + localizedUIString("en", uiKeyPollResultNoWinner)
+	if !strings.Contains(discord.sent[0].Content, want) {
+		t.Fatalf("content = %q, want %q", discord.sent[0].Content, want)
+	}
+}
+
+// SPEC 3.2 poll results
+func TestHandleMessageCreatePollResultWithoutEmbed(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000062", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ReferencedMessageID: "100000000000000050", ReferencedMessageContent: "poll",
+		PollResult: &DiscordPollResult{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	got := discord.sent[0].Content
+	ended := localizedUIString("en", uiKeyPollEnded)
+	if !strings.Contains(got, ended) || strings.Contains(got, localizedUIString("en", uiKeyPollResultNoWinner)) {
+		t.Fatalf("content = %q", got)
+	}
+}
+
+// SPEC 3.2 poll results
+func TestHandleMessageCreateSkipsPollCacheWithoutExpiry(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	service := NewService(store, &fakeDiscordAPI{}, &echoTranslator{})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000063", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Poll: &DiscordPoll{Question: "Q", Answers: []DiscordPollAnswer{{Text: "A"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := store.PollTranslatedAnswers(ctx, "ja", "100000000000000063", "en"); err != nil || ok {
+		t.Fatalf("expected no cache without expiry, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestPurgeExpiredPollTranslationCache(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	past := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	future := time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.SavePollTranslationCache(ctx, "ja", "100000000000000070", "en", []string{"Old"}, past); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SavePollTranslationCache(ctx, "ja", "100000000000000071", "en", []string{"New"}, future); err != nil {
+		t.Fatal(err)
+	}
+	n, err := store.PurgeExpiredPollTranslationCache(ctx, time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil || n != 1 {
+		t.Fatalf("purged=%d err=%v", n, err)
+	}
+	if _, ok, _ := store.PollTranslatedAnswers(ctx, "ja", "100000000000000070", "en"); ok {
+		t.Fatal("expired row remained")
+	}
+	if _, ok, err := store.PollTranslatedAnswers(ctx, "ja", "100000000000000071", "en"); err != nil || !ok {
+		t.Fatal("future row was purged")
 	}
 }

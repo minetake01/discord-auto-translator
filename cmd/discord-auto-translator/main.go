@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -123,6 +124,7 @@ func main() {
 			ReferencedMessageContent:   refContent,
 			ForwardedMessage:           forwarded,
 			Poll:                       pollFromDiscord(m.Poll),
+			PollResult:                 pollResultFromDiscord(m.Message),
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 			MentionedUsers:    mentionedUsers,
@@ -304,11 +306,17 @@ func stickersFromDiscord(stickers []*discordgo.StickerItem) []translatorbot.Disc
 	return out
 }
 
+// MessageTypePollResult is Discord's POLL_RESULT system message type.
+// discordgo v0.29.0 does not define this constant yet.
+const MessageTypePollResult discordgo.MessageType = 46
+
+const embedTypePollResult discordgo.EmbedType = "poll_result"
+
 func pollFromDiscord(poll *discordgo.Poll) *translatorbot.DiscordPoll {
 	if poll == nil {
 		return nil
 	}
-	out := &translatorbot.DiscordPoll{Question: poll.Question.Text}
+	out := &translatorbot.DiscordPoll{Question: poll.Question.Text, Expiry: poll.Expiry}
 	out.Answers = make([]translatorbot.DiscordPollAnswer, 0, len(poll.Answers))
 	for _, answer := range poll.Answers {
 		item := translatorbot.DiscordPollAnswer{}
@@ -323,6 +331,59 @@ func pollFromDiscord(poll *discordgo.Poll) *translatorbot.DiscordPoll {
 			}
 		}
 		out.Answers = append(out.Answers, item)
+	}
+	return out
+}
+
+func pollResultFromDiscord(m *discordgo.Message) *translatorbot.DiscordPollResult {
+	if m == nil || m.Type != MessageTypePollResult {
+		return nil
+	}
+	out := &translatorbot.DiscordPollResult{}
+	for _, embed := range m.Embeds {
+		if embed == nil || embed.Type != embedTypePollResult {
+			continue
+		}
+		out.HasEmbed = true
+		for _, field := range embed.Fields {
+			if field == nil {
+				continue
+			}
+			switch field.Name {
+			case "poll_question_text":
+				out.QuestionText = field.Value
+			case "victor_answer_text":
+				out.VictorAnswerText = field.Value
+			case "victor_answer_id":
+				if id, err := strconv.Atoi(strings.TrimSpace(field.Value)); err == nil {
+					out.VictorAnswerID = id
+				}
+			case "victor_answer_votes":
+				if n, err := strconv.Atoi(strings.TrimSpace(field.Value)); err == nil {
+					out.VictorAnswerVotes = n
+				}
+			case "total_votes":
+				if n, err := strconv.Atoi(strings.TrimSpace(field.Value)); err == nil {
+					out.TotalVotes = n
+				}
+			case "victor_answer_emoji_name":
+				if out.VictorEmoji == nil {
+					out.VictorEmoji = &translatorbot.DiscordPollEmoji{}
+				}
+				out.VictorEmoji.Name = field.Value
+			case "victor_answer_emoji_id":
+				if out.VictorEmoji == nil {
+					out.VictorEmoji = &translatorbot.DiscordPollEmoji{}
+				}
+				out.VictorEmoji.ID = field.Value
+			case "victor_answer_emoji_animated":
+				if out.VictorEmoji == nil {
+					out.VictorEmoji = &translatorbot.DiscordPollEmoji{}
+				}
+				out.VictorEmoji.Animated = strings.EqualFold(strings.TrimSpace(field.Value), "true")
+			}
+		}
+		break
 	}
 	return out
 }

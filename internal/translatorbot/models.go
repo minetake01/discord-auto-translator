@@ -1,6 +1,8 @@
 package translatorbot
 
-import "time"
+import (
+	"time"
+)
 
 type TranslationGroup struct {
 	ID          string
@@ -63,6 +65,7 @@ type DiscordMessage struct {
 	ReferencedMessageContent   string
 	ForwardedMessage           *DiscordForwardedMessage
 	Poll                       *DiscordPoll
+	PollResult                 *DiscordPollResult
 	TTS                        bool
 	WebhookID                  string
 	Bot                        bool
@@ -77,6 +80,19 @@ type DiscordMessage struct {
 type DiscordPoll struct {
 	Question string
 	Answers  []DiscordPollAnswer
+	Expiry   *time.Time
+}
+
+// DiscordPollResult is the payload of a Discord POLL_RESULT system message
+// (type 46), parsed from the poll_result embed fields.
+type DiscordPollResult struct {
+	HasEmbed          bool
+	QuestionText      string
+	VictorAnswerID    int // 0 when absent; Discord answer ids are 1-based
+	VictorAnswerText  string
+	VictorEmoji       *DiscordPollEmoji
+	VictorAnswerVotes int
+	TotalVotes        int
 }
 
 type DiscordPollAnswer struct {

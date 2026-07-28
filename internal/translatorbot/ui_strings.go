@@ -17,6 +17,9 @@ const (
 	uiKeyForwarded              uiKey = "forwarded"
 	uiKeyPollStarted            uiKey = "pollStarted"
 	uiKeyPollVote               uiKey = "pollVote"
+	uiKeyPollEnded              uiKey = "pollEnded"
+	uiKeyPollResultVictor       uiKey = "pollResultVictor"
+	uiKeyPollResultNoWinner     uiKey = "pollResultNoWinner"
 
 	uiKeyRateLimitNotice         uiKey = "rateLimitNotice"
 	uiKeyTranslationFailedNotice uiKey = "translationFailedNotice"
@@ -92,6 +95,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Forwarded",
 		uiKeyPollStarted:            "A poll has started.",
 		uiKeyPollVote:               "Vote",
+		uiKeyPollEnded:              "A poll has ended.",
+		uiKeyPollResultVictor:       "Result: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "There was no winner.",
 
 		uiKeyRateLimitNotice:         "This message was not translated because the translation rate limit was reached.",
 		uiKeyTranslationFailedNotice: "This message was not mirrored because translation failed.",
@@ -162,6 +168,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "転送済み",
 		uiKeyPollStarted:            "投票を開始しました。",
 		uiKeyPollVote:               "投票する",
+		uiKeyPollEnded:              "投票が終了しました。",
+		uiKeyPollResultVictor:       "結果: %[1]s（%[2]s%%）",
+		uiKeyPollResultNoWinner:     "勝者はいませんでした。",
 
 		uiKeyRateLimitNotice:         "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。",
 		uiKeyTranslationFailedNotice: "翻訳に失敗したため、このメッセージはミラーリングされませんでした。",
@@ -232,6 +241,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "已转发",
 		uiKeyPollStarted:            "已发起投票。",
 		uiKeyPollVote:               "去投票",
+		uiKeyPollEnded:              "投票已结束。",
+		uiKeyPollResultVictor:       "结果：%[1]s（%[2]s%%）",
+		uiKeyPollResultNoWinner:     "没有胜者。",
 
 		uiKeyRateLimitNotice:         "已达到翻译速率限制，此消息未被翻译。",
 		uiKeyTranslationFailedNotice: "翻译失败，此消息未被镜像。",
@@ -302,6 +314,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "已轉發",
 		uiKeyPollStarted:            "已發起投票。",
 		uiKeyPollVote:               "去投票",
+		uiKeyPollEnded:              "投票已結束。",
+		uiKeyPollResultVictor:       "結果：%[1]s（%[2]s%%）",
+		uiKeyPollResultNoWinner:     "沒有勝者。",
 
 		uiKeyRateLimitNotice:         "已達到翻譯速率限制，此訊息未被翻譯。",
 		uiKeyTranslationFailedNotice: "翻譯失敗，此訊息未被鏡像。",
@@ -372,6 +387,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "전달됨",
 		uiKeyPollStarted:            "투표가 시작되었습니다.",
 		uiKeyPollVote:               "투표하기",
+		uiKeyPollEnded:              "투표가 종료되었습니다.",
+		uiKeyPollResultVictor:       "결과: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "승자가 없었습니다.",
 
 		uiKeyRateLimitNotice:         "번역 속도 제한에 도달하여 이 메시지는 번역되지 않았습니다.",
 		uiKeyTranslationFailedNotice: "번역에 실패하여 이 메시지는 미러링되지 않았습니다.",
@@ -442,6 +460,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Transféré",
 		uiKeyPollStarted:            "Un sondage a commencé.",
 		uiKeyPollVote:               "Voter",
+		uiKeyPollEnded:              "Un sondage est terminé.",
+		uiKeyPollResultVictor:       "Résultat : %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Il n’y a pas eu de gagnant.",
 
 		uiKeyRateLimitNotice:         "Ce message n'a pas été traduit car la limite de débit de traduction a été atteinte.",
 		uiKeyTranslationFailedNotice: "Ce message n'a pas été miroité car la traduction a échoué.",
@@ -512,6 +533,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Weitergeleitet",
 		uiKeyPollStarted:            "Eine Umfrage wurde gestartet.",
 		uiKeyPollVote:               "Abstimmen",
+		uiKeyPollEnded:              "Eine Umfrage ist beendet.",
+		uiKeyPollResultVictor:       "Ergebnis: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Es gab keinen Gewinner.",
 
 		uiKeyRateLimitNotice:         "Diese Nachricht wurde nicht übersetzt, weil das Übersetzungsratenlimit erreicht wurde.",
 		uiKeyTranslationFailedNotice: "Diese Nachricht wurde nicht gespiegelt, weil die Übersetzung fehlgeschlagen ist.",
@@ -582,6 +606,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Reenviado",
 		uiKeyPollStarted:            "Se ha iniciado una encuesta.",
 		uiKeyPollVote:               "Votar",
+		uiKeyPollEnded:              "La encuesta ha terminado.",
+		uiKeyPollResultVictor:       "Resultado: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "No hubo ganador.",
 
 		uiKeyRateLimitNotice:         "Este mensaje no se tradujo porque se alcanzó el límite de traducciones.",
 		uiKeyTranslationFailedNotice: "Este mensaje no se replicó porque falló la traducción.",
@@ -652,6 +679,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Encaminhado",
 		uiKeyPollStarted:            "Uma enquete foi iniciada.",
 		uiKeyPollVote:               "Votar",
+		uiKeyPollEnded:              "A enquete terminou.",
+		uiKeyPollResultVictor:       "Resultado: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Não houve vencedor.",
 
 		uiKeyRateLimitNotice:         "Esta mensagem não foi traduzida porque o limite de traduções foi atingido.",
 		uiKeyTranslationFailedNotice: "Esta mensagem não foi espelhada porque a tradução falhou.",
@@ -722,6 +752,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Inoltrato",
 		uiKeyPollStarted:            "Un sondaggio è iniziato.",
 		uiKeyPollVote:               "Vota",
+		uiKeyPollEnded:              "Il sondaggio è terminato.",
+		uiKeyPollResultVictor:       "Risultato: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Non c’è stato un vincitore.",
 
 		uiKeyRateLimitNotice:         "Questo messaggio non è stato tradotto perché è stato raggiunto il limite di traduzioni.",
 		uiKeyTranslationFailedNotice: "Questo messaggio non è stato replicato perché la traduzione non è riuscita.",
@@ -792,6 +825,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Diteruskan",
 		uiKeyPollStarted:            "Sebuah polling telah dimulai.",
 		uiKeyPollVote:               "Berikan suara",
+		uiKeyPollEnded:              "Polling telah berakhir.",
+		uiKeyPollResultVictor:       "Hasil: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Tidak ada pemenang.",
 
 		uiKeyRateLimitNotice:         "Pesan ini tidak diterjemahkan karena batas laju terjemahan telah tercapai.",
 		uiKeyTranslationFailedNotice: "Pesan ini tidak dicerminkan karena terjemahan gagal.",
@@ -862,6 +898,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "ส่งต่อแล้ว",
 		uiKeyPollStarted:            "เริ่มโพลแล้ว",
 		uiKeyPollVote:               "โหวต",
+		uiKeyPollEnded:              "โพลสิ้นสุดแล้ว",
+		uiKeyPollResultVictor:       "ผลลัพธ์: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "ไม่มีผู้ชนะ",
 
 		uiKeyRateLimitNotice:         "ข้อความนี้ไม่ได้รับการแปลเนื่องจากถึงขีดจำกัดอัตราการแปลแล้ว",
 		uiKeyTranslationFailedNotice: "ข้อความนี้ไม่ได้ถูกมิเรอร์เนื่องจากการแปลล้มเหลว",
@@ -932,6 +971,9 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForwarded:              "Đã chuyển tiếp",
 		uiKeyPollStarted:            "Một cuộc bình chọn đã bắt đầu.",
 		uiKeyPollVote:               "Bình chọn",
+		uiKeyPollEnded:              "Cuộc bình chọn đã kết thúc.",
+		uiKeyPollResultVictor:       "Kết quả: %[1]s (%[2]s%%)",
+		uiKeyPollResultNoWinner:     "Không có người chiến thắng.",
 
 		uiKeyRateLimitNotice:         "Tin nhắn này không được dịch vì đã đạt giới hạn tốc độ dịch.",
 		uiKeyTranslationFailedNotice: "Tin nhắn này không được sao chép vì dịch thất bại.",
