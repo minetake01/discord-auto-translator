@@ -48,7 +48,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 ### 2. Configurer Amazon Bedrock
 
-Activez `google.gemma-4-26b-a4b` dans Amazon Bedrock en région `your-aws-bedrock-region`. Créez un utilisateur IAM avec uniquement `bedrock-mantle:CreateInference` pour ce modèle et définissez `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` et `AWS_BEDROCK_PROJECT_ID` dans `.env`. Le modèle, le délai de 15 secondes (1 nouvel essai sur erreurs transitoires) et la limite de 4096 jetons sont fixés dans le code ; la région et le Project ID sont des paramètres locaux obligatoires du déploiement.
+Activez `google.gemma-4-26b-a4b` dans Amazon Bedrock en région `your-aws-bedrock-region`. Créez un utilisateur IAM avec uniquement `bedrock-mantle:CreateInference` pour ce modèle et définissez `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` et `AWS_BEDROCK_PROJECT_ID` dans `.env`. Le modèle, le délai de 60 secondes (1 nouvel essai sur erreurs transitoires) et la limite de 4096 jetons sont fixés dans le code ; la région et le Project ID sont des paramètres locaux obligatoires du déploiement.
 
 ### 3. Configurer les variables d'environnement
 
@@ -92,7 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contrat opérationnel Amazon Bedrock
 
-La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `your-aws-bedrock-region` : délai de **15 s** (1 nouvel essai après 1 s sur erreurs transitoires), **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; un seul nouvel essai sur erreurs transitoires ; aucun découpage ou fallback. Par défaut, le bot ne journalise ni prompts, ni réponses, ni identifiants ; avec `TRANSLATION_DEBUG_LOG_PATH`, il écrit la charge utile de la requête et la réponse brute (y compris les éléments de raisonnement) en JSON Lines pour le débogage. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
+La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `your-aws-bedrock-region` : délai de **60 s** (1 nouvel essai après 1 s sur erreurs transitoires), **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; un seul nouvel essai sur erreurs transitoires ; aucun découpage ou fallback. Par défaut, le bot ne journalise ni prompts, ni réponses, ni identifiants ; avec `TRANSLATION_DEBUG_LOG_PATH`, il écrit la charge utile de la requête et la réponse brute (y compris les éléments de raisonnement) en JSON Lines pour le débogage. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
 
 ### 4. Démarrer
 

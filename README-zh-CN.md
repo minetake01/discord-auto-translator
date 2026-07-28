@@ -48,7 +48,7 @@
 
 ### 2. 配置 Amazon Bedrock
 
-在 `your-aws-bedrock-region` 的 Amazon Bedrock 中启用 `google.gemma-4-26b-a4b`。创建仅对该模型拥有 `bedrock-mantle:CreateInference` 权限的 IAM 用户，并在 `.env` 中设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 和 `AWS_BEDROCK_PROJECT_ID`。模型、15 秒超时（瞬时失败时重试 1 次）和 4096 token 上限固定在代码中；区域和 Project ID 是必需的本地部署设置。
+在 `your-aws-bedrock-region` 的 Amazon Bedrock 中启用 `google.gemma-4-26b-a4b`。创建仅对该模型拥有 `bedrock-mantle:CreateInference` 权限的 IAM 用户，并在 `.env` 中设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 和 `AWS_BEDROCK_PROJECT_ID`。模型、60 秒超时（瞬时失败时重试 1 次）和 4096 token 上限固定在代码中；区域和 Project ID 是必需的本地部署设置。
 
 ### 3. 配置环境变量
 
@@ -92,7 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 运营约定
 
-翻译使用 `your-aws-bedrock-region` 中 `google.gemma-4-26b-a4b` 的非流式 Mantle Responses API，并通过 `OpenAI-Project` 标头将所有请求分配给 Project `your-aws-bedrock-project-id`，固定 **15 秒**超时（瞬时失败时 1 秒后重试 1 次）、**provider-default temperature 1.0**、**max_output_tokens 4096** 和由 schema 指引并由 Bot 严格校验的 JSON。所有语言在一次请求中生成。4K 上限、异常停止或无效 JSON 会使整体 fail-closed；瞬时失败仅重试 1 次；没有拆分或 fallback。Bot 默认不记录 prompt、响应或凭据；设置 `TRANSLATION_DEBUG_LOG_PATH` 后，会以 JSON Lines 记录请求负载与原始响应（含 reasoning item）以便排查故障。GCE 部署在替换前使用五分钟期限的 `--bedrock-prewarm` 验证凭据、模型访问权限和响应契约。
+翻译使用 `your-aws-bedrock-region` 中 `google.gemma-4-26b-a4b` 的非流式 Mantle Responses API，并通过 `OpenAI-Project` 标头将所有请求分配给 Project `your-aws-bedrock-project-id`，固定 **60 秒**超时（瞬时失败时 1 秒后重试 1 次）、**provider-default temperature 1.0**、**max_output_tokens 4096** 和由 schema 指引并由 Bot 严格校验的 JSON。所有语言在一次请求中生成。4K 上限、异常停止或无效 JSON 会使整体 fail-closed；瞬时失败仅重试 1 次；没有拆分或 fallback。Bot 默认不记录 prompt、响应或凭据；设置 `TRANSLATION_DEBUG_LOG_PATH` 后，会以 JSON Lines 记录请求负载与原始响应（含 reasoning item）以便排查故障。GCE 部署在替换前使用五分钟期限的 `--bedrock-prewarm` 验证凭据、模型访问权限和响应契约。
 
 ### 4. 启动
 

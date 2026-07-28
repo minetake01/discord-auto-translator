@@ -339,8 +339,8 @@ func singleDebugLogEntry(t *testing.T, path string) bedrockDebugEntry {
 	return entry
 }
 
-func TestBedrockTranslatorRuntimeTimeoutIsFifteenSeconds(t *testing.T) {
-	if bedrockRequestTimeout != 15*time.Second {
+func TestBedrockTranslatorRuntimeTimeoutIsSixtySeconds(t *testing.T) {
+	if bedrockRequestTimeout != 60*time.Second {
 		t.Fatalf("timeout = %s", bedrockRequestTimeout)
 	}
 	if bedrockRetryAttempts != 2 {
@@ -451,7 +451,7 @@ func TestBedrockWarmUpUsesAttemptTimeout(t *testing.T) {
 			t.Fatal("missing deadline")
 		}
 		remaining := time.Until(got)
-		if remaining < 14*time.Second || remaining > bedrockRequestTimeout {
+		if remaining < 59*time.Second || remaining > bedrockRequestTimeout {
 			t.Fatalf("remaining = %s, want ~%s", remaining, bedrockRequestTimeout)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"warmup"}]}`, 1, 1)))}, nil
