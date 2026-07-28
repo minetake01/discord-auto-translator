@@ -314,6 +314,9 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 			('guild-a','a','a','A','admin',1), ('guild-b','b','b','B','admin',1)`,
 		`INSERT INTO source_allowlists(guild_id,source_type,source_id,created_by,created_at) VALUES
 			('guild-a','bot','101','admin',1), ('guild-b','bot','201','admin',1)`,
+		`INSERT INTO poll_translation_cache(source_channel_id,source_message_id,language,answers_json,expires_at) VALUES
+			('a-source',101,'en','["Red"]',999), ('a-thread',102,'en','["Yes"]',999),
+			('b-source',201,'en','["Blue"]',999), ('b-thread',202,'en','["No"]',999)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -341,6 +344,7 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 		"translation_groups": 2, "group_channels": 4, "thread_links": 2,
 		"message_links": 4, "message_references": 4, "pin_states": 4,
 		"glossary_entries": 2, "source_allowlists": 2, "guild_removals": 1,
+		"poll_translation_cache": 4,
 	} {
 		assertCount(`SELECT COUNT(*) FROM `+table, want)
 	}
@@ -365,6 +369,8 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 	for _, table := range []string{"message_links", "message_references", "pin_states"} {
 		assertCount(`SELECT COUNT(*) FROM `+table, 2)
 	}
+	assertCount(`SELECT COUNT(*) FROM poll_translation_cache`, 2)
+	assertCount(`SELECT COUNT(*) FROM poll_translation_cache WHERE source_channel_id IN ('a-source','a-thread')`, 0)
 	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('a-source','a-thread') OR target_channel_id IN ('a-target','a-target-thread')`, 0)
 	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('b-source','b-thread')`, 2)
 }

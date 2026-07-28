@@ -105,6 +105,12 @@ func (s *Store) PurgeGuildRemovedBefore(ctx context.Context, guildID string, cut
 		)`, guildID); err != nil {
 		return false, err
 	}
+	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM poll_translation_cache
+		WHERE source_channel_id IN (
+			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
+		)`, guildID); err != nil {
+		return false, err
+	}
 	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM pin_states
 		WHERE channel_id IN (
 			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
