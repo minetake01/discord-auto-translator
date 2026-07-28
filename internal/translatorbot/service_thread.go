@@ -18,6 +18,7 @@ type threadCreateRequest struct {
 	InitialMessageAvatar    string
 	InitialMessageRoleColor int
 	InitialMessageText      string
+	InitialMessageHasPoll   bool
 	InitialMessageFiles     []DiscordAttachment
 	InitialMessageStickers  []DiscordSticker
 	InitialMessageTTS       bool
@@ -111,6 +112,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		return false, err
 	}
 	translatedInitial := s.postProcessContent(ctx, req.GuildID, initialTranslations[target.Language], target.Language)
+	translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, req.InitialMessageHasPoll)
 
 	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
 	if err != nil {
@@ -209,7 +211,8 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageUsername = m.AuthorDisplayName
 		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageRoleColor = m.AuthorRoleColor
-		req.InitialMessageText = m.Content
+		req.InitialMessageText = messageBodyForMirror(m)
+		req.InitialMessageHasPoll = m.Poll != nil
 		req.InitialMessageFiles = m.Attachments
 		req.InitialMessageStickers = m.Stickers
 		req.InitialMessageTTS = m.TTS
