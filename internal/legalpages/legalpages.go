@@ -7,6 +7,8 @@ import (
 
 const robotsDirectiveValue = "noindex, nofollow, noarchive, nosnippet"
 
+// privacy.html and terms.html are instance-specific and gitignored. Copy the
+// matching *.html.example files before building or testing.
 var (
 	//go:embed assets/privacy.html
 	privacyHTML []byte

@@ -61,31 +61,12 @@ func TestRegisterServesEmbeddedLegalSite(t *testing.T) {
 	}
 
 	privacy := readBody(t, serve(t, mux, http.MethodGet, "/privacy"))
-	for _, want := range []string{
-		"Amazon Web Services（Amazon Bedrock）",
-		"メッセージ本文、投稿者の表示名、会話履歴、サーバー名、チャンネル名、トピック、スレッド名、用語集および翻訳スタイル",
-		"Google Gemma 4 26B",
-		"google.gemma-4-26b-a4b",
-		"us-west-2（米国西部・オレゴン）",
-		"store: false",
-		"使用モデル、入力・出力トークン数、処理ステータス・エラーおよび利用実績",
-		"us-central1-a",
-		"60日以内",
-		"30日以内",
-		"https://discord-translator.minetake.net/terms",
-	} {
-		if !strings.Contains(privacy, want) {
-			t.Errorf("privacy page does not contain %q", want)
-		}
-	}
-	for _, forbidden := range []string{"Cloudflare", "AI Gateway", "Workers AI"} {
-		if strings.Contains(privacy, forbidden) {
-			t.Errorf("privacy page still contains %q", forbidden)
-		}
+	if !strings.Contains(privacy, `href="/terms"`) {
+		t.Error("privacy page is missing the terms cross-link")
 	}
 
 	terms := readBody(t, serve(t, mux, http.MethodGet, "/terms"))
-	if !strings.Contains(terms, "https://discord-translator.minetake.net/privacy") {
+	if !strings.Contains(terms, `href="/privacy"`) {
 		t.Error("terms page is missing the privacy cross-link")
 	}
 

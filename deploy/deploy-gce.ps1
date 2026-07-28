@@ -163,6 +163,9 @@ function Invoke-GcloudSsh {
 $BinaryName = "discord-auto-translator-linux-amd64"
 $BinaryPath = Join-Path $RepoRoot $BinaryName
 
+Assert-FileExists (Join-Path $RepoRoot "internal/legalpages/assets/privacy.html")
+Assert-FileExists (Join-Path $RepoRoot "internal/legalpages/assets/terms.html")
+
 if (-not $SkipTests) {
     Invoke-Checked "go" "test", "./..."
 }
