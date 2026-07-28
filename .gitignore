@@ -5,6 +5,8 @@ deploy/deploy.json
 *.db-shm
 *.db-wal
 translator.db
+*.log
+*.log.1
 .gocache/
 discord-auto-translator.exe
 discord-auto-translator-linux-amd64

@@ -71,6 +71,7 @@ TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
+# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
 | Variable | Obligatoire | Description |
@@ -87,10 +88,11 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Non | Limite de requêtes par IP et par minute pour le point de terminaison de badge `/avatar` (défaut : `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Non | Nombre de jours de conservation des `message_links` dans SQLite avant purge automatique. `0` (défaut) désactive la purge ; p. ex. `60` supprime les liens de plus de 60 jours au démarrage et toutes les 24 heures |
 | `GUILD_DATA_RETENTION_DAYS` | Non | Nombre de jours de conservation dans SQLite des données d'un serveur après le retrait du bot. `0` (défaut) désactive la purge ; p. ex. `30` purge au démarrage et toutes les 24 heures les données des serveurs retirés depuis plus de 30 jours. Un retour avant l'échéance annule la purge prévue |
+| `TRANSLATION_DEBUG_LOG_PATH` | Non | Débogage uniquement. Chemin d'un fichier JSON Lines qui reçoit une entrée par aller-retour de traduction. Non défini (défaut) : rien n'est écrit |
 
 ### Contrat opérationnel Amazon Bedrock
 
-La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `your-aws-bedrock-region` : délai de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; aucun retry, découpage ou fallback. Le bot ne journalise ni prompts, ni réponses, ni identifiants. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
+La traduction utilise l'API Mantle Responses non streaming avec `google.gemma-4-26b-a4b` dans `your-aws-bedrock-region` : délai de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** et JSON guidé par schéma et strictement validé par le bot. Toutes les langues sont produites en une requête. Limite 4K, arrêt anormal ou JSON invalide font échouer l'ensemble en mode fail-closed ; aucun retry, découpage ou fallback. Par défaut, le bot ne journalise ni prompts, ni réponses, ni identifiants ; avec `TRANSLATION_DEBUG_LOG_PATH`, il écrit la charge utile de la requête et la réponse brute (y compris les éléments de raisonnement) en JSON Lines pour le débogage. Le déploiement GCE valide les identifiants, l'accès au modèle et le contrat de réponse avant remplacement avec `--bedrock-prewarm` et un délai de cinq minutes.
 
 ### 4. Démarrer
 

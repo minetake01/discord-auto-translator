@@ -71,6 +71,7 @@ TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
+# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
 | 변수 | 필수 | 설명 |
@@ -87,10 +88,11 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 선택 | `/avatar` 배지 엔드포인트의 IP별 분당 요청 상한(기본값: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | 선택 | SQLite의 `message_links` 자동 정리 전 보관 일수. `0`(기본값)이면 정리 비활성화. 예: `60`이면 60일보다 오래된 링크를 시작 시 및 24시간마다 삭제 |
 | `GUILD_DATA_RETENTION_DAYS` | 선택 | 봇이 서버에서 제거된 후 해당 서버의 SQLite 데이터를 보관하는 일수. `0`(기본값)이면 정리 비활성화. 예: `30`이면 제거 후 30일이 지난 서버 데이터를 시작 시 및 24시간마다 삭제. 만료 전에 다시 참여하면 예약된 삭제를 취소 |
+| `TRANSLATION_DEBUG_LOG_PATH` | 선택 | 디버그 전용. 번역 왕복마다 한 항목을 추가하는 JSON Lines 파일 경로. 미설정(기본값)이면 아무것도 기록하지 않음 |
 
 ### Amazon Bedrock 운영 계약
 
-번역은 `your-aws-bedrock-region`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며, 모든 요청을 `OpenAI-Project` 헤더를 통해 Project `your-aws-bedrock-project-id`에 할당합니다. **30초**, **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 retry, 분할, fallback은 없습니다. Bot은 prompt, 응답, 인증 정보를 기록하지 않습니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
+번역은 `your-aws-bedrock-region`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며, 모든 요청을 `OpenAI-Project` 헤더를 통해 Project `your-aws-bedrock-project-id`에 할당합니다. **30초**, **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 retry, 분할, fallback은 없습니다. Bot은 기본적으로 prompt, 응답, 인증 정보를 기록하지 않으며, `TRANSLATION_DEBUG_LOG_PATH`를 설정하면 장애 조사용으로 요청 payload와 원본 응답(reasoning item 포함)을 JSON Lines로 기록합니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
 
 ### 4. 실행
 

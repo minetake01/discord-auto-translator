@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -200,6 +202,141 @@ func TestBedrockTranslatorOmitsMantleRequestMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestBedrockTranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
+	response := `{"status":"completed","error":null,"incomplete_details":null,"output":[` +
+		`{"type":"reasoning","status":"completed","role":"","content":[{"type":"reasoning_text","text":"keep [USER:Alice] verbatim"}]},` +
+		`{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello [USER:Alice]\"}]}"}]}],` +
+		`"usage":{"input_tokens":1,"output_tokens":2,"output_tokens_details":{"reasoning_tokens":7}}}`
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
+	})
+	translator, path := debugLoggingTranslator(t, client)
+	if _, err := translator.TranslateMulti(context.Background(), []string{"en"}, "こんにちは <@42>", TranslationContext{
+		GuildID: "guild-1", MessageID: "message-2", MentionedUsers: map[string]string{"42": "Alice"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := singleDebugLogEntry(t, path)
+	if entry.GuildID != "guild-1" || entry.MessageID != "message-2" {
+		t.Fatalf("correlation keys = %#v", entry)
+	}
+	if len(entry.TargetLanguages) != 1 || entry.TargetLanguages[0] != "en" {
+		t.Fatalf("target languages = %#v", entry.TargetLanguages)
+	}
+	if entry.HTTPStatus != http.StatusOK || entry.Error != "" {
+		t.Fatalf("status = %d, error = %q", entry.HTTPStatus, entry.Error)
+	}
+	var request bedrockResponsesRequest
+	if err := json.Unmarshal(entry.Request, &request); err != nil {
+		t.Fatal(err)
+	}
+	if len(request.Input) != 2 || !strings.Contains(request.Input[0].Content, bedrockTranslationJSONSchema) {
+		t.Fatalf("logged system instruction = %#v", request.Input)
+	}
+	if !strings.Contains(request.Input[1].Content, "<final_message>こんにちは [USER:Alice]</final_message>") {
+		t.Fatalf("logged user prompt = %q", request.Input[1].Content)
+	}
+	if string(entry.Response) != response || entry.ResponseText != "" {
+		t.Fatalf("logged response = %s", entry.Response)
+	}
+}
+
+func TestBedrockTranslatorDebugLogRecordsProviderErrorBody(t *testing.T) {
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     http.Header{"X-Amzn-Requestid": []string{"request-123"}},
+			Body: io.NopCloser(strings.NewReader(
+				`{"error":{"type":"invalid_request_error","code":"unsupported_parameter","param":"metadata","message":"SECRET private prompt"}}`,
+			)),
+		}, nil
+	})
+	translator, path := debugLoggingTranslator(t, client)
+	_, err := translator.TranslateMulti(context.Background(), []string{"en"}, "private prompt", TranslationContext{}, nil)
+	if err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("unsafe error = %v", err)
+	}
+
+	entry := singleDebugLogEntry(t, path)
+	if entry.HTTPStatus != http.StatusBadRequest {
+		t.Fatalf("status = %d", entry.HTTPStatus)
+	}
+	if !strings.Contains(string(entry.Response), "SECRET private prompt") {
+		t.Fatalf("logged response = %s", entry.Response)
+	}
+	if !strings.Contains(entry.Error, "HTTP 400") || !strings.Contains(string(entry.Request), "private prompt") {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestBedrockTranslatorDebugLogRecordsTransportFailure(t *testing.T) {
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, req.Context().Err()
+	})
+	translator, path := debugLoggingTranslator(t, client)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := translator.TranslateMulti(ctx, []string{"en"}, "hello", TranslationContext{}, nil); err == nil {
+		t.Fatal("expected error")
+	}
+
+	entry := singleDebugLogEntry(t, path)
+	if entry.HTTPStatus != 0 || entry.Response != nil || entry.ResponseText != "" {
+		t.Fatalf("entry has response data: %#v", entry)
+	}
+	if !strings.Contains(entry.Error, context.Canceled.Error()) || len(entry.Request) == 0 {
+		t.Fatalf("entry = %#v", entry)
+	}
+}
+
+func TestBedrockTranslatorWithoutDebugLogWritesNoFile(t *testing.T) {
+	dir := t.TempDir()
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	if _, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("unexpected files = %#v", entries)
+	}
+}
+
+func debugLoggingTranslator(t *testing.T, client bedrockHTTPClient) (*BedrockTranslator, string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "translation-debug.log")
+	debugLog, err := OpenDebugLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := debugLog.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	translator := testTranslator(client, &recordingSigner{})
+	translator.SetDebugLog(debugLog)
+	return translator, path
+}
+
+func singleDebugLogEntry(t *testing.T, path string) bedrockDebugEntry {
+	t.Helper()
+	lines := readDebugLogLines(t, path)
+	if len(lines) != 1 {
+		t.Fatalf("debug log lines = %d, want 1", len(lines))
+	}
+	var entry bedrockDebugEntry
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatal(err)
+	}
+	return entry
 }
 
 func TestBedrockTranslatorRuntimeTimeoutIsThirtySeconds(t *testing.T) {

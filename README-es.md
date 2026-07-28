@@ -71,6 +71,7 @@ TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
+# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
 | Variable | Obligatorio | Descripción |
@@ -87,10 +88,11 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Límite de solicitudes por IP y por minuto para el endpoint de insignia `/avatar` (predeterminado: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Días de retención de `message_links` en SQLite antes de la purga automática. `0` (predeterminado) desactiva la purga; p. ej. `60` elimina enlaces de más de 60 días al inicio y cada 24 horas |
 | `GUILD_DATA_RETENTION_DAYS` | No | Días que se conservan en SQLite los datos de un servidor tras retirar el bot. `0` (predeterminado) desactiva la purga; p. ej. `30` elimina al inicio y cada 24 horas los datos de servidores retirados hace más de 30 días. Volver a unir el bot antes del vencimiento cancela la purga programada |
+| `TRANSLATION_DEBUG_LOG_PATH` | No | Solo para depuración. Ruta de un archivo JSON Lines que recibe una entrada por cada ida y vuelta de traducción. Sin definir (predeterminado) no escribe nada |
 
 ### Contrato operativo de Amazon Bedrock
 
-La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `your-aws-bedrock-region`; cada solicitud se asigna al Project `your-aws-bedrock-project-id` mediante el encabezado `OpenAI-Project`: espera de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; no hay reintentos, división ni fallback. El bot no registra prompts, respuestas ni credenciales. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
+La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `your-aws-bedrock-region`; cada solicitud se asigna al Project `your-aws-bedrock-project-id` mediante el encabezado `OpenAI-Project`: espera de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; no hay reintentos, división ni fallback. De forma predeterminada el bot no registra prompts, respuestas ni credenciales; con `TRANSLATION_DEBUG_LOG_PATH` escribe el payload de la solicitud y la respuesta sin procesar (incluidos los elementos de razonamiento) como JSON Lines para depurar. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
 
 ### 4. Ejecutar
 
