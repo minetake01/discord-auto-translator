@@ -6,14 +6,16 @@ import (
 	"strings"
 )
 
-// formatPollBody renders a poll as plain text: question, then numbered answers.
-// Answer emojis are preserved as Unicode or Discord custom-emoji markup.
+// formatPollBody renders a poll as plain text: a ## question heading, then
+// numbered answers. Answer emojis are preserved as Unicode or Discord
+// custom-emoji markup.
 func formatPollBody(poll *DiscordPoll) string {
 	if poll == nil {
 		return ""
 	}
 	var b strings.Builder
 	if q := strings.TrimSpace(poll.Question); q != "" {
+		b.WriteString("## ")
 		b.WriteString(q)
 	}
 	for i, answer := range poll.Answers {
@@ -79,5 +81,5 @@ func withPollStartedHeader(body, language, guildID, channelID, messageID string,
 	if strings.TrimSpace(body) == "" {
 		return header
 	}
-	return header + "\n\n" + body
+	return header + "\n" + body
 }

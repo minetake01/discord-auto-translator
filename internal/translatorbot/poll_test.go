@@ -13,7 +13,7 @@ func TestFormatPollBody(t *testing.T) {
 			{Text: "緑"},
 		},
 	})
-	want := "好きな色は？\n1. 🔴 赤\n2. <a:blue:123> 青\n3. 緑"
+	want := "## 好きな色は？\n1. 🔴 赤\n2. <a:blue:123> 青\n3. 緑"
 	if got != want {
 		t.Fatalf("formatPollBody = %q, want %q", got, want)
 	}
@@ -27,7 +27,7 @@ func TestMessageBodyForMirrorCombinesContentAndPoll(t *testing.T) {
 			Answers:  []DiscordPollAnswer{{Text: "A"}},
 		},
 	})
-	want := "見てね\n\nQ\n1. A"
+	want := "見てね\n\n## Q\n1. A"
 	if got != want {
 		t.Fatalf("messageBodyForMirror = %q, want %q", got, want)
 	}
@@ -35,7 +35,7 @@ func TestMessageBodyForMirrorCombinesContentAndPoll(t *testing.T) {
 
 func TestWithPollStartedHeader(t *testing.T) {
 	got := withPollStartedHeader("body", "ja", "guild", "channel", "message", true)
-	want := "> -# 投票を開始しました。 · [投票する](https://discord.com/channels/guild/channel/message)\n\nbody"
+	want := "> -# 投票を開始しました。 · [投票する](https://discord.com/channels/guild/channel/message)\nbody"
 	if got != want {
 		t.Fatalf("withPollStartedHeader = %q, want %q", got, want)
 	}
