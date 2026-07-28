@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -27,12 +28,14 @@ func TestDebugLogAppendsOneJSONLinePerEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("permissions = %v, want 0600", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("permissions = %v, want 0600", info.Mode().Perm())
+		}
 	}
 	lines := readDebugLogLines(t, path)
 	if len(lines) != 2 {
