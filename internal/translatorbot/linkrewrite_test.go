@@ -1,3 +1,4 @@
+// SPEC 3.10: Discord link and mention rewriting.
 package translatorbot
 
 import (
@@ -5,25 +6,10 @@ import (
 	"testing"
 )
 
-func seedJAENGroup(t *testing.T, store *Store) {
-	t.Helper()
-	ctx := context.Background()
-	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "ja", Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.JoinChannel(ctx, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestReplaceDiscordRefsChannelURL(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	got := ReplaceDiscordRefs(ctx, store, "guild", "see https://discord.com/channels/guild/ja", "en")
 	want := "see https://discord.com/channels/guild/en"
@@ -35,7 +21,7 @@ func TestReplaceDiscordRefsChannelURL(t *testing.T) {
 func TestReplaceDiscordRefsMessageURL(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000010", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "msg-en", TargetLanguage: "en",
@@ -53,7 +39,7 @@ func TestReplaceDiscordRefsMessageURL(t *testing.T) {
 func TestReplaceDiscordRefsChannelMention(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	got := ReplaceDiscordRefs(ctx, store, "guild", "go to <#ja> please", "en")
 	want := "go to <#en> please"
@@ -65,7 +51,7 @@ func TestReplaceDiscordRefsChannelMention(t *testing.T) {
 func TestReplaceDiscordRefsThreadURL(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 	if err := store.SaveThreadLink(ctx, ThreadLink{
 		GroupID: "g", SourceThreadID: "100000000000000005", SourceChannelID: "ja",
 		TargetThreadID: "thread-en", TargetChannelID: "en", TargetLanguage: "en",
@@ -83,7 +69,7 @@ func TestReplaceDiscordRefsThreadURL(t *testing.T) {
 func TestReplaceDiscordRefsUnmanagedChannelUnchanged(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	input := "https://discord.com/channels/guild/other"
 	got := ReplaceDiscordRefs(ctx, store, "guild", input, "en")
@@ -95,7 +81,7 @@ func TestReplaceDiscordRefsUnmanagedChannelUnchanged(t *testing.T) {
 func TestReplaceDiscordRefsMessageWithoutLinkUnchanged(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	input := "https://discord.com/channels/guild/ja/unmirrored"
 	got := ReplaceDiscordRefs(ctx, store, "guild", input, "en")
@@ -107,7 +93,7 @@ func TestReplaceDiscordRefsMessageWithoutLinkUnchanged(t *testing.T) {
 func TestReplaceDiscordRefsOtherGuildUnchanged(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	input := "https://discord.com/channels/other-guild/ja"
 	got := ReplaceDiscordRefs(ctx, store, "guild", input, "en")
@@ -119,7 +105,7 @@ func TestReplaceDiscordRefsOtherGuildUnchanged(t *testing.T) {
 func TestReplaceDiscordRefsSameLanguageUnchanged(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	seedJAENGroup(t, store)
+	seedGroup(t, store)
 
 	input := "https://discord.com/channels/guild/ja"
 	got := ReplaceDiscordRefs(ctx, store, "guild", input, "ja")
