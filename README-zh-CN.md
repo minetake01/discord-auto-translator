@@ -107,6 +107,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+`internal/legalpages/assets/` 下的隐私政策与服务条款 HTML 因实例而异，且不纳入 git 跟踪。首次构建或测试前，请先复制示例文件，再替换为你自己的页面：
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## 使用方法
 
 机器人启动后，斜杠命令会在各服务器中注册。

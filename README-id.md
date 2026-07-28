@@ -107,6 +107,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+HTML kebijakan privasi dan syarat layanan di `internal/legalpages/assets/` bersifat khusus per instance dan tidak dilacak di git. Sebelum build atau pengujian pertama, salin contohnya lalu ganti dengan halaman Anda sendiri:
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## Penggunaan
 
 Setelah bot dimulai, perintah slash terdaftar di setiap server.
