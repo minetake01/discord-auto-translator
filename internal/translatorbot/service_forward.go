@@ -27,7 +27,7 @@ func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, 
 	}
 	var errs []error
 	for _, dest := range dests {
-		if err := s.sendMirror(ctx, m, groupID, dest, contents[dest.targetID], m.ForwardedMessage.Content); err != nil {
+		if err := s.sendMirror(ctx, m, groupID, dest, contents[dest.targetID], nil, m.ForwardedMessage.Content); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}

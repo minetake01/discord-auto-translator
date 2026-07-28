@@ -53,6 +53,7 @@ type threadCall struct {
 	messageID   string
 	name        string
 	content     string
+	embeds      []*discordgo.MessageEmbed
 }
 
 type threadEditCall struct {
@@ -160,13 +161,13 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
 	return nil
 }
 
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string) (threadID, initialMessageID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (threadID, initialMessageID string, err error) {
 	f.nextID++
 	threadID = fmt.Sprintf("thread-%d", f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds})
 	return threadID, initialMessageID, nil
 }
 
@@ -691,7 +692,7 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	}
 }
 
-func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
+func TestHandleMessageCreateMirrorsPollAsEmbedWithVoteLink(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -701,6 +702,7 @@ func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000050", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		AuthorRoleColor: 0xabcdef,
 		Poll: &DiscordPoll{
 			Question: "好きな色は？",
 			Answers: []DiscordPollAnswer{
@@ -712,8 +714,8 @@ func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != 1 {
-		t.Fatalf("expected poll body translation, got %#v", translator.contexts)
+	if len(translator.contexts) != 2 {
+		t.Fatalf("expected question+answers translation, got %#v", translator.contexts)
 	}
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent: %#v", discord.sent)
@@ -724,19 +726,24 @@ func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
 		localizedUIString("en", uiKeyPollVote),
 		sourceURL,
 	)
-	wantBody := "[en] ## 好きな色は？\n1. 🔴 赤\n2. 青"
-	want := wantHeader + "\n" + wantBody
-	if got := discord.sent[0].Content; got != want {
-		t.Fatalf("content = %q, want %q", got, want)
+	if got := discord.sent[0].Content; got != wantHeader {
+		t.Fatalf("content = %q, want %q", got, wantHeader)
 	}
 	if strings.Contains(discord.sent[0].Content, MessageJumpURL("guild", "en", "100000000000000050")) {
 		t.Fatal("vote link must not point at the target channel")
+	}
+	if len(discord.sent[0].Embeds) != 1 || discord.sent[0].Embeds[0] == nil {
+		t.Fatalf("embeds: %#v", discord.sent[0].Embeds)
+	}
+	embed := discord.sent[0].Embeds[0]
+	if embed.Title != "[en] 好きな色は？" || embed.Description != "[en] 1. 🔴 赤\n2. 青" || embed.Color != 0xabcdef {
+		t.Fatalf("embed = %#v", embed)
 	}
 	links, err := store.MessageTargets(ctx, "ja", "100000000000000050")
 	if err != nil || len(links) != 1 {
 		t.Fatalf("links: %#v err=%v", links, err)
 	}
-	wantSnapshot := "## 好きな色は？\n1. 🔴 赤\n2. 青"
+	wantSnapshot := "好きな色は？\n1. 🔴 赤\n2. 青"
 	if links[0].SourceContentSnapshot != wantSnapshot {
 		t.Fatalf("snapshot = %q, want %q", links[0].SourceContentSnapshot, wantSnapshot)
 	}
@@ -792,6 +799,9 @@ func TestHandleMessageCreateKeepsPollVoteLinkAfterDiscordRefRewrite(t *testing.T
 	// Body may rewrite the embedded message URL; the poll vote header must stay on the source poll.
 	if strings.Count(got, sourcePollURL) < 1 {
 		t.Fatalf("vote link missing from content: %q", got)
+	}
+	if len(discord.sent[0].Embeds) != 1 || discord.sent[0].Embeds[0] == nil || discord.sent[0].Embeds[0].Title != "[en] Q" {
+		t.Fatalf("embeds: %#v", discord.sent[0].Embeds)
 	}
 }
 

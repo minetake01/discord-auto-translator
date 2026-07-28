@@ -4,25 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 type threadCreateRequest struct {
-	GuildID                 string
-	SourceChannelID         string
-	SourceThreadID          string
-	SourceMessageID         string
-	Name                    string
-	InitialMessageID        string
-	InitialMessageAuthor    string
-	InitialMessageUsername  string
-	InitialMessageAvatar    string
-	InitialMessageRoleColor int
-	InitialMessageText      string
-	InitialMessageHasPoll   bool
-	InitialMessageFiles     []DiscordAttachment
-	InitialMessageStickers  []DiscordSticker
-	InitialMessageTTS       bool
-	DeferWithoutSourceMsg   bool
+	GuildID                    string
+	SourceChannelID            string
+	SourceThreadID             string
+	SourceMessageID            string
+	Name                       string
+	InitialMessageID           string
+	InitialMessageAuthor       string
+	InitialMessageUsername     string
+	InitialMessageAvatar       string
+	InitialMessageRoleColor    int
+	InitialMessageText         string
+	InitialMessageHasPoll      bool
+	InitialMessagePollQuestion string
+	InitialMessagePollAnswers  string
+	InitialMessageFiles        []DiscordAttachment
+	InitialMessageStickers     []DiscordSticker
+	InitialMessageTTS          bool
+	DeferWithoutSourceMsg      bool
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
@@ -112,9 +117,40 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		return false, err
 	}
 	translatedInitial := s.postProcessContent(ctx, req.GuildID, initialTranslations[target.Language], target.Language)
-	translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, req.InitialMessageHasPoll)
 
-	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial)
+	var embeds []*discordgo.MessageEmbed
+	snapshot := req.InitialMessageText
+	if req.InitialMessageHasPoll {
+		questionTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.InitialMessagePollQuestion, languages, contextFn)
+		if err != nil {
+			return false, err
+		}
+		answerTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.InitialMessagePollAnswers, languages, contextFn)
+		if err != nil {
+			return false, err
+		}
+		translatedQuestion := s.postProcessContent(ctx, req.GuildID, questionTranslations[target.Language], target.Language)
+		translatedAnswers := s.postProcessContent(ctx, req.GuildID, answerTranslations[target.Language], target.Language)
+		if embed := buildPollEmbed(translatedQuestion, translatedAnswers, req.InitialMessageRoleColor); embed != nil {
+			embeds = []*discordgo.MessageEmbed{embed}
+		}
+		pollSnapshot := strings.TrimSpace(req.InitialMessagePollQuestion)
+		if answers := strings.TrimSpace(req.InitialMessagePollAnswers); answers != "" {
+			if pollSnapshot != "" {
+				pollSnapshot += "\n" + answers
+			} else {
+				pollSnapshot = answers
+			}
+		}
+		if strings.TrimSpace(snapshot) != "" && pollSnapshot != "" {
+			snapshot = strings.TrimSpace(snapshot) + "\n\n" + pollSnapshot
+		} else if pollSnapshot != "" {
+			snapshot = pollSnapshot
+		}
+		translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, true)
+	}
+
+	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds)
 	if err != nil {
 		return false, err
 	}
@@ -132,7 +168,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		return false, nil
 	}
 
-	if initialMessageID == "" && (translatedInitial != "" || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0) {
+	if initialMessageID == "" && (translatedInitial != "" || len(embeds) > 0 || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0) {
 		synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
 		if err != nil {
 			return false, err
@@ -144,11 +180,11 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 			}
 			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language, req.InitialMessageRoleColor)
 			if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
-				Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID,
+				Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID, Embeds: embeds,
 			}, MessageLink{
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 				TargetChannelID: threadID, TargetLanguage: target.Language,
-				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
+				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
 			}); err != nil {
 				return false, err
 			}
@@ -164,7 +200,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 			if err := s.store.SaveMessageLink(ctx, MessageLink{
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 				TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
-				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: req.InitialMessageText,
+				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
 			}); err != nil {
 				return false, err
 			}
@@ -211,8 +247,12 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageUsername = m.AuthorDisplayName
 		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageRoleColor = m.AuthorRoleColor
-		req.InitialMessageText = messageBodyForMirror(m)
+		req.InitialMessageText = m.Content
 		req.InitialMessageHasPoll = m.Poll != nil
+		if m.Poll != nil {
+			req.InitialMessagePollQuestion = strings.TrimSpace(m.Poll.Question)
+			req.InitialMessagePollAnswers = formatPollAnswers(m.Poll)
+		}
 		req.InitialMessageFiles = m.Attachments
 		req.InitialMessageStickers = m.Stickers
 		req.InitialMessageTTS = m.TTS
@@ -346,19 +386,19 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 // For forum/media targets the thread starts with the translated initial
 // message; for text targets it is attached to the mirrored source message
 // when one exists, or deferred when DeferWithoutSourceMsg is set.
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string) (string, string, error) {
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
 	if isThreadOnlyChannelType(target.ChannelType) {
 		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
 		if err != nil {
 			return "", "", err
 		}
-		if content == "" {
+		if content == "" && len(embeds) == 0 {
 			if req.DeferWithoutSourceMsg {
 				return "", "", nil
 			}
 			content = name
 		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content)
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds)
 	}
 	if req.SourceMessageID != "" {
 		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
@@ -375,7 +415,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", nil
 		}
 	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "")
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil)
 	return threadID, "", err
 }
 
