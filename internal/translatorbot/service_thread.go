@@ -52,7 +52,7 @@ func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sour
 }
 
 // syncThreadCreate mirrors a newly created thread to every peer channel,
-// translating the thread name and, when present, the initial message.
+// translating the thread name and initial message together when present.
 // Returns whether any target thread was created together with its initial
 // message so the caller can skip mirroring that message again.
 func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest) (bool, error) {
@@ -90,8 +90,8 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 	return createdWithInitialMessage, nil
 }
 
-// createThreadForTarget translates the thread name and initial message for
-// one target channel, creates the thread there, and records the links.
+// createThreadForTarget translates the thread name and initial message in one
+// call for one target channel, creates the thread there, and records the links.
 func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel) (bool, error) {
 	languages := []string{target.Language}
 	contextFn := func() TranslationContext {
@@ -104,17 +104,13 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		}
 		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, messageID, "", "", req.InitialMessageUsername, req.Name)
 	}
-	nameTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.Name, languages, contextFn)
+	threadTranslations, err := s.translateThreadCreateWithLimit(ctx, req.GuildID, req.Name, req.InitialMessageText, languages, contextFn)
 	if err != nil {
 		return false, err
 	}
-	translatedName := nameTranslations[target.Language]
-
-	initialTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.InitialMessageText, languages, contextFn)
-	if err != nil {
-		return false, err
-	}
-	translatedInitial := s.postProcessContent(ctx, req.GuildID, initialTranslations[target.Language], target.Language)
+	translated := threadTranslations[target.Language]
+	translatedName := translated.Name
+	translatedInitial := s.postProcessContent(ctx, req.GuildID, translated.Message, target.Language)
 
 	var embeds []*discordgo.MessageEmbed
 	snapshot := req.InitialMessageText

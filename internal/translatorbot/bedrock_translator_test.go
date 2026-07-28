@@ -46,6 +46,15 @@ func translatePollMulti(t testing.TB, translator *BedrockTranslator, targetLangu
 	return translator.TranslatePollMulti(context.Background(), prepared)
 }
 
+func translateThreadCreateMulti(t testing.TB, translator *BedrockTranslator, targetLanguages []string, name, message string, translationContext TranslationContext, glossary []GlossaryEntry) (ThreadCreateMultiTranslationResult, error) {
+	t.Helper()
+	prepared, err := prepareThreadCreateTranslation(targetLanguages, name, message, translationContext, glossary)
+	if err != nil {
+		return ThreadCreateMultiTranslationResult{}, err
+	}
+	return translator.TranslateThreadCreateMulti(context.Background(), prepared)
+}
+
 type recordingSigner struct {
 	calls       atomic.Int32
 	service     string
@@ -514,5 +523,44 @@ func TestBedrockTranslatorTranslatePollMultiRejectsAnswerCountMismatch(t *testin
 	_, err := translatePollMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "好き？", []string{"赤", "青"}, TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected answer count mismatch")
+	}
+}
+
+func TestBedrockTranslatorTranslateThreadCreateMulti(t *testing.T) {
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input bedrockResponsesRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(input.Input[0].Content, bedrockThreadCreateTranslationJSONSchema) || !strings.Contains(input.Input[1].Content, "<thread_create>") {
+			t.Fatalf("unexpected request: %#v", input.Input)
+		}
+		if !strings.Contains(input.Input[1].Content, "<name>議題</name>") || !strings.Contains(input.Input[1].Content, "<message author=\"alice\">本文</message>") {
+			t.Fatalf("unexpected user prompt: %s", input.Input[1].Content)
+		}
+		body := successfulBedrockResponse(`{"translations":[{"language":"en","name":"Topic","message":"Body"}]}`, 3, 4)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	result, err := translateThreadCreateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "議題", "本文", TranslationContext{Author: "alice"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := result.Translations["en"]
+	if got.Name != "Topic" || got.Message != "Body" {
+		t.Fatalf("got %#v", got)
+	}
+	if result.InputTokens != 3 || result.OutputTokens != 4 {
+		t.Fatalf("tokens = %d/%d", result.InputTokens, result.OutputTokens)
+	}
+}
+
+func TestBedrockTranslatorTranslateThreadCreateMultiRejectsEmptyMessage(t *testing.T) {
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := successfulBedrockResponse(`{"translations":[{"language":"en","name":"Topic","message":""}]}`, 1, 1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	_, err := translateThreadCreateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "議題", "本文", TranslationContext{}, nil)
+	if err == nil {
+		t.Fatal("expected empty message rejection")
 	}
 }

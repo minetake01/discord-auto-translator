@@ -217,6 +217,23 @@ func (e *echoTranslator) TranslatePollMulti(ctx context.Context, prepared prepar
 	return PollMultiTranslationResult{Translations: out}, nil
 }
 
+func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error) {
+	e.contexts = append(e.contexts, prepared.translationContext)
+	out := make(map[string]ThreadCreateTranslation, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		name := prepared.threadName
+		if hasTranslatableText(name) {
+			name = "[" + lang + "] " + name
+		}
+		message := prepared.threadMessage
+		if hasTranslatableText(message) {
+			message = "[" + lang + "] " + message
+		}
+		out[lang] = ThreadCreateTranslation{Name: name, Message: message}
+	}
+	return ThreadCreateMultiTranslationResult{Translations: out}, nil
+}
+
 func seedGroup(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
@@ -1735,7 +1752,8 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
 	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
 		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
 	}); err != nil {
@@ -1755,6 +1773,12 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 		t.Fatal(err)
 	}
 
+	if len(translator.contexts) != 1 {
+		t.Fatalf("title and body should be one translation call: %#v", translator.contexts)
+	}
+	if translator.contexts[0].ThreadName != "" {
+		t.Fatalf("thread create translation should not put the name in discord_context: %#v", translator.contexts[0])
+	}
 	if len(discord.threads) != 1 {
 		t.Fatalf("threads: %#v", discord.threads)
 	}
@@ -2001,6 +2025,27 @@ func (s *selectiveFailTranslator) TranslatePollMulti(ctx context.Context, prepar
 		out[lang] = PollTranslation{Question: "[" + lang + "] " + prepared.question, Answers: translatedAnswers}
 	}
 	return PollMultiTranslationResult{Translations: out}, nil
+}
+
+func (s *selectiveFailTranslator) TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error) {
+	for _, lang := range prepared.targetLanguages {
+		if lang == s.failLanguage {
+			return ThreadCreateMultiTranslationResult{}, errors.New("translation failed")
+		}
+	}
+	out := make(map[string]ThreadCreateTranslation, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		name := prepared.threadName
+		if hasTranslatableText(name) {
+			name = "[" + lang + "] " + name
+		}
+		message := prepared.threadMessage
+		if hasTranslatableText(message) {
+			message = "[" + lang + "] " + message
+		}
+		out[lang] = ThreadCreateTranslation{Name: name, Message: message}
+	}
+	return ThreadCreateMultiTranslationResult{Translations: out}, nil
 }
 
 func seedThreeChannelGroup(t *testing.T, s *Store) {
@@ -2542,6 +2587,9 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 
 	if len(translator.contexts) != 1 {
 		t.Fatalf("only the thread name should be translated: %#v", translator.contexts)
+	}
+	if translator.contexts[0].ThreadName != "" {
+		t.Fatalf("thread create translation should not put the name in discord_context: %#v", translator.contexts[0])
 	}
 	if len(discord.sent) != 1 || discord.sent[0].Content != "<@123> `example` <:wave:456>" {
 		t.Fatalf("sent: %#v", discord.sent)
