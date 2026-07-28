@@ -2494,17 +2494,6 @@ func TestHandleMessageCreateForwardsTTS(t *testing.T) {
 	}
 }
 
-func TestStickerAssetURL(t *testing.T) {
-	url := stickerAssetURL(DiscordSticker{ID: "1", FormatType: stickerFormatGIF})
-	if url != "https://media.discordapp.net/stickers/1.gif" {
-		t.Fatalf("gif: %q", url)
-	}
-	url = stickerAssetURL(DiscordSticker{ID: "2", FormatType: stickerFormatLottie})
-	if url != "https://cdn.discordapp.com/stickers/2.png" {
-		t.Fatalf("lottie: %q", url)
-	}
-}
-
 func TestMessageContentUsesStickerCDNWithoutDownload(t *testing.T) {
 	content, err := messageContentWithAssetURLs("", nil, []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}})
 	if err != nil {

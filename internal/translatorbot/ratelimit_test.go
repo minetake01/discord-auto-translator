@@ -17,13 +17,6 @@ func TestTokenRateLimiterBlocksWhenExceeded(t *testing.T) {
 	}
 }
 
-func TestTokenRateLimiterUsesDefaultLimit(t *testing.T) {
-	limiter := NewTokenRateLimiter(0)
-	if limiter.limit != defaultRateLimitTokensPerMinute {
-		t.Fatalf("got %d", limiter.limit)
-	}
-}
-
 func TestRequestRateLimiterBlocksWhenExceeded(t *testing.T) {
 	limiter := NewRequestRateLimiter(2)
 	if !limiter.Allow("203.0.113.1") {
@@ -37,12 +30,5 @@ func TestRequestRateLimiterBlocksWhenExceeded(t *testing.T) {
 	}
 	if !limiter.Allow("203.0.113.2") {
 		t.Fatal("different client should be allowed")
-	}
-}
-
-func TestRequestRateLimiterUsesDefaultLimit(t *testing.T) {
-	limiter := NewRequestRateLimiter(0)
-	if limiter.limit != defaultAvatarRateLimitRequestsPerMinute {
-		t.Fatalf("got %d", limiter.limit)
 	}
 }

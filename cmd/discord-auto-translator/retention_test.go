@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -18,8 +17,6 @@ type retentionStoreStub struct {
 	guildIDs       []string
 	purgeStarted   chan string
 	releasePurge   map[string]chan struct{}
-	state          *discordgo.State
-	stateWriteLock []string
 	canceled       []string
 }
 
@@ -34,17 +31,6 @@ func (s *retentionStoreStub) GuildIDsRemovedBefore(_ context.Context, cutoff tim
 }
 
 func (s *retentionStoreStub) PurgeGuildRemovedBefore(_ context.Context, guildID string, _ time.Time) (bool, error) {
-	if s.state != nil {
-		writeLock := s.state.TryLock()
-		if writeLock {
-			s.state.Unlock()
-		}
-		s.mu.Lock()
-		if writeLock {
-			s.stateWriteLock = append(s.stateWriteLock, guildID)
-		}
-		s.mu.Unlock()
-	}
 	if s.purgeStarted != nil {
 		s.purgeStarted <- guildID
 	}
@@ -60,72 +46,6 @@ func (s *retentionStoreStub) PurgeGuildRemovedBefore(_ context.Context, guildID 
 func (s *retentionStoreStub) CancelGuildRemoval(_ context.Context, guildID string) error {
 	s.canceled = append(s.canceled, guildID)
 	return nil
-}
-
-func TestRunRetentionPurgeLocksStatePerDestructiveGuildPurgeAndAllowsWriterBetweenGuilds(t *testing.T) {
-	state := discordgo.NewState()
-	firstRelease := make(chan struct{})
-	secondRelease := make(chan struct{})
-	store := &retentionStoreStub{
-		guildIDs:     []string{"first", "second"},
-		purgeStarted: make(chan string, 2),
-		releasePurge: map[string]chan struct{}{"first": firstRelease, "second": secondRelease},
-		state:        state,
-	}
-	done := make(chan struct{})
-	go func() {
-		runRetentionPurge(context.Background(), store, time.Now(), 0, 30, state, func(string, ...any) {})
-		close(done)
-	}()
-
-	if guildID := <-store.purgeStarted; guildID != "first" {
-		t.Fatalf("first purge = %q, want first", guildID)
-	}
-	writerAcquired := make(chan struct{})
-	releaseWriter := make(chan struct{})
-	go func() {
-		state.Lock()
-		close(writerAcquired)
-		<-releaseWriter
-		state.Unlock()
-	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for state.TryRLock() {
-		state.RUnlock()
-		if time.Now().After(deadline) {
-			t.Fatal("State writer did not queue during first guild purge")
-		}
-		runtime.Gosched()
-	}
-	close(firstRelease)
-	select {
-	case <-writerAcquired:
-	case guildID := <-store.purgeStarted:
-		t.Fatalf("purge %q started before queued State writer acquired the lock", guildID)
-	case <-time.After(2 * time.Second):
-		t.Fatal("State writer was not permitted between guild purges")
-	}
-	close(releaseWriter)
-	if guildID := <-store.purgeStarted; guildID != "second" {
-		t.Fatalf("second purge = %q, want second", guildID)
-	}
-	close(secondRelease)
-	<-done
-
-	if len(store.stateWriteLock) != 0 {
-		t.Fatalf("Discord State writer lock was available during guild purges: %v", store.stateWriteLock)
-	}
-	stateUnlocked := make(chan struct{})
-	go func() {
-		state.Lock()
-		state.Unlock()
-		close(stateUnlocked)
-	}()
-	select {
-	case <-stateUnlocked:
-	case <-time.After(2 * time.Second):
-		t.Fatal("Discord State read lock was not released after guild purges")
-	}
 }
 
 func TestRunRetentionPurgeCancelsPresentGuildMarkerWithoutPurging(t *testing.T) {

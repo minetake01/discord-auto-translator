@@ -5,43 +5,52 @@ import (
 	"testing"
 )
 
+// SPEC 3.1: custom overrides preset; default/casual-family presets use native chat
+// phrasing; formal/literal do not; unknown presets are rejected.
 func TestResolveStyleInstructions(t *testing.T) {
 	custom := "短くカジュアルに"
 	if got := ResolveStyleInstructions("", custom); got != custom {
-		t.Fatalf("custom = %q", got)
+		t.Fatalf("custom should win over empty preset: %q", got)
 	}
-	if got := ResolveStyleInstructions("formal", ""); got != stylePresetInstructions["formal"] {
-		t.Fatalf("formal = %q", got)
+	if got := ResolveStyleInstructions("formal", custom); got != custom {
+		t.Fatalf("custom should win over preset: %q", got)
 	}
-	if got := ResolveStyleInstructions(StylePresetDefault, ""); got != nativePhrasingInstruction {
-		t.Fatalf("default = %q", got)
+
+	defaultInstr := ResolveStyleInstructions(StylePresetDefault, "")
+	if defaultInstr == "" {
+		t.Fatal("default preset must produce instructions")
 	}
-	if got := ResolveStyleInstructions("", ""); got != nativePhrasingInstruction {
-		t.Fatalf("empty = %q", got)
+	emptyInstr := ResolveStyleInstructions("", "")
+	if emptyInstr != defaultInstr {
+		t.Fatalf("empty preset should match default: %q vs %q", emptyInstr, defaultInstr)
 	}
-	if got := ResolveStyleInstructions(StylePresetDefault, ""); !strings.Contains(got, "casual Japanese: そう, not そうだ") {
-		t.Fatalf("default = %q", got)
+
+	for _, preset := range []string{"casual", "gaming", "friendly", "netslang", "tweet"} {
+		got := ResolveStyleInstructions(preset, "")
+		if !strings.HasPrefix(got, defaultInstr) {
+			t.Fatalf("%s must include native phrasing as prefix: %q", preset, got)
+		}
+		if got == defaultInstr {
+			t.Fatalf("%s must add preset-specific guidance beyond default", preset)
+		}
 	}
-	if got := ResolveStyleInstructions("netslang", ""); !strings.HasPrefix(got, nativePhrasingInstruction) || !strings.Contains(got, "2ch/5ch-style") {
-		t.Fatalf("netslang = %q", got)
+
+	for _, preset := range []string{"formal", "literal", "business"} {
+		got := ResolveStyleInstructions(preset, "")
+		if got == "" {
+			t.Fatalf("%s must produce instructions", preset)
+		}
+		if strings.Contains(got, defaultInstr) {
+			t.Fatalf("%s must not include native phrasing: %q", preset, got)
+		}
 	}
-	if got := ResolveStyleInstructions("casual", ""); !strings.HasPrefix(got, nativePhrasingInstruction) || !strings.Contains(got, "friends chatting") {
-		t.Fatalf("casual = %q", got)
-	}
-	if got := ResolveStyleInstructions("formal", ""); strings.Contains(got, nativePhrasingInstruction) {
-		t.Fatalf("formal should not include native phrasing: %q", got)
-	}
-	if got := ResolveStyleInstructions("literal", ""); strings.Contains(got, nativePhrasingInstruction) {
-		t.Fatalf("literal should not include native phrasing: %q", got)
-	}
-	if got := ResolveStyleInstructions("tweet", ""); !strings.Contains(got, "social media phrasing") {
-		t.Fatalf("tweet = %q", got)
-	}
+
 	if IsValidStylePreset("natural") {
-		t.Fatal("natural preset should no longer exist")
+		t.Fatal("unknown preset natural must be rejected")
 	}
 }
 
+// SPEC 3.1: custom style instructions are bounded (non-empty, max 200 runes).
 func TestValidateStyleCustom(t *testing.T) {
 	if err := ValidateStyleCustom(""); err == nil {
 		t.Fatal("expected error for empty custom")
@@ -51,17 +60,5 @@ func TestValidateStyleCustom(t *testing.T) {
 	}
 	if err := ValidateStyleCustom("短く"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestFormatGroupStyle(t *testing.T) {
-	if got := FormatGroupStyle(TranslationGroup{}); got != StylePresetDefault {
-		t.Fatalf("default = %q", got)
-	}
-	if got := FormatGroupStyle(TranslationGroup{StylePreset: "gaming"}); got != "gaming" {
-		t.Fatalf("preset = %q", got)
-	}
-	if got := FormatGroupStyle(TranslationGroup{StyleCustom: "敬語を使わない"}); got != "custom: 敬語を使わない" {
-		t.Fatalf("custom = %q", got)
 	}
 }

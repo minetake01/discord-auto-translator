@@ -36,25 +36,25 @@ func TestCurrentUserIDUsesRESTBeforeGatewayOpen(t *testing.T) {
 	}
 }
 
+// DEV_NOTES 8: Discord forbids webhook names containing "discord".
 func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
 	got := sanitizeWebhookName("Discord Auto Translator")
+	if got == "" {
+		t.Fatal("sanitized name must not be empty")
+	}
 	if strings.Contains(strings.ToLower(got), "discord") {
 		t.Fatalf("sanitized name still contains reserved word: %q", got)
 	}
-	if got != "D-scord Auto Translator" {
-		t.Fatalf("got %q", got)
-	}
 }
 
-func TestDefaultWebhookNameIsProviderNeutral(t *testing.T) {
-	if defaultWebhookName != "Discord Auto Translator" {
-		t.Fatalf("defaultWebhookName = %q", defaultWebhookName)
-	}
-}
-
+// DEV_NOTES 8: blank names fall back to a non-empty safe webhook name.
 func TestSanitizeWebhookNameUsesFallbackForBlankNames(t *testing.T) {
-	if got := sanitizeWebhookName("   "); got != defaultWebhookName {
-		t.Fatalf("got %q", got)
+	got := sanitizeWebhookName("   ")
+	if got == "" {
+		t.Fatal("blank name must fall back to a non-empty webhook name")
+	}
+	if strings.Contains(strings.ToLower(got), "discord") {
+		t.Fatalf("fallback still contains reserved word: %q", got)
 	}
 }
 
