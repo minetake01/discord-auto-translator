@@ -122,6 +122,7 @@ func main() {
 			ReferencedMessageChannelID: refChannelID,
 			ReferencedMessageContent:   refContent,
 			ForwardedMessage:           forwarded,
+			Poll:                       pollFromDiscord(m.Poll),
 			TTS:                        m.TTS,
 			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
 			MentionedUsers:    mentionedUsers,
@@ -299,6 +300,29 @@ func stickersFromDiscord(stickers []*discordgo.StickerItem) []translatorbot.Disc
 			Name:       sticker.Name,
 			FormatType: int(sticker.FormatType),
 		})
+	}
+	return out
+}
+
+func pollFromDiscord(poll *discordgo.Poll) *translatorbot.DiscordPoll {
+	if poll == nil {
+		return nil
+	}
+	out := &translatorbot.DiscordPoll{Question: poll.Question.Text}
+	out.Answers = make([]translatorbot.DiscordPollAnswer, 0, len(poll.Answers))
+	for _, answer := range poll.Answers {
+		item := translatorbot.DiscordPollAnswer{}
+		if answer.Media != nil {
+			item.Text = answer.Media.Text
+			if answer.Media.Emoji != nil {
+				item.Emoji = &translatorbot.DiscordPollEmoji{
+					Name:     answer.Media.Emoji.Name,
+					ID:       answer.Media.Emoji.ID,
+					Animated: answer.Media.Emoji.Animated,
+				}
+			}
+		}
+		out.Answers = append(out.Answers, item)
 	}
 	return out
 }

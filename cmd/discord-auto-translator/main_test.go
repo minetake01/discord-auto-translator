@@ -209,3 +209,29 @@ func TestStickersFromDiscordMapsStickerFields(t *testing.T) {
 		t.Fatalf("unexpected sticker mapping: %#v", got[0])
 	}
 }
+
+func TestPollFromDiscordMapsQuestionAnswersAndEmoji(t *testing.T) {
+	got := pollFromDiscord(&discordgo.Poll{
+		Question: discordgo.PollMedia{Text: "Favorite?"},
+		Answers: []discordgo.PollAnswer{
+			{Media: &discordgo.PollMedia{Text: "Yes", Emoji: &discordgo.ComponentEmoji{Name: "👍"}}},
+			{Media: &discordgo.PollMedia{Text: "No", Emoji: &discordgo.ComponentEmoji{Name: "no", ID: "99", Animated: true}}},
+			{Media: nil},
+		},
+	})
+	if got == nil || got.Question != "Favorite?" || len(got.Answers) != 3 {
+		t.Fatalf("got %#v", got)
+	}
+	if got.Answers[0].Text != "Yes" || got.Answers[0].Emoji == nil || got.Answers[0].Emoji.Name != "👍" {
+		t.Fatalf("answer0 %#v", got.Answers[0])
+	}
+	if got.Answers[1].Emoji == nil || got.Answers[1].Emoji.ID != "99" || !got.Answers[1].Emoji.Animated {
+		t.Fatalf("answer1 %#v", got.Answers[1])
+	}
+	if got.Answers[2].Text != "" || got.Answers[2].Emoji != nil {
+		t.Fatalf("answer2 %#v", got.Answers[2])
+	}
+	if pollFromDiscord(nil) != nil {
+		t.Fatal("nil poll should map to nil")
+	}
+}

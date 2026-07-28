@@ -62,6 +62,7 @@ type DiscordMessage struct {
 	ReferencedMessageChannelID string
 	ReferencedMessageContent   string
 	ForwardedMessage           *DiscordForwardedMessage
+	Poll                       *DiscordPoll
 	TTS                        bool
 	WebhookID                  string
 	Bot                        bool
@@ -71,6 +72,22 @@ type DiscordMessage struct {
 	MentionedUsers             map[string]string // userID → display name
 	MentionedChannels          map[string]string // channelID → channel name (source)
 	MentionedRoles             map[string]string // roleID → role name
+}
+
+type DiscordPoll struct {
+	Question string
+	Answers  []DiscordPollAnswer
+}
+
+type DiscordPollAnswer struct {
+	Text  string
+	Emoji *DiscordPollEmoji
+}
+
+type DiscordPollEmoji struct {
+	Name     string
+	ID       string
+	Animated bool
 }
 
 type DiscordForwardedMessage struct {

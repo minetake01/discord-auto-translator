@@ -678,6 +678,110 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	}
 }
 
+func TestHandleMessageCreateMirrorsPollAsTextWithVoteLink(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000050", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Poll: &DiscordPoll{
+			Question: "好きな色は？",
+			Answers: []DiscordPollAnswer{
+				{Text: "赤", Emoji: &DiscordPollEmoji{Name: "🔴"}},
+				{Text: "青"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("expected poll body translation, got %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	sourceURL := MessageJumpURL("guild", "ja", "100000000000000050")
+	wantHeader := fmt.Sprintf("> -# %s · [%s](%s)",
+		localizedUIString("en", uiKeyPollStarted),
+		localizedUIString("en", uiKeyPollVote),
+		sourceURL,
+	)
+	wantBody := "[en] 好きな色は？\n1. 🔴 赤\n2. 青"
+	want := wantHeader + "\n\n" + wantBody
+	if got := discord.sent[0].Content; got != want {
+		t.Fatalf("content = %q, want %q", got, want)
+	}
+	if strings.Contains(discord.sent[0].Content, MessageJumpURL("guild", "en", "100000000000000050")) {
+		t.Fatal("vote link must not point at the target channel")
+	}
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000050")
+	if err != nil || len(links) != 1 {
+		t.Fatalf("links: %#v err=%v", links, err)
+	}
+	wantSnapshot := "好きな色は？\n1. 🔴 赤\n2. 青"
+	if links[0].SourceContentSnapshot != wantSnapshot {
+		t.Fatalf("snapshot = %q, want %q", links[0].SourceContentSnapshot, wantSnapshot)
+	}
+}
+
+func TestHandleMessageCreateSkipsEmptyMessageWithoutPoll(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000051", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("empty message should be skipped: %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateKeepsPollVoteLinkAfterDiscordRefRewrite(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	sourcePollURL := MessageJumpURL("guild", "ja", "100000000000000052")
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000052", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Content: "see " + MessageJumpURL("guild", "ja", "100000000000000001"),
+		Poll: &DiscordPoll{
+			Question: "Q",
+			Answers:  []DiscordPollAnswer{{Text: "A"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	got := discord.sent[0].Content
+	wantHeader := fmt.Sprintf("> -# %s · [%s](%s)",
+		localizedUIString("en", uiKeyPollStarted),
+		localizedUIString("en", uiKeyPollVote),
+		sourcePollURL,
+	)
+	if !strings.HasPrefix(got, wantHeader) {
+		t.Fatalf("missing source vote header: %q", got)
+	}
+	// Body may rewrite the embedded message URL; the poll vote header must stay on the source poll.
+	if strings.Count(got, sourcePollURL) < 1 {
+		t.Fatalf("vote link missing from content: %q", got)
+	}
+}
+
 func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternateURL(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

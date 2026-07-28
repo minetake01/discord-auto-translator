@@ -46,7 +46,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil) {
+	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil) {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -120,7 +120,8 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	for _, dest := range dests {
 		languages = append(languages, dest.channel.Language)
 	}
-	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, languages, contextFn)
+	sourceBody := messageBodyForMirror(m)
+	translations, err := s.translateWithLimit(ctx, m.GuildID, sourceBody, languages, contextFn)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
@@ -148,7 +149,8 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		if err := s.sendMirror(ctx, m, groupID, dest, content, m.Content); err != nil {
+		content = withPollStartedHeader(content, dest.channel.Language, m.GuildID, m.ChannelID, m.ID, m.Poll != nil)
+		if err := s.sendMirror(ctx, m, groupID, dest, content, sourceBody); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
