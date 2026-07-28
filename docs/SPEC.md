@@ -258,7 +258,8 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | 項目 | 値 |
 |---|---|
 | API | Mantle Responses（非ストリーミング、`store=false`） |
-| 実行時タイムアウト | 30 秒 |
+| 試行タイムアウト | 15 秒（試行ごと） |
+| 一時障害リトライ | ちょうど 1 回（1 秒待機後）。対象はタイムアウト・通信エラー・HTTP 429/5xx。契約違反・4xx（429以外）は再試行しない |
 | temperature | 省略（Gemmaプロバイダー既定値 1.0） |
 | max_output_tokens | 4096（アプリケーション固定上限） |
 | 出力形式 | 固定JSON Schemaをsystem instructionへ含める。Gemma 4はBedrock Structured Outputs非対応のため、既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する |
@@ -267,11 +268,12 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 
 **呼び出し契約:**
 
-- 全対象言語を1リクエストで生成し、再試行・分割・別プロバイダーへのfallbackは行わない
+- 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない
+- 試行ごとに15秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行する。親コンテキストのキャンセル、HTTP 4xx（429以外）、不正JSON・incomplete等の契約違反は再試行しない
 - 全リクエストで同一の固定schemaをsystem instructionへ含める。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する
 - incomplete状態（`max_output_tokens`到達を含む）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Mantleはrequest metadata非対応なので送信しない。既定ではプロンプト・応答・認証情報・AWSエラーメッセージをアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する
-- `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査用に1往復1行のJSON Linesを指定ファイルへ追記する。リクエストペイロード、生のレスポンス本文（reasoning itemやtoken内訳を含む）、HTTPステータス、所要時間、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、Mantleへ送るフィールドも変わらない
+- `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査用に1往復1行のJSON Linesを指定ファイルへ追記する（リトライ時は最大2行）。リクエストペイロード、生のレスポンス本文（reasoning itemやtoken内訳を含む）、HTTPステータス、所要時間、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、Mantleへ送るフィールドも変わらない
 - デプロイ時は5分期限で認証情報・モデルアクセス・レスポンス契約をprewarm検証し、成功後だけバイナリとenvを置換する
 
 ---

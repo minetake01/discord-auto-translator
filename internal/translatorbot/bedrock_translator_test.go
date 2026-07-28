@@ -339,22 +339,124 @@ func singleDebugLogEntry(t *testing.T, path string) bedrockDebugEntry {
 	return entry
 }
 
-func TestBedrockTranslatorRuntimeTimeoutIsThirtySeconds(t *testing.T) {
-	if bedrockRequestTimeout != 30*time.Second {
+func TestBedrockTranslatorRuntimeTimeoutIsFifteenSeconds(t *testing.T) {
+	if bedrockRequestTimeout != 15*time.Second {
 		t.Fatalf("timeout = %s", bedrockRequestTimeout)
+	}
+	if bedrockRetryAttempts != 2 {
+		t.Fatalf("retry attempts = %d, want 2", bedrockRetryAttempts)
+	}
+	if bedrockRetryBackoff != time.Second {
+		t.Fatalf("retry backoff = %s", bedrockRetryBackoff)
 	}
 }
 
-func TestBedrockWarmUpUsesCallerDeadline(t *testing.T) {
-	deadline := time.Now().Add(2 * time.Minute)
+func TestBedrockTranslatorRetriesTransientHTTPErrorOnce(t *testing.T) {
+	var calls atomic.Int32
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"service_unavailable","code":"unavailable"}}`)),
+			}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	result, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Translations["en"] != "Hello" {
+		t.Fatalf("result = %#v", result)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestBedrockTranslatorRetriesDeadlineExceededOnce(t *testing.T) {
+	var calls atomic.Int32
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			return nil, context.DeadlineExceeded
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	result, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Translations["en"] != "Hello" || calls.Load() != 2 {
+		t.Fatalf("result = %#v, calls = %d", result, calls.Load())
+	}
+}
+
+func TestBedrockTranslatorDoesNotRetryClientHTTPError(t *testing.T) {
+	var calls atomic.Int32
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"bad_request"}}`)),
+		}, nil
+	})
+	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestBedrockTranslatorDoesNotRetryContractViolation(t *testing.T) {
+	var calls atomic.Int32
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"status":"incomplete","error":null,"incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{"input_tokens":1,"output_tokens":4096}}`,
+		))}, nil
+	})
+	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestBedrockTranslatorReturnsLastErrorAfterRetryExhausted(t *testing.T) {
+	var calls atomic.Int32
+	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		n := calls.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusServiceUnavailable,
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"service_unavailable","code":"unavailable","message":"attempt-` + fmtInt(int(n)) + `"}}`)),
+		}, nil
+	})
+	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Fatalf("error = %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d, want 2", calls.Load())
+	}
+}
+
+func TestBedrockWarmUpUsesAttemptTimeout(t *testing.T) {
 	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		got, ok := req.Context().Deadline()
-		if !ok || got.Before(deadline.Add(-time.Second)) {
-			t.Fatalf("deadline = %v, want caller deadline near %v", got, deadline)
+		if !ok {
+			t.Fatal("missing deadline")
+		}
+		remaining := time.Until(got)
+		if remaining < 14*time.Second || remaining > bedrockRequestTimeout {
+			t.Fatalf("remaining = %s, want ~%s", remaining, bedrockRequestTimeout)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"warmup"}]}`, 1, 1)))}, nil
 	})
-	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	if err := testTranslator(client, &recordingSigner{}).WarmUp(ctx); err != nil {
 		t.Fatal(err)

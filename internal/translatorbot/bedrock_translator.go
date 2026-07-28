@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -23,7 +24,9 @@ const (
 	bedrockModel          = "google.gemma-4-26b-a4b"
 	bedrockService        = "bedrock-mantle"
 	bedrockMaxTokens      = 4096
-	bedrockRequestTimeout = 30 * time.Second
+	bedrockRequestTimeout = 15 * time.Second
+	bedrockRetryAttempts  = 2 // initial attempt + one retry
+	bedrockRetryBackoff   = 1 * time.Second
 
 	bedrockTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
 )
@@ -119,6 +122,15 @@ type bedrockErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// bedrockHTTPStatusError is a sanitized provider HTTP failure. Status is kept
+// so transient codes (429 / 5xx) can be retried without logging response bodies.
+type bedrockHTTPStatusError struct {
+	status  int
+	message string
+}
+
+func (e *bedrockHTTPStatusError) Error() string { return e.message }
+
 func NewBedrockTranslator(_ context.Context, accessKeyID, secretAccessKey, region, projectID string) (*BedrockTranslator, error) {
 	if strings.TrimSpace(accessKeyID) == "" || strings.TrimSpace(secretAccessKey) == "" {
 		return nil, errors.New("AWS credentials are required")
@@ -166,23 +178,62 @@ func (t *BedrockTranslator) TranslateMulti(ctx context.Context, targetLanguages 
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	runtimeCtx, cancel := context.WithTimeout(ctx, bedrockRequestTimeout)
-	defer cancel()
-	return t.translatePrepared(runtimeCtx, prepared)
+	return t.translatePreparedWithRetry(ctx, prepared)
 }
 
 // WarmUp verifies credentials, model access, and the fixed response contract
-// without starting Discord, SQLite, or the HTTP server. The caller owns the deadline.
+// without starting Discord, SQLite, or the HTTP server. Uses the same 15s
+// per-attempt timeout and single retry as TranslateMulti; the caller still
+// owns the overall deadline.
 func (t *BedrockTranslator) WarmUp(ctx context.Context) error {
 	prepared, err := prepareMultiTranslation([]string{"en"}, "warmup", TranslationContext{}, nil)
 	if err != nil {
 		return err
 	}
-	_, err = t.translatePrepared(ctx, prepared)
+	_, err = t.translatePreparedWithRetry(ctx, prepared)
 	if err != nil {
 		return fmt.Errorf("prewarm Amazon Bedrock model: %w", err)
 	}
 	return nil
+}
+
+func (t *BedrockTranslator) translatePreparedWithRetry(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+	var lastErr error
+	for attempt := 0; attempt < bedrockRetryAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, bedrockRequestTimeout)
+		result, err := t.translatePrepared(attemptCtx, prepared)
+		cancel()
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		if attempt == bedrockRetryAttempts-1 || !isBedrockRetryable(err) || ctx.Err() != nil {
+			return MultiTranslationResult{}, lastErr
+		}
+		timer := time.NewTimer(bedrockRetryBackoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return MultiTranslationResult{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return MultiTranslationResult{}, lastErr
+}
+
+func isBedrockRetryable(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var httpErr *bedrockHTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.status == http.StatusTooManyRequests || httpErr.status >= http.StatusInternalServerError
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
 }
 
 func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared preparedTranslation) (result MultiTranslationResult, err error) {
@@ -297,10 +348,13 @@ func bedrockHTTPError(response *http.Response, body []byte) error {
 	if requestID != "" {
 		details = append(details, "request_id="+requestID)
 	}
+	var message string
 	if len(details) == 0 {
-		return fmt.Errorf("Amazon Bedrock translation request returned HTTP %d", response.StatusCode)
+		message = fmt.Sprintf("Amazon Bedrock translation request returned HTTP %d", response.StatusCode)
+	} else {
+		message = fmt.Sprintf("Amazon Bedrock translation request returned HTTP %d (%s)", response.StatusCode, strings.Join(details, ", "))
 	}
-	return fmt.Errorf("Amazon Bedrock translation request returned HTTP %d (%s)", response.StatusCode, strings.Join(details, ", "))
+	return &bedrockHTTPStatusError{status: response.StatusCode, message: message}
 }
 
 func firstSafeErrorField(values ...string) string {

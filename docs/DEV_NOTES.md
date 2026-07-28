@@ -63,21 +63,22 @@ internal/translatorbot/
 
 ```go
 const bedrockModel = "google.gemma-4-26b-a4b"
-// runtime timeout: 30s
+// per-attempt timeout: 15s
+// transient retry: exactly once after 1s (timeout / transport / HTTP 429+5xx)
 // temperature: omitted (Gemma provider default 1.0), max_output_tokens: 4096
 ```
 
-Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。HTTP再試行は実装しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、既定ではプロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
+Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。試行ごとに15秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、既定ではプロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
 Gemma 4 26B-A4BはBedrock Structured Outputs非対応です。固定JSON Schemaはsystem instructionへ含め、レスポンスはcompleted状態、単一のassistant `output_text`、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。Responses APIが返すreasoning itemは最終textとして扱いません。
 
-全対象言語を1リクエストで生成します。全リクエストで同一のBedrock対応schemaを使い、件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常stop reasonはfail-closedです。分割、retry、別providerへのfallbackはありません。
+全対象言語を1リクエストで生成します。全リクエストで同一のBedrock対応schemaを使い、件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常stop reasonはfail-closedです。分割や別providerへのfallbackはありません。
 
 `--bedrock-prewarm` はDiscord・SQLite・HTTPサーバーを起動せず、認証情報・モデルアクセス・レスポンス契約を最大5分で検証して終了します。デプロイスクリプトはprewarm成功後だけ稼働バイナリを置換します。
 
 ### 翻訳デバッグログ（`debug_log.go`）
 
-翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します。パーサーが捨てる情報（reasoning itemのテキスト、`usage` の内訳、未知フィールド、非2xx時のAWSエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
+翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します（一時障害リトライ時は最大2行）。パーサーが捨てる情報（reasoning itemのテキスト、`usage` の内訳、未知フィールド、非2xx時のAWSエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
 
 ```json
 {"time":"...","guild_id":"...","message_id":"...","target_languages":["en"],"duration_ms":812,"request":{...},"http_status":200,"response":{...},"error":"..."}
