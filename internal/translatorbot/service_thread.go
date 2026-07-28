@@ -174,7 +174,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 				TargetChannelID: threadID, TargetLanguage: target.Language,
 				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
-			}); err != nil {
+			}, MessageReference{}); err != nil {
 				return false, err
 			}
 		}

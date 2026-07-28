@@ -561,7 +561,7 @@ func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "hello",
-	})
+	}, MessageReference{})
 	if err == nil {
 		t.Fatal("expected save error")
 	}

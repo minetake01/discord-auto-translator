@@ -24,6 +24,7 @@ type GroupChannel struct {
 	WebhookToken string
 }
 
+// MessageLink is one mirrored copy of a source message (message_links row).
 type MessageLink struct {
 	SourceMessageID         string
 	SourceChannelID         string
@@ -34,8 +35,13 @@ type MessageLink struct {
 	SourceAuthorID          string
 	SourceAuthorDisplayName string
 	SourceContentSnapshot   string
-	ReferencedMessageID     string
-	ReferencedChannelID     string
+}
+
+// MessageReference is the reply target of a source message (message_references row).
+// It is keyed by the source message, not by each mirror copy.
+type MessageReference struct {
+	MessageID string
+	ChannelID string
 }
 
 type ThreadLink struct {

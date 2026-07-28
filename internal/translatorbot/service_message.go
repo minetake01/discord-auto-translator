@@ -309,9 +309,9 @@ func (s *Service) pollResultVictorLabel(ctx context.Context, pollChannelID, poll
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, snapshot string) error {
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
-	referencedChannelID := m.ReferencedMessageChannelID
-	if referencedChannelID == "" && m.ReferencedMessageID != "" {
-		referencedChannelID = m.ChannelID
+	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
+	if ref.MessageID != "" && ref.ChannelID == "" {
+		ref.ChannelID = m.ChannelID
 	}
 	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
 		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds,
@@ -319,8 +319,7 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
 		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
-		ReferencedMessageID: m.ReferencedMessageID, ReferencedChannelID: referencedChannelID,
-	})
+	}, ref)
 }
 
 type pendingMessageEdit struct {

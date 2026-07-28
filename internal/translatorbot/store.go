@@ -495,6 +495,14 @@ func (s *Store) UpdateMessageLinkSnapshot(ctx context.Context, sourceChannelID, 
 }
 
 func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
+	return s.saveMessageLink(ctx, l, MessageReference{})
+}
+
+func (s *Store) SaveMessageLinkWithReference(ctx context.Context, l MessageLink, ref MessageReference) error {
+	return s.saveMessageLink(ctx, l, ref)
+}
+
+func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageReference) error {
 	if s.saveMessageLinkErr != nil {
 		return s.saveMessageLinkErr
 	}
@@ -511,16 +519,16 @@ func (s *Store) SaveMessageLink(ctx context.Context, l MessageLink) error {
 		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot); err != nil {
 		return err
 	}
-	if l.ReferencedMessageID != "" {
-		if l.ReferencedChannelID == "" {
+	if ref.MessageID != "" {
+		if ref.ChannelID == "" {
 			return errors.New("referenced_channel_id is required when referenced_message_id is set")
 		}
-		referencedMessageID, err := parseDiscordSnowflakeID("referenced_message_id", l.ReferencedMessageID)
+		referencedMessageID, err := parseDiscordSnowflakeID("referenced_message_id", ref.MessageID)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_references(source_message_id,source_channel_id,referenced_message_id,referenced_channel_id) VALUES(?,?,?,?)`,
-			sourceMessageID, l.SourceChannelID, referencedMessageID, l.ReferencedChannelID); err != nil {
+			sourceMessageID, l.SourceChannelID, referencedMessageID, ref.ChannelID); err != nil {
 			return err
 		}
 	}

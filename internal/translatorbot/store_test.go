@@ -441,6 +441,16 @@ func TestAllowedSourceCRUDDuplicateNotFoundAndGuildIsolation(t *testing.T) {
 	if len(sources) != 1 || sources[0].GuildID != "guild-a" || sources[0].Type != SourceTypeBot || sources[0].ID != sourceID || sources[0].CreatedBy != "admin" {
 		t.Fatalf("sources = %#v", sources)
 	}
+	var storedCreatedAt int64
+	if err := s.db.QueryRowContext(ctx, `SELECT created_at FROM source_allowlists WHERE guild_id=? AND source_id=?`, "guild-a", sourceID).Scan(&storedCreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if storedCreatedAt < 1_000_000_000_000 {
+		t.Fatalf("created_at = %d, want Unix milliseconds", storedCreatedAt)
+	}
+	if sources[0].CreatedAt.UnixMilli() != storedCreatedAt {
+		t.Fatalf("CreatedAt = %v (%d), want %d", sources[0].CreatedAt, sources[0].CreatedAt.UnixMilli(), storedCreatedAt)
+	}
 	if err := s.RemoveAllowedSource(ctx, "guild-b", SourceTypeBot, sourceID); !errors.Is(err, ErrSourceNotAllowed) {
 		t.Fatalf("cross-guild remove error = %v", err)
 	}
@@ -695,11 +705,10 @@ func TestDeleteMessageDataRemovesAllTargetsForSource(t *testing.T) {
 func TestMessageTargetsReplyingToReturnsPersistedReplyTargets(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	if err := s.SaveMessageLink(ctx, MessageLink{
+	if err := s.SaveMessageLinkWithReference(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "team",
 		TargetChannelID: "en", TargetMessageID: "target-reply", TargetLanguage: "en",
-		ReferencedMessageID: "100000000000000001", ReferencedChannelID: "ja",
-	}); err != nil {
+	}, MessageReference{MessageID: "100000000000000001", ChannelID: "ja"}); err != nil {
 		t.Fatal(err)
 	}
 
