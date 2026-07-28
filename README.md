@@ -123,6 +123,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+Privacy policy and terms HTML under `internal/legalpages/assets/` are instance-specific and not tracked in git. Before the first build or test, copy the examples and replace them with your own pages:
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## Usage
 
 Once the bot starts, slash commands are registered in each server.
