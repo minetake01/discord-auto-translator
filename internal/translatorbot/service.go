@@ -29,7 +29,7 @@ type Service struct {
 	discord       DiscordAPI
 	translator    Translator
 	rateLimiter   *TokenRateLimiter
-	alternateURLs *alternateURLReplacer
+	urlPages      *urlPageCache
 	publicBaseURL string
 	selfBotUserID string
 	threadMu      sync.Mutex
@@ -38,11 +38,11 @@ type Service struct {
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
 	return &Service{
-		store:         store,
-		discord:       discord,
-		translator:    translator,
-		rateLimiter:   NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
-		alternateURLs: newAlternateURLReplacer(http.DefaultClient, alternateURLDomainCacheTTL, time.Now),
+		store:       store,
+		discord:     discord,
+		translator:  translator,
+		rateLimiter: NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
+		urlPages:    newURLPageCache(http.DefaultClient, urlPageCacheTTL, time.Now),
 	}
 }
 
@@ -75,9 +75,9 @@ func (s *Service) shouldProcessMessage(ctx context.Context, m DiscordMessage) (b
 }
 
 // postProcessContent applies target-language link rewriting to translated
-// content: hreflang alternate URLs first, then managed Discord references.
+// content: hreflang URLs from the page cache first, then managed Discord references.
 func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetLanguage string) string {
-	text = s.alternateURLs.Replace(ctx, text, targetLanguage)
+	text = s.urlPages.Replace(ctx, text, targetLanguage)
 	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
 }
 
@@ -110,6 +110,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 		return nil, err
 	}
 	translationContext := contextFn()
+	attachURLPageMeta(&translationContext, s.urlPages.Lookup(ctx, content))
 	if err := s.checkTranslationRateLimit(guildID, languages, content, translationContext, glossary); err != nil {
 		return nil, err
 	}
@@ -128,11 +129,37 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	return translations, nil
 }
 
+func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
+	if len(pages) == 0 {
+		return
+	}
+	titles := make(map[string]string, len(pages))
+	descriptions := make(map[string]string, len(pages))
+	for rawURL, page := range pages {
+		if title := strings.TrimSpace(page.Title); title != "" {
+			titles[rawURL] = title
+		}
+		if desc := strings.TrimSpace(page.Description); desc != "" {
+			descriptions[rawURL] = desc
+		}
+	}
+	tc.SiteTitles = titles
+	tc.SiteDescriptions = descriptions
+}
+
+func siteContextForContent(content string, tc TranslationContext) []SiteContextEntry {
+	p := NewProtector(NameMaps{Sites: tc.SiteTitles})
+	p.SetSiteDescriptions(tc.SiteDescriptions)
+	_ = p.Protect(content)
+	return p.SiteContext()
+}
+
 func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) error {
 	if s.rateLimiter == nil {
 		return nil
 	}
-	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "")
+	translationContext.Sites = siteContextForContent(content, translationContext)
+	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "", len(translationContext.Sites) > 0)
 	userPrompt := BuildMultiTranslationUserPrompt(targetLanguages, content, translationContext)
 	estimate := EstimateTranslationTokens(systemInstruction+userPrompt, "") + 200*len(targetLanguages)
 	if !s.rateLimiter.Allow(guildID, estimate) {

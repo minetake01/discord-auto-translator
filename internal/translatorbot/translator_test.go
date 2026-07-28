@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, true, false, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("こんにちは", nil, true, false, false, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "こんにちは", TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -88,7 +88,7 @@ func TestBuildTranslationPromptIncludesThreadName(t *testing.T) {
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, false, true, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("reply body", nil, false, true, false, false)
 	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "reply body", TranslationContext{
 		Author: "carol",
 		ReplyChain: []ChatContextMessage{
@@ -121,7 +121,7 @@ func TestBuildMultiTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false, false, false)
+	systemInstruction := BuildMultiTranslationSystemInstruction("An npc appeared", glossary, false, false, false, false)
 	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
 		t.Fatal(systemInstruction)
 	}
@@ -167,29 +167,62 @@ func TestBuildMultiTranslationUserPromptIncludesStyleInstructions(t *testing.T) 
 func TestBuildMultiTranslationSystemInstructionContextMatchRule(t *testing.T) {
 	const contextMatchRule = "match their register and typing style"
 
-	withHistory := BuildMultiTranslationSystemInstruction("hello", nil, true, false, false)
+	withHistory := BuildMultiTranslationSystemInstruction("hello", nil, true, false, false, false)
 	if !strings.Contains(withHistory, contextMatchRule) {
 		t.Fatal(withHistory)
 	}
-	withReply := BuildMultiTranslationSystemInstruction("hello", nil, false, true, false)
+	withReply := BuildMultiTranslationSystemInstruction("hello", nil, false, true, false, false)
 	if !strings.Contains(withReply, contextMatchRule) {
 		t.Fatal(withReply)
 	}
-	withoutContext := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false)
+	withoutContext := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false, false)
 	if strings.Contains(withoutContext, contextMatchRule) {
 		t.Fatal(withoutContext)
 	}
 }
 
 func TestBuildMultiTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
-	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, true)
+	withStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, true, false)
 	if !strings.Contains(withStyle, "Use <style_instructions> as the default for choices the source leaves open") {
 		t.Fatal(withStyle)
 	}
 
-	withoutStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false)
+	withoutStyle := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false, false)
 	if strings.Contains(withoutStyle, "<style_instructions>") {
 		t.Fatal(withoutStyle)
+	}
+}
+
+func TestBuildMultiTranslationUserPromptIncludesSiteContext(t *testing.T) {
+	systemInstruction := BuildMultiTranslationSystemInstruction("see link", nil, false, false, false, true)
+	if !strings.Contains(systemInstruction, "Use <site_context> only as background") {
+		t.Fatal(systemInstruction)
+	}
+	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, "see [SITE:Example Article]", TranslationContext{
+		Sites: []SiteContextEntry{
+			{Title: "Example Article", Description: "A short description"},
+			{Title: "Example Article:2", Description: "Second <page>"},
+		},
+	})
+	if !strings.Contains(prompt, `<site_context><site title="Example Article">A short description</site><site title="Example Article:2">Second &lt;page&gt;</site></site_context>`) {
+		t.Fatalf("missing site_context:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "site_name") {
+		t.Fatal(prompt)
+	}
+	siteIndex := strings.Index(prompt, "<site_context>")
+	finalIndex := strings.Index(prompt, "<final_message")
+	if siteIndex == -1 || finalIndex == -1 || siteIndex > finalIndex {
+		t.Fatalf("site_context should appear before final_message:\n%s", prompt)
+	}
+
+	without := BuildMultiTranslationSystemInstruction("hello", nil, false, false, false, false)
+	if strings.Contains(without, "Use <site_context>") {
+		t.Fatal(without)
+	}
+	emptyPrompt := BuildMultiTranslationUserPrompt([]string{"en"}, "hello", TranslationContext{})
+	if strings.Contains(emptyPrompt, "<site_context>") {
+		t.Fatal(emptyPrompt)
 	}
 }
 

@@ -1,7 +1,6 @@
 package translatorbot
 
 import (
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -17,20 +16,43 @@ type NameMaps struct {
 	Users    map[string]string // userID → display name
 	Channels map[string]string // channelID → channel name (source)
 	Roles    map[string]string // roleID → role name
+	Sites    map[string]string // rawURL → page title
+}
+
+type SiteContextEntry struct {
+	Title       string
+	Description string
 }
 
 type Protector struct {
-	names  NameMaps
-	items  map[string]string
-	counts map[string]int
+	names             NameMaps
+	siteDescriptions  map[string]string
+	items             map[string]string
+	counts            map[string]int
+	sites             []SiteContextEntry
+	siteURLsSeen      map[string]struct{}
 }
 
 func NewProtector(names NameMaps) *Protector {
 	return &Protector{
-		names:  names,
-		items:  map[string]string{},
-		counts: map[string]int{},
+		names:        names,
+		items:        map[string]string{},
+		counts:       map[string]int{},
+		siteURLsSeen: map[string]struct{}{},
 	}
+}
+
+func (p *Protector) SetSiteDescriptions(descriptions map[string]string) {
+	p.siteDescriptions = descriptions
+}
+
+func (p *Protector) SiteContext() []SiteContextEntry {
+	if len(p.sites) == 0 {
+		return nil
+	}
+	out := make([]SiteContextEntry, len(p.sites))
+	copy(out, p.sites)
+	return out
 }
 
 func (p *Protector) Protect(text string) string {
@@ -86,14 +108,36 @@ func (p *Protector) tokenFor(match string) string {
 
 	case strings.HasPrefix(match, "http") || strings.HasPrefix(match, "<http"):
 		rawURL := strings.Trim(match, "<>")
-		if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
-			return p.nextToken("URL", sanitizeLabel(u.Host))
+		title := ""
+		if p.names.Sites != nil {
+			title = p.names.Sites[rawURL]
 		}
-		return p.nextToken("URL", "")
+		token := p.nextToken("SITE", sanitizeLabel(title))
+		p.recordSiteContext(rawURL, token, title)
+		return token
 
 	default:
 		return p.nextToken("CODE", "")
 	}
+}
+
+func (p *Protector) recordSiteContext(rawURL, token, title string) {
+	if strings.TrimSpace(title) == "" {
+		return
+	}
+	if _, seen := p.siteURLsSeen[rawURL]; seen {
+		return
+	}
+	p.siteURLsSeen[rawURL] = struct{}{}
+	label := strings.TrimPrefix(strings.Trim(token, "[]"), "SITE:")
+	if label == "" {
+		return
+	}
+	desc := ""
+	if p.siteDescriptions != nil {
+		desc = p.siteDescriptions[rawURL]
+	}
+	p.sites = append(p.sites, SiteContextEntry{Title: label, Description: desc})
 }
 
 func emojiName(match string) string {

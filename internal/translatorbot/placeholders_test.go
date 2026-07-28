@@ -39,11 +39,48 @@ func TestProtectorRestoresURLsAndMarkdown(t *testing.T) {
 	if strings.Contains(protected, "https://example.com") || strings.Contains(protected, "`code`") {
 		t.Fatalf("not protected: %s", protected)
 	}
-	if !strings.Contains(protected, "[URL:example.com]") || !strings.Contains(protected, "[CODE]") {
+	if !strings.Contains(protected, "[SITE]") || !strings.Contains(protected, "[CODE]") {
 		t.Fatalf("unexpected protected form: %s", protected)
 	}
 	if got := p.Restore(protected); got != in {
 		t.Fatalf("got %q want %q", got, in)
+	}
+}
+
+func TestProtectorSiteTitleAndContext(t *testing.T) {
+	p := NewProtector(NameMaps{
+		Sites: map[string]string{
+			"https://example.com/a": "Example Article",
+			"https://example.com/b": "Example Article",
+			"https://other.com/c":   "Other",
+		},
+	})
+	p.SetSiteDescriptions(map[string]string{
+		"https://example.com/a": "First page",
+		"https://example.com/b": "Second page",
+		"https://other.com/c":   "Other page",
+	})
+	in := "see https://example.com/a and https://example.com/b and https://other.com/c"
+	protected := p.Protect(in)
+	want := "see [SITE:Example Article] and [SITE:Example Article:2] and [SITE:Other]"
+	if protected != want {
+		t.Fatalf("got %q want %q", protected, want)
+	}
+	sites := p.SiteContext()
+	if len(sites) != 3 {
+		t.Fatalf("sites = %+v", sites)
+	}
+	if sites[0] != (SiteContextEntry{Title: "Example Article", Description: "First page"}) {
+		t.Fatalf("sites[0] = %+v", sites[0])
+	}
+	if sites[1] != (SiteContextEntry{Title: "Example Article:2", Description: "Second page"}) {
+		t.Fatalf("sites[1] = %+v", sites[1])
+	}
+	if sites[2] != (SiteContextEntry{Title: "Other", Description: "Other page"}) {
+		t.Fatalf("sites[2] = %+v", sites[2])
+	}
+	if got := p.Restore(protected); got != in {
+		t.Fatalf("restore got %q want %q", got, in)
 	}
 }
 
