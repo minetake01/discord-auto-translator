@@ -139,9 +139,19 @@ func (s *Store) Init(ctx context.Context) error {
 			guild_id TEXT PRIMARY KEY,
 			removed_at INTEGER NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS poll_translation_cache (
+			source_channel_id TEXT NOT NULL,
+			source_message_id INTEGER NOT NULL,
+			language TEXT NOT NULL,
+			answers_json TEXT NOT NULL,
+			expires_at INTEGER NOT NULL,
+			PRIMARY KEY (source_channel_id, source_message_id, language)
+		)`,
 	}
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_group_channels_guild_channel ON group_channels(guild_id, channel_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_poll_translation_cache_expires_at ON poll_translation_cache(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_poll_translation_cache_source ON poll_translation_cache(source_channel_id, source_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_source_channel_message ON message_links(source_channel_id, source_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_target_channel_message ON message_links(target_channel_id, target_message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_message_links_group_source_channel ON message_links(group_id, source_channel_id)`,
@@ -208,11 +218,12 @@ func (s *Store) Init(ctx context.Context) error {
 
 func (s *Store) validateOptimizedSchema(ctx context.Context) error {
 	required := map[string]map[string]string{
-		"translation_groups": {"created_at": "INTEGER"},
-		"message_links":      {"source_message_id": "INTEGER"},
-		"pin_states":         {"message_id": "INTEGER"},
-		"processed_events":   {"created_at": "INTEGER"},
-		"glossary_entries":   {"created_at": "INTEGER"},
+		"translation_groups":     {"created_at": "INTEGER"},
+		"message_links":          {"source_message_id": "INTEGER"},
+		"pin_states":             {"message_id": "INTEGER"},
+		"processed_events":       {"created_at": "INTEGER"},
+		"glossary_entries":       {"created_at": "INTEGER"},
+		"poll_translation_cache": {"source_message_id": "INTEGER", "expires_at": "INTEGER"},
 	}
 	for table, columns := range required {
 		rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
@@ -304,6 +315,10 @@ func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error 
 		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
 		return err
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache
+		WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)`, guildID, groupID); err != nil {
+		return err
+	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM translation_groups WHERE guild_id=? AND id=?`, guildID, groupID)
 	if err != nil {
 		return err
@@ -336,6 +351,9 @@ func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID st
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache WHERE source_channel_id=?`, channelID); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -525,6 +543,10 @@ func (s *Store) DeleteMessageData(ctx context.Context, sourceChannelID, sourceMe
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references
 		WHERE (source_channel_id=? AND source_message_id=?) OR (referenced_channel_id=? AND referenced_message_id=?)`,
 		sourceChannelID, sourceMessageIDValue, sourceChannelID, sourceMessageIDValue); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache WHERE source_channel_id=? AND source_message_id=?`,
+		sourceChannelID, sourceMessageIDValue); err != nil {
 		return err
 	}
 	for _, copy := range copies {

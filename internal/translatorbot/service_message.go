@@ -48,7 +48,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil) {
+	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil && m.PollResult == nil) {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -69,6 +69,15 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 	for _, source := range groups {
 		if err := s.mirrorMessageToGroup(ctx, m, source); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	if m.PollResult != nil {
+		pollChannelID := m.ReferencedMessageChannelID
+		if pollChannelID == "" {
+			pollChannelID = m.ChannelID
+		}
+		if err := s.store.DeletePollTranslationCache(ctx, pollChannelID, m.ReferencedMessageID); err != nil {
+			errs = append(errs, fmt.Errorf("delete poll translation cache: %w", err))
 		}
 	}
 	return errors.Join(errs...)
@@ -116,6 +125,9 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
 	if m.ForwardedMessage != nil {
 		return s.mirrorForwardedMessage(ctx, m, groupID, sourceLanguage, contextFn, dests)
+	}
+	if m.PollResult != nil {
+		return s.mirrorPollResultMessage(ctx, m, groupID, dests)
 	}
 	if m.Poll != nil {
 		return s.mirrorPollMessage(ctx, m, groupID, sourceLanguage, contextFn, dests)
@@ -228,7 +240,69 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
+	if m.Poll.Expiry != nil && !m.Poll.Expiry.IsZero() {
+		for language, poll := range pollTranslations {
+			answers := make([]string, len(poll.Answers))
+			copy(answers, poll.Answers)
+			if err := s.store.SavePollTranslationCache(ctx, m.ChannelID, m.ID, language, answers, *m.Poll.Expiry); err != nil {
+				errs = append(errs, fmt.Errorf("poll translation cache %s: %w", language, err))
+			}
+		}
+	}
 	return errors.Join(errs...)
+}
+
+func (s *Service) mirrorPollResultMessage(ctx context.Context, m DiscordMessage, groupID string, dests []mirrorDestination) error {
+	pollChannelID := m.ReferencedMessageChannelID
+	if pollChannelID == "" {
+		pollChannelID = m.ChannelID
+	}
+	var errs []error
+	for _, dest := range dests {
+		victorLabel, err := s.pollResultVictorLabel(ctx, pollChannelID, m.ReferencedMessageID, dest.channel.Language, m.PollResult)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+			continue
+		}
+		body := pollResultBody(dest.channel.Language, m.PollResult, victorLabel)
+		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+			continue
+		}
+		content := body
+		if quote != "" {
+			content = quote + "\n\n" + body
+		}
+		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, body); err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// pollResultVictorLabel resolves the display label for a poll winner, preferring
+// the translated answer from poll_translation_cache and falling back to the
+// source victor_answer_text from the poll_result embed.
+func (s *Service) pollResultVictorLabel(ctx context.Context, pollChannelID, pollMessageID, language string, result *DiscordPollResult) (string, error) {
+	if result == nil || !result.HasEmbed {
+		return "", nil
+	}
+	answerText := ""
+	if pollMessageID != "" && result.VictorAnswerID > 0 {
+		answers, ok, err := s.store.PollTranslatedAnswers(ctx, pollChannelID, pollMessageID, language)
+		if err != nil {
+			return "", err
+		}
+		idx := result.VictorAnswerID - 1
+		if ok && idx >= 0 && idx < len(answers) {
+			answerText = strings.TrimSpace(answers[idx])
+		}
+	}
+	if answerText == "" {
+		answerText = strings.TrimSpace(result.VictorAnswerText)
+	}
+	return formatPollVictorLabel(answerText, result.VictorEmoji), nil
 }
 
 // sendMirror posts the prepared content to one destination and records the
