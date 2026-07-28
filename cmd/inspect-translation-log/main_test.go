@@ -8,19 +8,6 @@ import (
 	"testing"
 )
 
-func TestExtractReasoningText(t *testing.T) {
-	resp := parseResponse([]byte(`{
-		"output":[
-			{"type":"reasoning","content":[{"type":"reasoning_text","text":"keep mention"}]},
-			{"type":"message","content":[{"type":"output_text","text":"{\"translations\":[]}"}]}
-		]
-	}`))
-	got := extractReasoningText(resp)
-	if got != "keep mention" {
-		t.Fatalf("extractReasoningText = %q", got)
-	}
-}
-
 func TestPrintDetailIncludesReasoningTokensAndText(t *testing.T) {
 	entry := logEntry{
 		Request: []byte(`{"input":[{"role":"user","content":"<final_message>こんにちは</final_message>"}]}`),

@@ -176,7 +176,7 @@ func sanitizeWebhookName(name string) string {
 	name = strings.TrimSpace(name)
 	name = reservedWebhookNamePattern.ReplaceAllString(name, "D-scord")
 	if name == "" {
-		return defaultWebhookName
+		return sanitizedDefaultWebhookName()
 	}
 	const maxRunes = 80
 	runes := []rune(name)
@@ -184,9 +184,13 @@ func sanitizeWebhookName(name string) string {
 		name = strings.TrimSpace(string(runes[:maxRunes]))
 	}
 	if name == "" {
-		return defaultWebhookName
+		return sanitizedDefaultWebhookName()
 	}
 	return name
+}
+
+func sanitizedDefaultWebhookName() string {
+	return reservedWebhookNamePattern.ReplaceAllString(defaultWebhookName, "D-scord")
 }
 
 func (d DiscordGoAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
