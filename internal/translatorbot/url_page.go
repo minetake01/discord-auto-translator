@@ -16,8 +16,8 @@ const urlPageCacheTTL = 24 * time.Hour
 const urlPageLookupConcurrency = 4
 const urlPageFetchTimeout = 5 * time.Second
 const urlPageBodyLimit = 512 * 1024
-const urlPageTitleMaxRunes = 200
-const urlPageDescriptionMaxRunes = 500
+const urlPageTitleMaxRunes = 100
+const urlPageDescriptionMaxRunes = 200
 
 var urlPattern = regexp.MustCompile(`https?://[^\s<>()]+`)
 var hreflangLinkPattern = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*\balternate\b[^"']*["'][^>]*>`)
