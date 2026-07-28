@@ -86,8 +86,19 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 
 	protected := p.Protect(content)
 	translationContext.Sites = p.SiteContext()
-	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "", len(translationContext.Sites) > 0)
-	userPrompt := BuildMultiTranslationUserPrompt(normalized, protected, translationContext)
+	systemInstruction := buildTranslationSystemInstruction(
+		"Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n",
+		"<final_message>",
+		content,
+		glossary,
+		len(translationContext.History) > 0,
+		len(translationContext.ReplyChain) > 0,
+		strings.TrimSpace(translationContext.StyleInstructions) != "",
+		len(translationContext.Sites) > 0,
+	)
+	userPrompt := buildTranslationUserPrompt(normalized, translationContext, func(b *strings.Builder) {
+		writeAttributedElement(b, "final_message", translationContext.Author, protected)
+	})
 	return preparedTranslation{
 		targetLanguages:    normalized,
 		systemInstruction:  systemInstruction,
@@ -217,10 +228,6 @@ func beginPreparedTranslation(targetLanguages []string, translationContext *Tran
 	if len(normalized) == 0 {
 		return nil, nil, nil
 	}
-	return normalized, newTranslationProtector(translationContext), nil
-}
-
-func newTranslationProtector(translationContext *TranslationContext) *Protector {
 	p := NewProtector(NameMaps{
 		Users:    translationContext.MentionedUsers,
 		Channels: translationContext.MentionedChannels,
@@ -228,7 +235,7 @@ func newTranslationProtector(translationContext *TranslationContext) *Protector 
 		Sites:    translationContext.SiteTitles,
 	})
 	p.SetSiteDescriptions(translationContext.SiteDescriptions)
-	return p
+	return normalized, p, nil
 }
 
 type pollTranslationResponse struct {
@@ -285,19 +292,6 @@ func parsePollTranslationResponse(raw string, targetLanguages []string, answerCo
 	return out, nil
 }
 
-func BuildMultiTranslationSystemInstruction(content string, glossary []GlossaryEntry, hasHistory, hasReplyChain, hasStyleInstructions, hasSiteContext bool) string {
-	return buildTranslationSystemInstruction(
-		"Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n",
-		"<final_message>",
-		content,
-		glossary,
-		hasHistory,
-		hasReplyChain,
-		hasStyleInstructions,
-		hasSiteContext,
-	)
-}
-
 func buildTranslationSystemInstruction(taskIntro, sourceLabel, glossaryContent string, glossary []GlossaryEntry, hasHistory, hasReplyChain, hasStyleInstructions, hasSiteContext bool) string {
 	var b strings.Builder
 	b.WriteString(taskIntro)
@@ -349,12 +343,6 @@ func selectGlossaryEntries(content string, glossary []GlossaryEntry) []GlossaryE
 		}
 	}
 	return selected
-}
-
-func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, translationContext TranslationContext) string {
-	return buildTranslationUserPrompt(targetLanguages, translationContext, func(b *strings.Builder) {
-		writeAttributedElement(b, "final_message", translationContext.Author, content)
-	})
 }
 
 func buildTranslationUserPrompt(targetLanguages []string, translationContext TranslationContext, writeSource func(*strings.Builder)) string {
