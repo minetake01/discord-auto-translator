@@ -262,6 +262,33 @@ func TestBuildTranslationUserPromptEscapesAdversarialContent(t *testing.T) {
 	}
 }
 
+func TestBuildMultiTranslationUserPromptPreservesNewlinesAndBlockquotes(t *testing.T) {
+	content := "Translations are working now~\n> Also, I added some fixes."
+	prompt := BuildMultiTranslationUserPrompt([]string{"en"}, content, TranslationContext{
+		Author: "alice",
+		History: []ChatContextMessage{
+			{Author: "bob", Content: "line1\nline2"},
+		},
+		Sites: []SiteContextEntry{
+			{Title: "Doc", Description: "first\nsecond"},
+		},
+	})
+	for _, forbidden := range []string{"&#xA;", "&#xD;", "&#x9;", "&#10;"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("whitespace entity %q leaked into prompt:\n%s", forbidden, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "<final_message author=\"alice\">Translations are working now~\n&gt; Also, I added some fixes.</final_message>") {
+		t.Fatalf("expected literal newline and escaped blockquote in final_message:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `<message author="bob">line1`+"\n"+`line2</message>`) {
+		t.Fatalf("expected literal newline in history:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `<site title="Doc">first`+"\n"+`second</site>`) {
+		t.Fatalf("expected literal newline in site description:\n%s", prompt)
+	}
+}
+
 func TestWriteContextSectionEscapesAttributeValues(t *testing.T) {
 	var b strings.Builder
 	writeContextSection(&b, "recent_context", []ChatContextMessage{
@@ -302,6 +329,22 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 		if _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p); err == nil {
 			t.Fatalf("expected strict validation error for %s", raw)
 		}
+	}
+}
+
+func TestParseMultiTranslationResponseUnescapesHTMLEntities(t *testing.T) {
+	p := NewProtector(NameMaps{})
+	got, err := parseMultiTranslationResponse(
+		`{"translations":[{"language":"en","translated_text":"Working now~&#xA;&gt; Also fixed failures."}]}`,
+		[]string{"en"},
+		p,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Working now~\n> Also fixed failures."
+	if got["en"] != want {
+		t.Fatalf("got %q, want %q", got["en"], want)
 	}
 }
 

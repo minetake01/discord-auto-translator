@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"strings"
 )
@@ -130,7 +130,7 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 		if item.Language != targetLanguage {
 			return nil, fmt.Errorf("parse translation response: translation %d has language %q, want %q", i, item.Language, targetLanguage)
 		}
-		text := strings.TrimSpace(item.TranslatedText)
+		text := strings.TrimSpace(html.UnescapeString(item.TranslatedText))
 		if text == "" {
 			return nil, fmt.Errorf("parse translation response: empty translation for %q", targetLanguage)
 		}
@@ -224,7 +224,7 @@ func BuildMultiTranslationUserPrompt(targetLanguages []string, content string, t
 			b.WriteString(`<site title="`)
 			writeXMLAttributeValue(&b, site.Title)
 			b.WriteString(`">`)
-			_ = xml.EscapeText(&b, []byte(site.Description))
+			writeXMLText(&b, site.Description)
 			b.WriteString(`</site>`)
 		}
 		b.WriteString("</site_context>")
@@ -250,8 +250,26 @@ func writeAttributedElement(b *strings.Builder, tag, author, content string) {
 		b.WriteString(`"`)
 	}
 	b.WriteString(">")
-	_ = xml.EscapeText(b, []byte(content))
+	writeXMLText(b, content)
 	b.WriteString("</" + tag + ">")
+}
+
+// writeXMLText escapes &, <, and > for XML element content while preserving
+// literal newlines/tabs. encoding/xml.EscapeText would turn \n into &#xA;,
+// which models sometimes copy into translated_text.
+func writeXMLText(b *strings.Builder, text string) {
+	for _, r := range text {
+		switch r {
+		case '&':
+			b.WriteString("&amp;")
+		case '<':
+			b.WriteString("&lt;")
+		case '>':
+			b.WriteString("&gt;")
+		default:
+			b.WriteRune(r)
+		}
+	}
 }
 
 func writeXMLAttributeValue(b *strings.Builder, text string) {
@@ -285,6 +303,6 @@ func EstimateTranslationTokens(prompt, response string) int {
 
 func writeXMLElement(b *strings.Builder, name, text string) {
 	fmt.Fprintf(b, "<%s>", name)
-	_ = xml.EscapeText(b, []byte(text))
+	writeXMLText(b, text)
 	fmt.Fprintf(b, "</%s>", name)
 }
