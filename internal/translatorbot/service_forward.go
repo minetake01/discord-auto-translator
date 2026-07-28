@@ -19,7 +19,7 @@ type forwardedTargetContent struct {
 func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
 	contents, err := s.forwardedContents(ctx, m, contextFn, dests)
 	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, sourceLanguage, err)
+		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
 			return nil
 		}

@@ -16,6 +16,7 @@ import (
 
 type fakeDiscordAPI struct {
 	sent              []WebhookSend
+	channelMessages   []channelMessageCall
 	reactions         []reactionCall
 	removedReactions  []reactionCall
 	threads           []threadCall
@@ -32,6 +33,12 @@ type fakeDiscordAPI struct {
 	messages          map[string]DiscordFetchedMessage
 	messageErrors     map[string]error
 	nextID            int
+}
+
+type channelMessageCall struct {
+	channelID        string
+	replyToMessageID string
+	content          string
 }
 
 type reactionCall struct {
@@ -105,9 +112,15 @@ func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string
 	return "webhook-" + channelID, "token-" + channelID, nil
 }
 
-func (f *fakeDiscordAPI) SendChannelMessage(channelID, content string) error {
-	f.nextID++
-	f.sent = append(f.sent, WebhookSend{Content: content})
+func (f *fakeDiscordAPI) SendChannelMessage(channelID, replyToMessageID, content string) error {
+	if replyToMessageID == "" {
+		return errors.New("send channel message: replyToMessageID is required")
+	}
+	f.channelMessages = append(f.channelMessages, channelMessageCall{
+		channelID:        channelID,
+		replyToMessageID: replyToMessageID,
+		content:          content,
+	})
 	return nil
 }
 
@@ -1978,11 +1991,18 @@ func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(discord.sent) != 1 {
-		t.Fatalf("sent: %#v", discord.sent)
+	if len(discord.channelMessages) != 1 {
+		t.Fatalf("channelMessages: %#v", discord.channelMessages)
 	}
-	if !strings.Contains(discord.sent[0].Content, "レート制限") {
-		t.Fatalf("unexpected notification: %#v", discord.sent[0])
+	notice := discord.channelMessages[0]
+	if notice.channelID != "ja" || notice.replyToMessageID != "100000000000000001" {
+		t.Fatalf("unexpected notification target: %#v", notice)
+	}
+	if !strings.Contains(notice.content, "レート制限") {
+		t.Fatalf("unexpected notification: %#v", notice)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("unexpected webhook sends: %#v", discord.sent)
 	}
 }
 
@@ -2000,11 +2020,18 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected aggregated error")
 	}
-	if len(discord.sent) != 1 {
-		t.Fatalf("want failure notification only, got %#v", discord.sent)
+	if len(discord.channelMessages) != 1 {
+		t.Fatalf("want failure notification only, got %#v", discord.channelMessages)
 	}
-	if !strings.Contains(discord.sent[0].Content, "翻訳に失敗") {
-		t.Fatalf("unexpected notification: %#v", discord.sent[0])
+	notice := discord.channelMessages[0]
+	if notice.channelID != "ja" || notice.replyToMessageID != "100000000000000001" {
+		t.Fatalf("unexpected notification target: %#v", notice)
+	}
+	if !strings.Contains(notice.content, "翻訳に失敗") {
+		t.Fatalf("unexpected notification: %#v", notice)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("unexpected webhook sends: %#v", discord.sent)
 	}
 	links, err := store.MessageTargets(ctx, "ja", "100000000000000001")
 	if err != nil {
