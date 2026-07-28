@@ -782,7 +782,7 @@ func TestHandleMessageCreateKeepsPollVoteLinkAfterDiscordRefRewrite(t *testing.T
 	}
 }
 
-func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternateURL(t *testing.T) {
+func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndRewritesHreflang(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -793,7 +793,7 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternat
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.alternateURLs.client = page.Client()
+	service.urlPages.client = page.Client()
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
@@ -806,6 +806,46 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndReplacesAlternat
 		t.Fatalf("URL-only content should not be translated: %#v", translator.contexts)
 	}
 	if len(discord.sent) != 1 || discord.sent[0].Content != "https://example.com/en" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateIncludesSiteMetaInTranslationContext(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html><head>
+			<meta property="og:title" content="Example Article">
+			<meta property="og:description" content="About the article">
+			<link rel="alternate" hreflang="en" href="https://example.com/en">
+		</head></html>`)
+	}))
+	t.Cleanup(page.Close)
+	service.urlPages.client = page.Client()
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Content: "これ見て " + page.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	tc := translator.contexts[0]
+	if got := tc.SiteTitles[page.URL]; got != "Example Article" {
+		t.Fatalf("SiteTitles[%q] = %q", page.URL, got)
+	}
+	if got := tc.SiteDescriptions[page.URL]; got != "About the article" {
+		t.Fatalf("SiteDescriptions[%q] = %q", page.URL, got)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "[en] これ見て https://example.com/en" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
 }
@@ -1187,7 +1227,7 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	}
 }
 
-func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
+func TestHandleMessageUpdateKeepsHreflangRewrite(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -1197,7 +1237,7 @@ func TestHandleMessageUpdateKeepsAlternateURLReplacement(t *testing.T) {
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.alternateURLs.client = page.Client()
+	service.urlPages.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
@@ -1232,7 +1272,7 @@ func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 		fmt.Fprint(w, `<link rel="alternate" hreflang="en" href="https://example.com/en">`)
 	}))
 	t.Cleanup(page.Close)
-	service.alternateURLs.client = page.Client()
+	service.urlPages.client = page.Client()
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000006", SourceChannelID: "ja", GroupID: "g",
