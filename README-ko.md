@@ -107,6 +107,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+`internal/legalpages/assets/` 아래의 개인정보 처리방침·이용약관 HTML은 인스턴스별로 다르며 git으로 추적되지 않습니다. 첫 빌드나 테스트 전에 example을 복사한 뒤 자체 페이지로 바꿔 주세요:
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## 사용 방법
 
 봇을 시작하면 슬래시 명령어가 각 서버에 등록됩니다.

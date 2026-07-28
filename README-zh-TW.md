@@ -107,6 +107,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+`internal/legalpages/assets/` 底下的隱私權政策與服務條款 HTML 依實例而異，且不會納入 git 追蹤。首次建置或測試前，請先複製範例檔，再替換成你自己的頁面：
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## 使用方式
 
 機器人啟動後，斜線指令會在各伺服器中註冊。

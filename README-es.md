@@ -107,6 +107,13 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
+Los HTML de la política de privacidad y los términos de servicio en `internal/legalpages/assets/` son específicos de cada instancia y no se versionan en git. Antes de la primera compilación o prueba, copia los ejemplos y sustitúyelos por tus propias páginas:
+
+```sh
+cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
+cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
+```
+
 ## Uso
 
 Una vez que el bot se inicia, los comandos de barra diagonal quedan registrados en cada servidor.
