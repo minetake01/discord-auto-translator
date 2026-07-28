@@ -48,7 +48,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 ### 2. Configurar Amazon Bedrock
 
-Habilite `google.gemma-4-26b-a4b` no Amazon Bedrock em `your-aws-bedrock-region`. Crie um usuário IAM somente com `bedrock-mantle:CreateInference` para o modelo e defina `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID` no `.env`. Modelo, timeout de 30 segundos e limite de 4096 tokens são fixos no código; região e Project ID são configurações locais obrigatórias do deploy.
+Habilite `google.gemma-4-26b-a4b` no Amazon Bedrock em `your-aws-bedrock-region`. Crie um usuário IAM somente com `bedrock-mantle:CreateInference` para o modelo e defina `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID` no `.env`. Modelo, timeout de 15 segundos (1 retry em falhas transitórias) e limite de 4096 tokens são fixos no código; região e Project ID são configurações locais obrigatórias do deploy.
 
 ### 3. Configurar variáveis de ambiente
 
@@ -92,7 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Contrato operacional do Amazon Bedrock
 
-A tradução usa a Mantle Responses API sem streaming com `google.gemma-4-26b-a4b` em `your-aws-bedrock-region`; cada solicitação é atribuída ao Project `your-aws-bedrock-project-id` pelo cabeçalho `OpenAI-Project`: timeout de **30 s**, **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON orientado por schema e validado rigorosamente pelo bot. Todos os idiomas são gerados em uma solicitação. Limite de 4K, término anormal ou JSON inválido fazem tudo falhar em modo fail-closed; não há retry, divisão ou fallback. Por padrão o bot não registra prompts, respostas ou credenciais; com `TRANSLATION_DEBUG_LOG_PATH` ele grava o payload da solicitação e a resposta bruta (incluindo itens de reasoning) como JSON Lines para investigação. O deploy GCE valida credenciais, acesso ao modelo e o contrato de resposta antes da substituição com `--bedrock-prewarm` e limite de cinco minutos.
+A tradução usa a Mantle Responses API sem streaming com `google.gemma-4-26b-a4b` em `your-aws-bedrock-region`; cada solicitação é atribuída ao Project `your-aws-bedrock-project-id` pelo cabeçalho `OpenAI-Project`: timeout de **15 s** (1 retry após 1 s em falhas transitórias), **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON orientado por schema e validado rigorosamente pelo bot. Todos os idiomas são gerados em uma solicitação. Limite de 4K, término anormal ou JSON inválido fazem tudo falhar em modo fail-closed; há apenas 1 retry em falhas transitórias; sem divisão ou fallback. Por padrão o bot não registra prompts, respostas ou credenciais; com `TRANSLATION_DEBUG_LOG_PATH` ele grava o payload da solicitação e a resposta bruta (incluindo itens de reasoning) como JSON Lines para investigação. O deploy GCE valida credenciais, acesso ao modelo e o contrato de resposta antes da substituição com `--bedrock-prewarm` e limite de cinco minutos.
 
 ### 4. Executar
 

@@ -48,7 +48,7 @@
 
 ### 2. Amazon Bedrock 구성
 
-`your-aws-bedrock-region` Amazon Bedrock에서 `google.gemma-4-26b-a4b`를 활성화합니다. 해당 모델의 `bedrock-mantle:CreateInference`만 허용한 IAM 사용자를 만들고 `.env`에 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, `AWS_BEDROCK_PROJECT_ID`를 설정합니다. 모델, 30초 타임아웃, 4096 token 한도는 코드에 고정되며 리전과 Project ID는 필수 로컬 배포 설정입니다.
+`your-aws-bedrock-region` Amazon Bedrock에서 `google.gemma-4-26b-a4b`를 활성화합니다. 해당 모델의 `bedrock-mantle:CreateInference`만 허용한 IAM 사용자를 만들고 `.env`에 `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, `AWS_BEDROCK_PROJECT_ID`를 설정합니다. 모델, 15초 타임아웃(일시 장애 시 1회 retry), 4096 token 한도는 코드에 고정되며 리전과 Project ID는 필수 로컬 배포 설정입니다.
 
 ### 3. 환경 변수 설정
 
@@ -92,7 +92,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 운영 계약
 
-번역은 `your-aws-bedrock-region`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며, 모든 요청을 `OpenAI-Project` 헤더를 통해 Project `your-aws-bedrock-project-id`에 할당합니다. **30초**, **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 retry, 분할, fallback은 없습니다. Bot은 기본적으로 prompt, 응답, 인증 정보를 기록하지 않으며, `TRANSLATION_DEBUG_LOG_PATH`를 설정하면 장애 조사용으로 요청 payload와 원본 응답(reasoning item 포함)을 JSON Lines로 기록합니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
+번역은 `your-aws-bedrock-region`의 `google.gemma-4-26b-a4b`를 비스트리밍 Mantle Responses API로 호출하며, 모든 요청을 `OpenAI-Project` 헤더를 통해 Project `your-aws-bedrock-project-id`에 할당합니다. **15초** 시도 제한(일시 장애 시 1초 후 1회 retry), **provider-default temperature 1.0**, **max_output_tokens 4096**, schema 지시를 따르고 Bot이 엄격히 검증하는 JSON을 사용합니다. 모든 언어를 한 요청에서 생성합니다. 4K 한도, 비정상 종료 또는 잘못된 JSON은 전체를 fail-closed로 실패시키며 일시 장애는 1회만 retry하며 분할·fallback은 없습니다. Bot은 기본적으로 prompt, 응답, 인증 정보를 기록하지 않으며, `TRANSLATION_DEBUG_LOG_PATH`를 설정하면 장애 조사용으로 요청 payload와 원본 응답(reasoning item 포함)을 JSON Lines로 기록합니다. GCE 배포는 교체 전에 5분 제한의 `--bedrock-prewarm`으로 인증 정보, 모델 접근 권한 및 응답 계약을 검증합니다.
 
 ### 4. 실행
 
