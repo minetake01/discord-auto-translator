@@ -9,7 +9,9 @@ cmd/discord-auto-translator/
 internal/translatorbot/
 ├── config.go               # 環境変数・.env の読み込み
 ├── models.go               # データ構造体の定義
-├── store.go                # SQLite CRUD（唯一の永続化レイヤー）+ sentinel エラー定義
+├── store.go                # SQLite Open/Init/スキーマ + グループ/リンク/スレッド等 CRUD + sentinel エラー
+├── store_guild.go          # ギルドライフサイクル・保持期限パージ
+├── store_glossary.go       # 用語集 CRUD
 ├── translator.go           # provider-neutral なプロンプト構築・応答パース
 ├── bedrock_translator.go   # Amazon Bedrock Mantle Responses API の翻訳クライアント
 ├── debug_log.go            # 翻訳往復のデバッグログ（JSON Lines・任意有効化）
@@ -21,7 +23,8 @@ internal/translatorbot/
 ├── service_sync.go         # リアクション・ピン留め同期
 ├── content.go              # 本文加工の純粋関数（添付URL化・疑似リプライ解析・切り詰め等）
 ├── ui_strings.go           # 全ユーザー向け文言の多言語カタログ（13言語 + 英語フォールバック）
-├── commands.go             # スラッシュコマンドの定義・ロケール対応ハンドラ
+├── commands.go             # スラッシュコマンド定義・ギルド登録
+├── command_handlers.go     # CommandHandler と各コマンド処理
 ├── styles.go               # 翻訳スタイルプリセット定義・検証
 ├── discord_client.go       # DiscordAPI インターフェース + discordgo 実装
 ├── discord_links.go        # 翻訳後テキスト内の Discord リンク・メンション置換
@@ -221,22 +224,28 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 
 ## 7. テストの構造
 
-`go test ./...` で全テストを実行できます。
+`go test ./...`（CI では `go test -race ./...`）で全テストを実行できます。
 
-### テストの設計方針
+### テストの設計方針（要件ガードレール）
 
-- `Store` のテストはインメモリ SQLite（`":memory:"`）を使用
-- `Service` のテストは `fakeDiscordAPI` と `echoTranslator`（入力をそのまま返す）で Discord API と翻訳エンジンを差し替え
-- `Translator` のテストはプロンプト構造と XML エスケープの正確性を検証
+テストは実装の镜像ではなく、**要件のガードレール**として書く。
 
-### モックの場所
+1. **観測可能な振る舞いだけを検証する** — webhook 送信内容、DB 永続化結果、HTTP レスポンス、エラー契約、CLI 出力など。
+2. **実装詳細を検査しない** — 内部定数値の自己比較、プライベートフィールド、`EXPLAIN QUERY PLAN` / PRAGMA、ロック保持プロトコルの振付は禁止。
+3. **文字列は性質だけ見る** — プロンプトや UI 文言の完全一致スナップショットは書かない。XML エスケープ済みであること、指定セクションが含まれること、疑似リプライ構造であることなど、SPEC が定める性質に限定する。
+4. **並行性はレースディテクタで担保する** — ロック振付の単体テストではなく CI の `go test -race` を使う。
+
+テストファイルは SPEC の要件ドメイン単位に分ける（`mirror_test.go`、`reply_test.go`、`threadsync_test.go` など）。各テストは SPEC 節をコメントで明示する。
+
+### テスト基盤
 
 | テスト対象 | モック実装 |
 |---|---|
-| Discord API | `service_test.go` の `fakeDiscordAPI` |
-| 翻訳エンジン | `service_test.go` の `echoTranslator` |
+| Discord API | `harness_test.go` の `fakeDiscordAPI` |
+| 翻訳エンジン | `harness_test.go` の `echoTranslator` |
+| Store | `harness_test.go` の `newTestStore`（インメモリ SQLite） |
 | コマンド応答 | `commands_test.go` の `captureResponses`（`CommandHandler.respond` を差し替え） |
-| HTTP クライアント | `url_page_test.go` / `avatar_test.go` のインライン `httptest` |
+| HTTP クライアント | `sitemeta_test.go` / `avatar_test.go` / `bedrock_test.go` のインライン `httptest` 等 |
 
 ### テストで確認されていないこと
 
@@ -251,7 +260,7 @@ Discord の規約により、ウェブフック名に "discord" を含めるこ�
 
 - `"discord"` → `"D-scord"` (大文字小文字問わず)
 - 名前が 80 文字を超える場合は切り詰め
-- 空白になった場合は `"Discord Auto Translator"` にフォールバック
+- 空白になった場合はデフォルト名をサニタイズした値（`"D-scord Auto Translator"`）にフォールバック
 
 ユーザー名にニックネームや表示名が使われるため、`discord` を含むユーザー名は自動的に変換されます。
 

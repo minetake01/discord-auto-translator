@@ -114,16 +114,6 @@ func TestStoreFileBackedConcurrentReaderDoesNotPoisonWrites(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T) *Store {
-	t.Helper()
-	s, err := OpenStore(":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
-
 func TestGuildLifecycleWriteWaitsForTransientSQLiteContention(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "translator.db")
 	s, err := OpenStore(path)

@@ -1,3 +1,4 @@
+// SPEC 3.1: localized UI strings for slash commands and notifications.
 package translatorbot
 
 import (

@@ -1,3 +1,4 @@
+// SPEC 3.9: URL hreflang replacement and page metadata for translation context.
 package translatorbot
 
 import (

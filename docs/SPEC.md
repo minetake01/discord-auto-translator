@@ -384,7 +384,7 @@ pin_states (
     PRIMARY KEY (channel_id, message_id)
 )
 
--- 未使用（将来実装用）
+-- メッセージ同期の冪等性キー（msglink:{sourceChannel}:{sourceMessage}:{targetChannel}）
 processed_events (event_id, created_at INTEGER) -- Unix milliseconds
 glossary_entries (guild_id, source_term, source_term_key, preferred_translation, attribute, always_include, created_by, created_at INTEGER) -- Unix milliseconds
 
