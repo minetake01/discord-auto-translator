@@ -155,6 +155,48 @@ func TestForwardedMessageFields(t *testing.T) {
 	}
 }
 
+func TestPollResultFromDiscord(t *testing.T) {
+	got := pollResultFromDiscord(&discordgo.Message{
+		Type: MessageTypePollResult,
+		Embeds: []*discordgo.MessageEmbed{{
+			Type: embedTypePollResult,
+			Fields: []*discordgo.MessageEmbedField{
+				{Name: "poll_question_text", Value: "Favorite?"},
+				{Name: "victor_answer_id", Value: "2"},
+				{Name: "victor_answer_text", Value: "Blue"},
+				{Name: "victor_answer_votes", Value: "3"},
+				{Name: "total_votes", Value: "5"},
+				{Name: "victor_answer_emoji_name", Value: "🔵"},
+			},
+		}},
+	})
+	if got == nil || !got.HasEmbed || got.VictorAnswerID != 2 || got.VictorAnswerText != "Blue" || got.VictorAnswerVotes != 3 || got.TotalVotes != 5 {
+		t.Fatalf("got %#v", got)
+	}
+	if got.VictorEmoji == nil || got.VictorEmoji.Name != "🔵" {
+		t.Fatalf("emoji %#v", got.VictorEmoji)
+	}
+	if pollResultFromDiscord(&discordgo.Message{Type: discordgo.MessageTypeDefault}) != nil {
+		t.Fatal("non-poll-result should be nil")
+	}
+	empty := pollResultFromDiscord(&discordgo.Message{Type: MessageTypePollResult})
+	if empty == nil || empty.HasEmbed {
+		t.Fatalf("type 46 without embed: %#v", empty)
+	}
+}
+
+func TestPollFromDiscordIncludesExpiry(t *testing.T) {
+	expiry := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	got := pollFromDiscord(&discordgo.Poll{
+		Question: discordgo.PollMedia{Text: "Q"},
+		Answers:  []discordgo.PollAnswer{{AnswerID: 1, Media: &discordgo.PollMedia{Text: "A"}}},
+		Expiry:   &expiry,
+	})
+	if got == nil || got.Expiry == nil || !got.Expiry.Equal(expiry) || got.Question != "Q" {
+		t.Fatalf("got %#v", got)
+	}
+}
+
 func TestForwardedMessageFieldsRejectsMalformedSnapshots(t *testing.T) {
 	ref := &discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "message", ChannelID: "channel"}
 	for name, snapshots := range map[string][]discordgo.MessageSnapshot{

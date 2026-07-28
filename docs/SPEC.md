@@ -128,8 +128,22 @@ Discord のネイティブ投票（`message.poll`）は、ネイティブ Poll �
 3. `content` 先頭に送信先言語の案内文を疑似リプライ形式で付与し、元の投票メッセージへのリンクを含める（例: 日本語 `> -# 投票を開始しました。 · [投票する](https://discord.com/channels/...)`）。案内文の直後に空行は入れない
 4. Embed の `title` に翻訳済み質問、`description` に番号付き選択肢（回答絵文字はソース側から付与）を載せる。著者のロールカラーがあれば Embed の `color` に使う
 5. 投票リンクはソース側メッセージを指し、グループ内の Discord リンク置換の対象外とする（翻訳・置換の後に付与する）
+6. `poll.expiry` がある場合、言語ごとの翻訳済み選択肢を `poll_translation_cache` に保存する（`expires_at = poll.expiry`）。`expiry` が無い投票はキャッシュしない
 
 票の同期や投票の早期終了同期は行いません。投票メッセージ自体は Discord 仕様上編集できないため、特別な更新処理はありません。削除は通常メッセージと同様です。疑似リプライ引用のため、ミラー先メッセージ取得時は先頭 Embed の title（なければ description 先頭行）を本文に合成します。
+
+#### 投票終了システム通知
+
+Discord が投票終了後に送る `POLL_RESULT`（message type 46）は専用パスでミラーします。通常の返信としては扱いません。
+
+1. type 46 を検出し、`poll_result` embed の fields（`victor_answer_*` / `total_votes` など）を読む
+2. 既存の疑似リプライ（`replyQuote`）で元投票を引用する
+3. 本文は翻訳 API を使わず UI 文言のみとする
+   - 勝者表示名を解決できた場合: 終了文 + `結果: {選択肢}（{整数%}）`（％は `victor_answer_votes * 100 / total_votes` を四捨五入。分数や総票数の単独表示はしない）
+   - embed はあるが勝者が取れない場合（同点など）: 終了文 + `勝者はいませんでした。`
+   - embed 自体が使えない場合: 終了文のみ
+4. 勝者の選択肢名は送信先言語の `poll_translation_cache` を優先し、欠落時のみ embed の原文 `victor_answer_text` にフォールバックする
+5. グループへのミラー処理が終わったら、当該元投票のキャッシュ行を即削除する。結果通知が来なかった孤児は `expires_at` 経過後に定期 purge する
 
 ### 3.3 リプライ（返信）
 

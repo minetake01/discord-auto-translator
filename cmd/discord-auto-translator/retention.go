@@ -12,6 +12,7 @@ import (
 
 type retentionStore interface {
 	PurgeMessageLinksOlderThan(context.Context, time.Time) (int64, error)
+	PurgeExpiredPollTranslationCache(context.Context, time.Time) (int64, error)
 	GuildIDsRemovedBefore(context.Context, time.Time) ([]string, error)
 	PurgeGuildRemovedBefore(context.Context, string, time.Time) (bool, error)
 	CancelGuildRemoval(context.Context, string) error
@@ -26,6 +27,11 @@ func runRetentionPurge(
 	state *discordgo.State,
 	logf func(string, ...any),
 ) {
+	if n, err := store.PurgeExpiredPollTranslationCache(ctx, now.UTC()); err != nil {
+		logf("poll translation cache purge: %v", err)
+	} else if n > 0 {
+		logf("purged %d expired poll_translation_cache rows", n)
+	}
 	if messageLinkRetentionDays > 0 {
 		cutoff, err := retentionCutoff(now, messageLinkRetentionDays)
 		if err != nil {

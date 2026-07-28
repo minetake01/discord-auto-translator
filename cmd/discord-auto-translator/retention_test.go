@@ -25,6 +25,10 @@ func (s *retentionStoreStub) PurgeMessageLinksOlderThan(_ context.Context, cutof
 	return 0, nil
 }
 
+func (s *retentionStoreStub) PurgeExpiredPollTranslationCache(_ context.Context, _ time.Time) (int64, error) {
+	return 0, nil
+}
+
 func (s *retentionStoreStub) GuildIDsRemovedBefore(_ context.Context, cutoff time.Time) ([]string, error) {
 	s.guildCutoffs = append(s.guildCutoffs, cutoff)
 	return append([]string(nil), s.guildIDs...), nil
