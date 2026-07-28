@@ -22,7 +22,7 @@ func main() {
 	guildID := flag.String("guild-id", "", "filter by guild_id")
 	messageID := flag.String("message-id", "", "filter by message_id")
 	limit := flag.Int("limit", 50, "max entries to print after filtering (0 = all; most recent)")
-	detail := flag.Bool("detail", false, "print source excerpt, translations, usage, and error text")
+	detail := flag.Bool("detail", false, "print source excerpt, translations, usage (incl. reasoning tokens), reasoning text, and error text")
 	raw := flag.Bool("raw", false, "print the full JSON object for each matching entry")
 	flag.Parse()
 
@@ -119,8 +119,11 @@ type requestPayload struct {
 type responsePayload struct {
 	Status string `json:"status"`
 	Usage  *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens         int `json:"input_tokens"`
+		OutputTokens        int `json:"output_tokens"`
+		OutputTokensDetails *struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
 	} `json:"usage"`
 	Output []struct {
 		Type    string `json:"type"`
@@ -338,7 +341,15 @@ func printDetail(entry logEntry) {
 		fmt.Printf("  response_status: %s\n", resp.Status)
 	}
 	if resp.Usage != nil {
-		fmt.Printf("  tokens: in=%d out=%d\n", resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		if resp.Usage.OutputTokensDetails != nil {
+			fmt.Printf("  tokens: in=%d out=%d reasoning=%d\n",
+				resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.OutputTokensDetails.ReasoningTokens)
+		} else {
+			fmt.Printf("  tokens: in=%d out=%d\n", resp.Usage.InputTokens, resp.Usage.OutputTokens)
+		}
+	}
+	if reasoning := extractReasoningText(resp); reasoning != "" {
+		fmt.Printf("  reasoning: %s\n", oneLine(reasoning, 0))
 	}
 	if text := extractOutputText(resp); text != "" {
 		if translations := parseTranslations(text); len(translations) > 0 {
@@ -399,6 +410,24 @@ func extractOutputText(resp responsePayload) string {
 		}
 	}
 	return ""
+}
+
+func extractReasoningText(resp responsePayload) string {
+	var parts []string
+	for _, item := range resp.Output {
+		if item.Type != "reasoning" {
+			continue
+		}
+		for _, content := range item.Content {
+			if content.Type != "" && content.Type != "reasoning_text" && content.Type != "text" {
+				continue
+			}
+			if text := strings.TrimSpace(content.Text); text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func parseTranslations(text string) []struct {
