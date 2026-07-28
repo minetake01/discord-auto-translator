@@ -166,7 +166,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 		languages = append(languages, dest.channel.Language)
 	}
 	question := strings.TrimSpace(m.Poll.Question)
-	answers := formatPollAnswers(m.Poll)
+	answers := pollAnswerTexts(m.Poll)
 	snapshot := formatPollSnapshot(m.Poll)
 	if c := strings.TrimSpace(m.Content); c != "" {
 		if snapshot != "" {
@@ -184,15 +184,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 		}
 		return err
 	}
-	questionTranslations, err := s.translateWithLimit(ctx, m.GuildID, question, languages, contextFn)
-	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-		if errors.Is(err, errTranslationRateLimited) {
-			return nil
-		}
-		return err
-	}
-	answerTranslations, err := s.translateWithLimit(ctx, m.GuildID, answers, languages, contextFn)
+	pollTranslations, err := s.translatePollWithLimit(ctx, m.GuildID, question, answers, languages, contextFn)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
@@ -221,9 +213,13 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 			continue
 		}
 		content = withPollStartedHeader(content, dest.channel.Language, m.GuildID, m.ChannelID, m.ID, true)
-		translatedQuestion := s.postProcessContent(ctx, m.GuildID, questionTranslations[dest.channel.Language], dest.channel.Language)
-		translatedAnswers := s.postProcessContent(ctx, m.GuildID, answerTranslations[dest.channel.Language], dest.channel.Language)
-		embed := buildPollEmbed(translatedQuestion, translatedAnswers, m.AuthorRoleColor)
+		poll := pollTranslations[dest.channel.Language]
+		translatedQuestion := s.postProcessContent(ctx, m.GuildID, poll.Question, dest.channel.Language)
+		translatedAnswers := make([]string, len(poll.Answers))
+		for i, answer := range poll.Answers {
+			translatedAnswers[i] = s.postProcessContent(ctx, m.GuildID, answer, dest.channel.Language)
+		}
+		embed := buildPollEmbed(translatedQuestion, formatTranslatedPollAnswers(m.Poll, translatedAnswers), m.AuthorRoleColor)
 		var embeds []*discordgo.MessageEmbed
 		if embed != nil {
 			embeds = []*discordgo.MessageEmbed{embed}

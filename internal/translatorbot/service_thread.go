@@ -10,24 +10,22 @@ import (
 )
 
 type threadCreateRequest struct {
-	GuildID                    string
-	SourceChannelID            string
-	SourceThreadID             string
-	SourceMessageID            string
-	Name                       string
-	InitialMessageID           string
-	InitialMessageAuthor       string
-	InitialMessageUsername     string
-	InitialMessageAvatar       string
-	InitialMessageRoleColor    int
-	InitialMessageText         string
-	InitialMessageHasPoll      bool
-	InitialMessagePollQuestion string
-	InitialMessagePollAnswers  string
-	InitialMessageFiles        []DiscordAttachment
-	InitialMessageStickers     []DiscordSticker
-	InitialMessageTTS          bool
-	DeferWithoutSourceMsg      bool
+	GuildID                 string
+	SourceChannelID         string
+	SourceThreadID          string
+	SourceMessageID         string
+	Name                    string
+	InitialMessageID        string
+	InitialMessageAuthor    string
+	InitialMessageUsername  string
+	InitialMessageAvatar    string
+	InitialMessageRoleColor int
+	InitialMessageText      string
+	InitialMessagePoll      *DiscordPoll
+	InitialMessageFiles     []DiscordAttachment
+	InitialMessageStickers  []DiscordSticker
+	InitialMessageTTS       bool
+	DeferWithoutSourceMsg   bool
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string) error {
@@ -120,28 +118,23 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 
 	var embeds []*discordgo.MessageEmbed
 	snapshot := req.InitialMessageText
-	if req.InitialMessageHasPoll {
-		questionTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.InitialMessagePollQuestion, languages, contextFn)
+	if req.InitialMessagePoll != nil {
+		question := strings.TrimSpace(req.InitialMessagePoll.Question)
+		answers := pollAnswerTexts(req.InitialMessagePoll)
+		pollTranslations, err := s.translatePollWithLimit(ctx, req.GuildID, question, answers, languages, contextFn)
 		if err != nil {
 			return false, err
 		}
-		answerTranslations, err := s.translateWithLimit(ctx, req.GuildID, req.InitialMessagePollAnswers, languages, contextFn)
-		if err != nil {
-			return false, err
+		poll := pollTranslations[target.Language]
+		translatedQuestion := s.postProcessContent(ctx, req.GuildID, poll.Question, target.Language)
+		translatedAnswers := make([]string, len(poll.Answers))
+		for i, answer := range poll.Answers {
+			translatedAnswers[i] = s.postProcessContent(ctx, req.GuildID, answer, target.Language)
 		}
-		translatedQuestion := s.postProcessContent(ctx, req.GuildID, questionTranslations[target.Language], target.Language)
-		translatedAnswers := s.postProcessContent(ctx, req.GuildID, answerTranslations[target.Language], target.Language)
-		if embed := buildPollEmbed(translatedQuestion, translatedAnswers, req.InitialMessageRoleColor); embed != nil {
+		if embed := buildPollEmbed(translatedQuestion, formatTranslatedPollAnswers(req.InitialMessagePoll, translatedAnswers), req.InitialMessageRoleColor); embed != nil {
 			embeds = []*discordgo.MessageEmbed{embed}
 		}
-		pollSnapshot := strings.TrimSpace(req.InitialMessagePollQuestion)
-		if answers := strings.TrimSpace(req.InitialMessagePollAnswers); answers != "" {
-			if pollSnapshot != "" {
-				pollSnapshot += "\n" + answers
-			} else {
-				pollSnapshot = answers
-			}
-		}
+		pollSnapshot := formatPollSnapshot(req.InitialMessagePoll)
 		if strings.TrimSpace(snapshot) != "" && pollSnapshot != "" {
 			snapshot = strings.TrimSpace(snapshot) + "\n\n" + pollSnapshot
 		} else if pollSnapshot != "" {
@@ -248,11 +241,7 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageRoleColor = m.AuthorRoleColor
 		req.InitialMessageText = m.Content
-		req.InitialMessageHasPoll = m.Poll != nil
-		if m.Poll != nil {
-			req.InitialMessagePollQuestion = strings.TrimSpace(m.Poll.Question)
-			req.InitialMessagePollAnswers = formatPollAnswers(m.Poll)
-		}
+		req.InitialMessagePoll = m.Poll
 		req.InitialMessageFiles = m.Attachments
 		req.InitialMessageStickers = m.Stickers
 		req.InitialMessageTTS = m.TTS

@@ -10,26 +10,40 @@ import (
 
 const discordEmbedTitleLimit = 256
 
-// formatPollAnswers renders numbered poll answers for an embed description.
-// Answer emojis are preserved as Unicode or Discord custom-emoji markup.
-func formatPollAnswers(poll *DiscordPoll) string {
+// formatTranslatedPollAnswers renders numbered answers using translated texts
+// while keeping emoji markup from the source poll answers.
+func formatTranslatedPollAnswers(poll *DiscordPoll, answers []string) string {
 	if poll == nil {
 		return ""
 	}
 	var b strings.Builder
-	for i, answer := range poll.Answers {
+	for i, text := range answers {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
 		b.WriteString(strconv.Itoa(i + 1))
 		b.WriteString(". ")
-		if emoji := pollEmojiMarkup(answer.Emoji); emoji != "" {
-			b.WriteString(emoji)
-			b.WriteByte(' ')
+		if i < len(poll.Answers) {
+			if emoji := pollEmojiMarkup(poll.Answers[i].Emoji); emoji != "" {
+				b.WriteString(emoji)
+				b.WriteByte(' ')
+			}
 		}
-		b.WriteString(strings.TrimSpace(answer.Text))
+		b.WriteString(strings.TrimSpace(text))
 	}
 	return b.String()
+}
+
+// pollAnswerTexts returns trimmed answer texts in source order.
+func pollAnswerTexts(poll *DiscordPoll) []string {
+	if poll == nil {
+		return nil
+	}
+	out := make([]string, len(poll.Answers))
+	for i, answer := range poll.Answers {
+		out[i] = strings.TrimSpace(answer.Text)
+	}
+	return out
 }
 
 // formatPollSnapshot is the plain-text snapshot used for reply quotes.
@@ -38,7 +52,7 @@ func formatPollSnapshot(poll *DiscordPoll) string {
 		return ""
 	}
 	question := strings.TrimSpace(poll.Question)
-	answers := formatPollAnswers(poll)
+	answers := formatTranslatedPollAnswers(poll, pollAnswerTexts(poll))
 	switch {
 	case question != "" && answers != "":
 		return question + "\n" + answers

@@ -28,6 +28,33 @@ type bedrockRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f bedrockRoundTripFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
+func translateMulti(t testing.TB, translator *BedrockTranslator, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
+	t.Helper()
+	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
+	if err != nil {
+		return MultiTranslationResult{}, err
+	}
+	return translator.TranslateMulti(context.Background(), prepared)
+}
+
+func translateMultiCtx(t testing.TB, ctx context.Context, translator *BedrockTranslator, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
+	t.Helper()
+	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
+	if err != nil {
+		return MultiTranslationResult{}, err
+	}
+	return translator.TranslateMulti(ctx, prepared)
+}
+
+func translatePollMulti(t testing.TB, translator *BedrockTranslator, targetLanguages []string, question string, answers []string, translationContext TranslationContext, glossary []GlossaryEntry) (PollMultiTranslationResult, error) {
+	t.Helper()
+	prepared, err := preparePollTranslation(targetLanguages, question, answers, translationContext, glossary)
+	if err != nil {
+		return PollMultiTranslationResult{}, err
+	}
+	return translator.TranslatePollMulti(context.Background(), prepared)
+}
+
 type recordingSigner struct {
 	calls       atomic.Int32
 	service     string
@@ -101,7 +128,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello [USER:Alice]"}]}`, 1, 2)))}, nil
 	})
-	result, err := testTranslator(client, signer).TranslateMulti(context.Background(), []string{"en"}, "こんにちは <@42>", TranslationContext{
+	result, err := translateMulti(t, testTranslator(client, signer), []string{"en"}, "こんにちは <@42>", TranslationContext{
 		GuildID: "guild-1", MessageID: "message-2", MentionedUsers: map[string]string{"42": "Alice"},
 	}, nil)
 	if err != nil {
@@ -140,7 +167,7 @@ func TestBedrockTranslatorRejectsInvalidResponses(t *testing.T) {
 			client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
 				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(tt.body))}, nil
 			})
-			_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en", "ja"}, "hello", TranslationContext{}, nil)
+			_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en", "ja"}, "hello", TranslationContext{}, nil)
 			if err == nil {
 				t.Fatal("expected error")
 			}
@@ -157,7 +184,7 @@ func TestBedrockTranslatorCallsOnceAndHonorsCancellation(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(ctx, []string{"en"}, "private prompt", TranslationContext{}, nil)
+	_, err := translateMultiCtx(t, ctx, testTranslator(client, &recordingSigner{}), []string{"en"}, "private prompt", TranslationContext{}, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context canceled", err)
 	}
@@ -176,7 +203,7 @@ func TestBedrockTranslatorSanitizesAPIErrors(t *testing.T) {
 			)),
 		}, nil
 	})
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "private prompt", TranslationContext{}, nil)
+	_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "private prompt", TranslationContext{}, nil)
 	if err == nil || strings.Contains(err.Error(), "SECRET") || strings.Contains(err.Error(), "private prompt") {
 		t.Fatalf("unsafe error = %v", err)
 	}
@@ -198,7 +225,7 @@ func TestBedrockTranslatorOmitsMantleRequestMetadata(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
 	})
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
+	_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +240,7 @@ func TestBedrockTranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
 	})
 	translator, path := debugLoggingTranslator(t, client)
-	if _, err := translator.TranslateMulti(context.Background(), []string{"en"}, "こんにちは <@42>", TranslationContext{
+	if _, err := translateMulti(t, translator, []string{"en"}, "こんにちは <@42>", TranslationContext{
 		GuildID: "guild-1", MessageID: "message-2", MentionedUsers: map[string]string{"42": "Alice"},
 	}, nil); err != nil {
 		t.Fatal(err)
@@ -255,7 +282,7 @@ func TestBedrockTranslatorDebugLogRecordsProviderErrorBody(t *testing.T) {
 		}, nil
 	})
 	translator, path := debugLoggingTranslator(t, client)
-	_, err := translator.TranslateMulti(context.Background(), []string{"en"}, "private prompt", TranslationContext{}, nil)
+	_, err := translateMulti(t, translator, []string{"en"}, "private prompt", TranslationContext{}, nil)
 	if err == nil || strings.Contains(err.Error(), "SECRET") {
 		t.Fatalf("unsafe error = %v", err)
 	}
@@ -279,7 +306,7 @@ func TestBedrockTranslatorDebugLogRecordsTransportFailure(t *testing.T) {
 	translator, path := debugLoggingTranslator(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := translator.TranslateMulti(ctx, []string{"en"}, "hello", TranslationContext{}, nil); err == nil {
+	if _, err := translateMultiCtx(t, ctx, translator, []string{"en"}, "hello", TranslationContext{}, nil); err == nil {
 		t.Fatal("expected error")
 	}
 
@@ -297,7 +324,7 @@ func TestBedrockTranslatorWithoutDebugLogWritesNoFile(t *testing.T) {
 	client := bedrockRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
 	})
-	if _, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1"}, nil); err != nil {
+	if _, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := os.ReadDir(dir)
@@ -362,7 +389,7 @@ func TestBedrockTranslatorRetriesTransientHTTPErrorOnce(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
 	})
-	result, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	result, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -382,7 +409,7 @@ func TestBedrockTranslatorRetriesDeadlineExceededOnce(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
 	})
-	result, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	result, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +427,7 @@ func TestBedrockTranslatorDoesNotRetryClientHTTPError(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"invalid_request_error","code":"bad_request"}}`)),
 		}, nil
 	})
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -417,7 +444,7 @@ func TestBedrockTranslatorDoesNotRetryContractViolation(t *testing.T) {
 			`{"status":"incomplete","error":null,"incomplete_details":{"reason":"max_output_tokens"},"output":[],"usage":{"input_tokens":1,"output_tokens":4096}}`,
 		))}, nil
 	})
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -435,7 +462,7 @@ func TestBedrockTranslatorReturnsLastErrorAfterRetryExhausted(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"service_unavailable","code":"unavailable","message":"attempt-` + fmtInt(int(n)) + `"}}`)),
 		}, nil
 	})
-	_, err := testTranslator(client, &recordingSigner{}).TranslateMulti(context.Background(), []string{"en"}, "hello", TranslationContext{}, nil)
+	_, err := translateMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
 		t.Fatalf("error = %v", err)
 	}
@@ -460,5 +487,41 @@ func TestBedrockWarmUpUsesAttemptTimeout(t *testing.T) {
 	defer cancel()
 	if err := testTranslator(client, &recordingSigner{}).WarmUp(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBedrockTranslatorTranslatePollMulti(t *testing.T) {
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input bedrockResponsesRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(input.Input[0].Content, bedrockPollTranslationJSONSchema) || !strings.Contains(input.Input[1].Content, "<poll>") {
+			t.Fatalf("unexpected request: %#v", input.Input)
+		}
+		body := successfulBedrockResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`, 3, 4)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	result, err := translatePollMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "好き？", []string{"赤", "青"}, TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := result.Translations["en"]
+	if got.Question != "Favorite?" || len(got.Answers) != 2 || got.Answers[0] != "Red" || got.Answers[1] != "Blue" {
+		t.Fatalf("got %#v", got)
+	}
+	if result.InputTokens != 3 || result.OutputTokens != 4 {
+		t.Fatalf("tokens = %d/%d", result.InputTokens, result.OutputTokens)
+	}
+}
+
+func TestBedrockTranslatorTranslatePollMultiRejectsAnswerCountMismatch(t *testing.T) {
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body := successfulBedrockResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red"]}]}`, 1, 1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	_, err := translatePollMulti(t, testTranslator(client, &recordingSigner{}), []string{"en"}, "好き？", []string{"赤", "青"}, TranslationContext{}, nil)
+	if err == nil {
+		t.Fatal("expected answer count mismatch")
 	}
 }

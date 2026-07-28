@@ -105,16 +105,13 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 		}
 		return translations, nil
 	}
-	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
+	prepared, err := s.prepareTranslation(ctx, guildID, content, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
+		return prepareMultiTranslation(langs, content, tc, glossary)
+	})
 	if err != nil {
 		return nil, err
 	}
-	translationContext := contextFn()
-	attachURLPageMeta(&translationContext, s.urlPages.Lookup(ctx, content))
-	if err := s.checkTranslationRateLimit(guildID, languages, content, translationContext, glossary); err != nil {
-		return nil, err
-	}
-	result, err := s.translator.TranslateMulti(ctx, languages, content, translationContext, glossary)
+	result, err := s.translator.TranslateMulti(ctx, prepared)
 	if err != nil {
 		return nil, err
 	}
@@ -127,6 +124,67 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 		translations[language] = translated
 	}
 	return translations, nil
+}
+
+func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question string, answers []string, languages []string, contextFn func() TranslationContext) (map[string]PollTranslation, error) {
+	translations := make(map[string]PollTranslation, len(languages))
+	needsTranslation := hasTranslatableText(question)
+	if !needsTranslation {
+		for _, answer := range answers {
+			if hasTranslatableText(answer) {
+				needsTranslation = true
+				break
+			}
+		}
+	}
+	if !needsTranslation {
+		for _, language := range languages {
+			copied := make([]string, len(answers))
+			copy(copied, answers)
+			translations[language] = PollTranslation{Question: question, Answers: copied}
+		}
+		return translations, nil
+	}
+	pollText := question
+	for _, answer := range answers {
+		pollText += "\n" + answer
+	}
+	prepared, err := s.prepareTranslation(ctx, guildID, pollText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
+		return preparePollTranslation(langs, question, answers, tc, glossary)
+	})
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.translator.TranslatePollMulti(ctx, prepared)
+	if err != nil {
+		return nil, err
+	}
+	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
+	for _, language := range languages {
+		translated, ok := result.Translations[language]
+		if !ok {
+			return nil, fmt.Errorf("missing poll translation for %q", language)
+		}
+		translations[language] = translated
+	}
+	return translations, nil
+}
+
+func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error)) (preparedTranslation, error) {
+	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
+	if err != nil {
+		return preparedTranslation{}, err
+	}
+	translationContext := contextFn()
+	attachURLPageMeta(&translationContext, s.urlPages.Lookup(ctx, lookupText))
+	prepared, err := prepare(languages, translationContext, glossary)
+	if err != nil {
+		return preparedTranslation{}, err
+	}
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
+		return preparedTranslation{}, err
+	}
+	return prepared, nil
 }
 
 func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
@@ -147,21 +205,11 @@ func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
 	tc.SiteDescriptions = descriptions
 }
 
-func siteContextForContent(content string, tc TranslationContext) []SiteContextEntry {
-	p := NewProtector(NameMaps{Sites: tc.SiteTitles})
-	p.SetSiteDescriptions(tc.SiteDescriptions)
-	_ = p.Protect(content)
-	return p.SiteContext()
-}
-
-func (s *Service) checkTranslationRateLimit(guildID string, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) error {
-	if s.rateLimiter == nil {
+func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared preparedTranslation) error {
+	if s.rateLimiter == nil || len(prepared.targetLanguages) == 0 {
 		return nil
 	}
-	translationContext.Sites = siteContextForContent(content, translationContext)
-	systemInstruction := BuildMultiTranslationSystemInstruction(content, glossary, len(translationContext.History) > 0, len(translationContext.ReplyChain) > 0, strings.TrimSpace(translationContext.StyleInstructions) != "", len(translationContext.Sites) > 0)
-	userPrompt := BuildMultiTranslationUserPrompt(targetLanguages, content, translationContext)
-	estimate := EstimateTranslationTokens(systemInstruction+userPrompt, "") + 200*len(targetLanguages)
+	estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPrompt, "") + 200*len(prepared.targetLanguages)
 	if !s.rateLimiter.Allow(guildID, estimate) {
 		return errTranslationRateLimited
 	}

@@ -188,16 +188,33 @@ func (f *fakeDiscordAPI) DeleteThread(threadID string) error {
 }
 
 type echoTranslator struct {
-	contexts []TranslationContext
+	contexts     []TranslationContext
+	pollContexts []TranslationContext
 }
 
-func (e *echoTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
-	e.contexts = append(e.contexts, translationContext)
-	out := make(map[string]string, len(targetLanguages))
-	for _, lang := range targetLanguages {
-		out[lang] = "[" + lang + "] " + text
+func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+	e.contexts = append(e.contexts, prepared.translationContext)
+	out := make(map[string]string, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		out[lang] = "[" + lang + "] " + prepared.content
 	}
 	return MultiTranslationResult{Translations: out}, nil
+}
+
+func (e *echoTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
+	e.pollContexts = append(e.pollContexts, prepared.translationContext)
+	out := make(map[string]PollTranslation, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		translatedAnswers := make([]string, len(prepared.answers))
+		for i, answer := range prepared.answers {
+			translatedAnswers[i] = "[" + lang + "] " + answer
+		}
+		out[lang] = PollTranslation{
+			Question: "[" + lang + "] " + prepared.question,
+			Answers:  translatedAnswers,
+		}
+	}
+	return PollMultiTranslationResult{Translations: out}, nil
 }
 
 func seedGroup(t *testing.T, s *Store) {
@@ -714,8 +731,8 @@ func TestHandleMessageCreateMirrorsPollAsEmbedWithVoteLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != 2 {
-		t.Fatalf("expected question+answers translation, got %#v", translator.contexts)
+	if len(translator.contexts) != 0 || len(translator.pollContexts) != 1 {
+		t.Fatalf("expected one poll translation, contexts=%#v pollContexts=%#v", translator.contexts, translator.pollContexts)
 	}
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent: %#v", discord.sent)
@@ -736,7 +753,7 @@ func TestHandleMessageCreateMirrorsPollAsEmbedWithVoteLink(t *testing.T) {
 		t.Fatalf("embeds: %#v", discord.sent[0].Embeds)
 	}
 	embed := discord.sent[0].Embeds[0]
-	if embed.Title != "[en] 好きな色は？" || embed.Description != "[en] 1. 🔴 赤\n2. 青" || embed.Color != 0xabcdef {
+	if embed.Title != "[en] 好きな色は？" || embed.Description != "1. 🔴 [en] 赤\n2. [en] 青" || embed.Color != 0xabcdef {
 		t.Fatalf("embed = %#v", embed)
 	}
 	links, err := store.MessageTargets(ctx, "ja", "100000000000000050")
@@ -1956,17 +1973,34 @@ type selectiveFailTranslator struct {
 	failLanguage string
 }
 
-func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, text string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
-	for _, lang := range targetLanguages {
+func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+	for _, lang := range prepared.targetLanguages {
 		if lang == s.failLanguage {
 			return MultiTranslationResult{}, errors.New("translation failed")
 		}
 	}
-	out := make(map[string]string, len(targetLanguages))
-	for _, lang := range targetLanguages {
-		out[lang] = "[" + lang + "] " + text
+	out := make(map[string]string, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		out[lang] = "[" + lang + "] " + prepared.content
 	}
 	return MultiTranslationResult{Translations: out}, nil
+}
+
+func (s *selectiveFailTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
+	for _, lang := range prepared.targetLanguages {
+		if lang == s.failLanguage {
+			return PollMultiTranslationResult{}, errors.New("translation failed")
+		}
+	}
+	out := make(map[string]PollTranslation, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
+		translatedAnswers := make([]string, len(prepared.answers))
+		for i, answer := range prepared.answers {
+			translatedAnswers[i] = "[" + lang + "] " + answer
+		}
+		out[lang] = PollTranslation{Question: "[" + lang + "] " + prepared.question, Answers: translatedAnswers}
+	}
+	return PollMultiTranslationResult{Translations: out}, nil
 }
 
 func seedThreeChannelGroup(t *testing.T, s *Store) {
