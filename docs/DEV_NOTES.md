@@ -38,7 +38,7 @@ internal/translatorbot/
 
 - 文言は `uiKey` 定数で識別し、`localizedUIString` / `localizedUIStringf` で取得します。ハードコードされた日本語・英語文字列をコードに直接書かないでください。
 - **スラッシュコマンド応答**は Discord の `interaction.Locale` を `resolveUILanguage` で解決した言語で返します。
-- **チャンネルへの通知**（レート制限・翻訳失敗）と**疑似リプライ・転送見出し**は、対象チャンネルに登録された言語を使用します。
+- **チャンネルへの通知**（レート制限・翻訳失敗）は投稿元メッセージへのリプライとして送り、**疑似リプライ・転送見出し**とともに対象チャンネルに登録された言語を使用します。
 - 未対応言語は英語にフォールバックします。`zh-CN` / `zh-TW` / `pt-BR` は地域付きで解決し、その他は基本言語（`de-AT` → `de`）に縮約します。
 - キーの追加時は**全言語**にエントリを追加してください。`TestUIStringCatalogIsComplete` がキーの網羅性とフォーマット動詞（`%[1]s` 等）の一致を検証します。
 - ストア層・検証層は文言を持たず sentinel エラー（`ErrGroupNotFound`, `ErrGlossaryFull`, `ErrStyleCustomTooLong` 等）を返し、`commands.go` の `replyGroupError` などがカタログの文言へマップします。予期しないエラーはログに記録し、ユーザーには汎用メッセージ（`uiKeyUnexpectedError`）のみを表示します。

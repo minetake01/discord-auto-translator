@@ -81,15 +81,15 @@ func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetL
 	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
 }
 
-// notifyTranslationIssue posts a localized notice to the source channel when
-// a message could not be mirrored. The language is the source channel's
+// notifyTranslationIssue posts a localized notice as a reply to the source
+// message when it could not be mirrored. The language is the source channel's
 // registered language, since that is where the notice is shown.
-func (s *Service) notifyTranslationIssue(channelID, language string, err error) {
+func (s *Service) notifyTranslationIssue(channelID, messageID, language string, err error) {
 	key := uiKeyTranslationFailedNotice
 	if errors.Is(err, errTranslationRateLimited) {
 		key = uiKeyRateLimitNotice
 	}
-	_ = s.discord.SendChannelMessage(channelID, localizedUIString(language, key))
+	_ = s.discord.SendChannelMessage(channelID, messageID, localizedUIString(language, key))
 }
 
 // translateWithLimit translates content into every requested language while

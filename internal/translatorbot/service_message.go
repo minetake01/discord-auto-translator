@@ -123,7 +123,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	sourceBody := messageBodyForMirror(m)
 	translations, err := s.translateWithLimit(ctx, m.GuildID, sourceBody, languages, contextFn)
 	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, sourceLanguage, err)
+		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
 			return nil
 		}
