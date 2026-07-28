@@ -59,9 +59,21 @@ type PollMultiTranslationResult struct {
 	OutputTokens int
 }
 
+type ThreadCreateTranslation struct {
+	Name    string
+	Message string
+}
+
+type ThreadCreateMultiTranslationResult struct {
+	Translations map[string]ThreadCreateTranslation
+	InputTokens  int
+	OutputTokens int
+}
+
 type Translator interface {
 	TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error)
 	TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error)
+	TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error)
 }
 
 type preparedTranslation struct {
@@ -72,9 +84,12 @@ type preparedTranslation struct {
 	guildID            string
 	messageID          string
 	answerCount        int // set for poll translations; 0 for normal messages
+	messageRequired    bool // set for thread-create translations when source message is non-empty
 	content            string
 	question           string
 	answers            []string
+	threadName         string
+	threadMessage      string
 	translationContext TranslationContext
 }
 
@@ -220,6 +235,59 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 	}, nil
 }
 
+func prepareThreadCreateTranslation(targetLanguages []string, name, message string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
+	// The thread name is a translation target here, not discord_context metadata.
+	translationContext.ThreadName = ""
+	normalized, p, err := beginPreparedTranslation(targetLanguages, &translationContext)
+	if err != nil || len(normalized) == 0 {
+		return preparedTranslation{}, err
+	}
+
+	protectedName := p.Protect(name)
+	messageRequired := strings.TrimSpace(message) != ""
+	var protectedMessage string
+	if messageRequired {
+		protectedMessage = p.Protect(message)
+	}
+	translationContext.Sites = p.SiteContext()
+	glossaryContent := name
+	if messageRequired {
+		glossaryContent += "\n" + message
+	}
+	taskIntro := "Translate the Discord thread create payload inside <thread_create> into every language in <target_languages>, one translations item per language, in the same order.\n" +
+		"Each translations item must include name and message. message must be empty when <message> is omitted from <thread_create>.\n"
+	systemInstruction := buildTranslationSystemInstruction(
+		taskIntro,
+		"<thread_create>",
+		glossaryContent,
+		glossary,
+		len(translationContext.History) > 0,
+		len(translationContext.ReplyChain) > 0,
+		strings.TrimSpace(translationContext.StyleInstructions) != "",
+		len(translationContext.Sites) > 0,
+	)
+	userPrompt := buildTranslationUserPrompt(normalized, translationContext, func(b *strings.Builder) {
+		b.WriteString("<thread_create>")
+		writeXMLElement(b, "name", protectedName)
+		if messageRequired {
+			writeAttributedElement(b, "message", translationContext.Author, protectedMessage)
+		}
+		b.WriteString("</thread_create>")
+	})
+	return preparedTranslation{
+		targetLanguages:    normalized,
+		systemInstruction:  systemInstruction,
+		userPrompt:         userPrompt,
+		protector:          p,
+		guildID:            translationContext.GuildID,
+		messageID:          translationContext.MessageID,
+		messageRequired:    messageRequired,
+		threadName:         name,
+		threadMessage:      message,
+		translationContext: translationContext,
+	}, nil
+}
+
 func beginPreparedTranslation(targetLanguages []string, translationContext *TranslationContext) ([]string, *Protector, error) {
 	normalized, err := normalizeTargetLanguages(targetLanguages)
 	if err != nil {
@@ -287,6 +355,57 @@ func parsePollTranslationResponse(raw string, targetLanguages []string, answerCo
 		out[targetLanguage] = PollTranslation{
 			Question: protector.Restore(question),
 			Answers:  answers,
+		}
+	}
+	return out, nil
+}
+
+type threadCreateTranslationResponse struct {
+	Translations []threadCreateTranslationResponseItem `json:"translations"`
+}
+
+type threadCreateTranslationResponseItem struct {
+	Language string `json:"language"`
+	Name     string `json:"name"`
+	Message  string `json:"message"`
+}
+
+func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, messageRequired bool, protector *Protector) (map[string]ThreadCreateTranslation, error) {
+	var parsed threadCreateTranslationResponse
+	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("parse thread create translation response: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("parse thread create translation response: multiple JSON values")
+	}
+	if len(parsed.Translations) != len(targetLanguages) {
+		return nil, fmt.Errorf("parse thread create translation response: got %d translations, want %d", len(parsed.Translations), len(targetLanguages))
+	}
+
+	out := make(map[string]ThreadCreateTranslation, len(targetLanguages))
+	for i, targetLanguage := range targetLanguages {
+		item := parsed.Translations[i]
+		if item.Language != targetLanguage {
+			return nil, fmt.Errorf("parse thread create translation response: translation %d has language %q, want %q", i, item.Language, targetLanguage)
+		}
+		name := strings.TrimSpace(html.UnescapeString(item.Name))
+		if name == "" {
+			return nil, fmt.Errorf("parse thread create translation response: empty name for %q", targetLanguage)
+		}
+		message := strings.TrimSpace(html.UnescapeString(item.Message))
+		if messageRequired {
+			if message == "" {
+				return nil, fmt.Errorf("parse thread create translation response: empty message for %q", targetLanguage)
+			}
+		} else {
+			message = ""
+		}
+		out[targetLanguage] = ThreadCreateTranslation{
+			Name:    protector.Restore(name),
+			Message: protector.Restore(message),
 		}
 	}
 	return out, nil

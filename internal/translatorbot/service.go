@@ -170,6 +170,42 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 	return translations, nil
 }
 
+// translateThreadCreateWithLimit translates a thread name and optional initial
+// message in one translator call. When neither field has translatable text,
+// both are returned as-is without calling the translator.
+func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, name, message string, languages []string, contextFn func() TranslationContext) (map[string]ThreadCreateTranslation, error) {
+	translations := make(map[string]ThreadCreateTranslation, len(languages))
+	if !hasTranslatableText(name) && !hasTranslatableText(message) {
+		for _, language := range languages {
+			translations[language] = ThreadCreateTranslation{Name: name, Message: message}
+		}
+		return translations, nil
+	}
+	lookupText := name
+	if strings.TrimSpace(message) != "" {
+		lookupText += "\n" + message
+	}
+	prepared, err := s.prepareTranslation(ctx, guildID, lookupText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
+		return prepareThreadCreateTranslation(langs, name, message, tc, glossary)
+	})
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.translator.TranslateThreadCreateMulti(ctx, prepared)
+	if err != nil {
+		return nil, err
+	}
+	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
+	for _, language := range languages {
+		translated, ok := result.Translations[language]
+		if !ok {
+			return nil, fmt.Errorf("missing thread create translation for %q", language)
+		}
+		translations[language] = translated
+	}
+	return translations, nil
+}
+
 func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error)) (preparedTranslation, error) {
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {

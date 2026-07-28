@@ -372,6 +372,121 @@ func TestParseMultiTranslationResponseUnescapesHTMLEntities(t *testing.T) {
 	}
 }
 
+func TestPrepareThreadCreateTranslationOmitsEmptyMessageAndThreadNameContext(t *testing.T) {
+	prepared, err := prepareThreadCreateTranslation([]string{"en"}, "topic", "", TranslationContext{
+		Author:     "alice",
+		ThreadName: "should-not-appear",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.messageRequired {
+		t.Fatal("empty source message should not require message")
+	}
+	if strings.Contains(prepared.userPrompt, "<message") {
+		t.Fatalf("expected omitted message element:\n%s", prepared.userPrompt)
+	}
+	if strings.Contains(prepared.userPrompt, "<thread_name>") || strings.Contains(prepared.userPrompt, "should-not-appear") {
+		t.Fatalf("thread name must not appear as discord_context:\n%s", prepared.userPrompt)
+	}
+	if !strings.Contains(prepared.userPrompt, "<thread_create><name>topic</name></thread_create>") {
+		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt)
+	}
+	if prepared.translationContext.ThreadName != "" {
+		t.Fatalf("prepared context ThreadName = %q", prepared.translationContext.ThreadName)
+	}
+}
+
+func TestPrepareThreadCreateTranslationIncludesMessage(t *testing.T) {
+	prepared, err := prepareThreadCreateTranslation([]string{"en"}, "topic", "hello", TranslationContext{Author: "alice"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !prepared.messageRequired {
+		t.Fatal("non-empty source message must require message")
+	}
+	if !strings.Contains(prepared.userPrompt, `<thread_create><name>topic</name><message author="alice">hello</message></thread_create>`) {
+		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt)
+	}
+}
+
+func TestParseThreadCreateTranslationResponse(t *testing.T) {
+	p := NewProtector(NameMaps{})
+	got, err := parseThreadCreateTranslationResponse(
+		`{"translations":[{"language":"en","name":"Topic","message":"Hello"},{"language":"ja","name":"議題","message":"こんにちは"}]}`,
+		[]string{"en", "ja"},
+		true,
+		p,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["en"] != (ThreadCreateTranslation{Name: "Topic", Message: "Hello"}) {
+		t.Fatalf("en = %#v", got["en"])
+	}
+	if got["ja"] != (ThreadCreateTranslation{Name: "議題", Message: "こんにちは"}) {
+		t.Fatalf("ja = %#v", got["ja"])
+	}
+
+	emptyMessage, err := parseThreadCreateTranslationResponse(
+		`{"translations":[{"language":"en","name":"Topic","message":""}]}`,
+		[]string{"en"},
+		false,
+		p,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if emptyMessage["en"] != (ThreadCreateTranslation{Name: "Topic", Message: ""}) {
+		t.Fatalf("empty message = %#v", emptyMessage["en"])
+	}
+
+	ignoredExtra, err := parseThreadCreateTranslationResponse(
+		`{"translations":[{"language":"en","name":"Topic","message":"ignored"}]}`,
+		[]string{"en"},
+		false,
+		p,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ignoredExtra["en"].Message != "" {
+		t.Fatalf("non-required message should be cleared: %#v", ignoredExtra["en"])
+	}
+
+	for _, tc := range []struct {
+		raw              string
+		langs            []string
+		messageRequired  bool
+		wantErrSubstring string
+	}{
+		{
+			raw:              `{"translations":[{"language":"ja","name":"議題","message":"こんにちは"},{"language":"en","name":"Topic","message":"Hello"}]}`,
+			langs:            []string{"en", "ja"},
+			messageRequired:  true,
+			wantErrSubstring: "language",
+		},
+		{
+			raw:              `{"translations":[{"language":"en","name":"Topic","message":""}]}`,
+			langs:            []string{"en"},
+			messageRequired:  true,
+			wantErrSubstring: "empty message",
+		},
+		{
+			raw:              `{"translations":[{"language":"en","name":"","message":"Hello"}]}`,
+			langs:            []string{"en"},
+			messageRequired:  true,
+			wantErrSubstring: "empty name",
+		},
+	} {
+		if _, err := parseThreadCreateTranslationResponse(tc.raw, tc.langs, tc.messageRequired, p); err == nil {
+			t.Fatalf("expected error containing %q for %s", tc.wantErrSubstring, tc.raw)
+		} else if !strings.Contains(err.Error(), tc.wantErrSubstring) {
+			t.Fatalf("error %q does not contain %q", err, tc.wantErrSubstring)
+		}
+	}
+}
+
 func TestIsValidLanguageCode(t *testing.T) {
 	for _, language := range []string{"en", "ja", "zh-CN", "pt-BR", "fr-CA"} {
 		if !IsValidLanguageCode(language) {
