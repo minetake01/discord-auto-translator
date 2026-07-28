@@ -49,6 +49,24 @@ type BedrockTranslator struct {
 	projectID    string
 	responsesURL string
 	now          func() time.Time
+	debugLog     *DebugLog
+}
+
+// bedrockDebugEntry records one Mantle round trip verbatim. The raw response
+// body keeps reasoning items, token usage details, and unknown fields intact,
+// which the response parser discards. GuildID and MessageID are local
+// correlation keys only; Mantle still receives no Discord IDs.
+type bedrockDebugEntry struct {
+	Time            time.Time       `json:"time"`
+	GuildID         string          `json:"guild_id,omitempty"`
+	MessageID       string          `json:"message_id,omitempty"`
+	TargetLanguages []string        `json:"target_languages"`
+	DurationMS      int64           `json:"duration_ms"`
+	Request         json.RawMessage `json:"request,omitempty"`
+	HTTPStatus      int             `json:"http_status,omitempty"`
+	Response        json.RawMessage `json:"response,omitempty"`
+	ResponseText    string          `json:"response_text,omitempty"`
+	Error           string          `json:"error,omitempty"`
 }
 
 type bedrockResponsesRequest struct {
@@ -134,6 +152,12 @@ func newBedrockTranslator(client bedrockHTTPClient, signer bedrockRequestSigner,
 	}
 }
 
+// SetDebugLog enables verbose diagnosis of translation failures by recording
+// every request payload and raw response body. It is off unless configured.
+func (t *BedrockTranslator) SetDebugLog(debugLog *DebugLog) {
+	t.debugLog = debugLog
+}
+
 func (t *BedrockTranslator) TranslateMulti(ctx context.Context, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
 	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
 	if err != nil {
@@ -161,7 +185,7 @@ func (t *BedrockTranslator) WarmUp(ctx context.Context) error {
 	return nil
 }
 
-func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared preparedTranslation) (result MultiTranslationResult, err error) {
 	systemInstruction := prepared.systemInstruction + "\nReturn only JSON matching this exact schema, without markdown fences: " + bedrockTranslationJSONSchema
 	payload := bedrockResponsesRequest{
 		Model: bedrockModel,
@@ -172,10 +196,25 @@ func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared prep
 		MaxOutputTokens: bedrockMaxTokens,
 		Store:           false,
 	}
+	start := t.now()
+	entry := bedrockDebugEntry{
+		Time:            start,
+		GuildID:         prepared.guildID,
+		MessageID:       prepared.messageID,
+		TargetLanguages: prepared.targetLanguages,
+	}
+	defer func() {
+		entry.DurationMS = t.now().Sub(start).Milliseconds()
+		if err != nil {
+			entry.Error = err.Error()
+		}
+		t.debugLog.writeEntry(entry)
+	}()
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return MultiTranslationResult{}, errors.New("encode Amazon Bedrock translation request")
 	}
+	entry.Request = body
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.responsesURL, bytes.NewReader(body))
 	if err != nil {
 		return MultiTranslationResult{}, errors.New("create Amazon Bedrock translation request")
@@ -199,11 +238,17 @@ func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared prep
 		return MultiTranslationResult{}, errors.New("Amazon Bedrock response is nil")
 	}
 	defer response.Body.Close()
+	entry.HTTPStatus = response.StatusCode
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	if err != nil {
+		return MultiTranslationResult{}, errors.New("read Amazon Bedrock translation response")
+	}
+	entry.recordResponse(responseBody)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return MultiTranslationResult{}, bedrockHTTPError(response)
+		return MultiTranslationResult{}, bedrockHTTPError(response, responseBody)
 	}
 	var output bedrockResponsesResponse
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 8<<20))
+	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	if err := decoder.Decode(&output); err != nil {
 		return MultiTranslationResult{}, errors.New("decode Amazon Bedrock translation response")
 	}
@@ -213,8 +258,15 @@ func (t *BedrockTranslator) translatePrepared(ctx context.Context, prepared prep
 	return parseBedrockResponse(output, prepared)
 }
 
-func bedrockHTTPError(response *http.Response) error {
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 64<<10))
+func (e *bedrockDebugEntry) recordResponse(body []byte) {
+	if json.Valid(body) {
+		e.Response = body
+		return
+	}
+	e.ResponseText = string(body)
+}
+
+func bedrockHTTPError(response *http.Response, body []byte) error {
 	var envelope bedrockErrorEnvelope
 	_ = json.Unmarshal(body, &envelope)
 

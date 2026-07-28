@@ -12,6 +12,7 @@ internal/translatorbot/
 ├── store.go                # SQLite CRUD（唯一の永続化レイヤー）+ sentinel エラー定義
 ├── translator.go           # provider-neutral なプロンプト構築・応答パース
 ├── bedrock_translator.go   # Amazon Bedrock Mantle Responses API の翻訳クライアント
+├── debug_log.go            # 翻訳往復のデバッグログ（JSON Lines・任意有効化）
 ├── placeholders.go         # 翻訳前後のプレースホルダー保護・復元
 ├── service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・通知
 ├── service_message.go      # 通常メッセージのミラー・編集・削除・リプライ引用
@@ -66,13 +67,32 @@ const bedrockModel = "google.gemma-4-26b-a4b"
 // temperature: omitted (Gemma provider default 1.0), max_output_tokens: 4096
 ```
 
-Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。HTTP再試行は実装しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、プロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
+Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。HTTP再試行は実装しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、既定ではプロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
 Gemma 4 26B-A4BはBedrock Structured Outputs非対応です。固定JSON Schemaはsystem instructionへ含め、レスポンスはcompleted状態、単一のassistant `output_text`、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。Responses APIが返すreasoning itemは最終textとして扱いません。
 
 全対象言語を1リクエストで生成します。全リクエストで同一のBedrock対応schemaを使い、件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常stop reasonはfail-closedです。分割、retry、別providerへのfallbackはありません。
 
 `--bedrock-prewarm` はDiscord・SQLite・HTTPサーバーを起動せず、認証情報・モデルアクセス・レスポンス契約を最大5分で検証して終了します。デプロイスクリプトはprewarm成功後だけ稼働バイナリを置換します。
+
+### 翻訳デバッグログ（`debug_log.go`）
+
+翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します。パーサーが捨てる情報（reasoning itemのテキスト、`usage` の内訳、未知フィールド、非2xx時のAWSエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
+
+```json
+{"time":"...","guild_id":"...","message_id":"...","target_languages":["en"],"duration_ms":812,"request":{...},"http_status":200,"response":{...},"error":"..."}
+```
+
+- `error` は encode・署名・transport（タイムアウト含む）・HTTP・レスポンス契約・JSONパースの全経路を `translatePrepared` の `defer` で拾います。レスポンスがJSONとして不正な場合だけ `response` の代わりに `response_text` へ生文字列を入れます。
+- `guild_id` / `message_id` はDiscord側と突き合わせるためのローカル記録で、Mantleへは従来どおり送りません。
+- `main.go` が起動時にファイルを開き、開けなければ `log.Fatal` で停止します（`--bedrock-prewarm` でも有効）。書き込み失敗は翻訳を止めず stderr へ出します。
+- 本文全量を書くためディスクを圧迫します。`0600` で作成し、64 MiB を超えると `<path>.1` へ1世代だけローテートします。**プライバシーポリシーのメッセージ関連データ60日以内削除に合わせ、調査が終わったらログを削除してください。**
+
+失敗だけを絞り込む例:
+
+```sh
+jq -c 'select(.error) | {time, guild_id, message_id, http_status, duration_ms, error}' translation-debug.log
+```
 
 ---
 
@@ -226,6 +246,7 @@ Discord の規約により、ウェブフック名に "discord" を含めるこ�
 | `AWS_BEDROCK_REGION` | 必須 | — | Bedrock Mantleリージョン |
 | `AWS_BEDROCK_PROJECT_ID` | 必須 | — | Bedrock Mantle Project ID |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | `100000` | ギルドごとの Gemma 4 26B-A4B トークン上限/分 |
+| `TRANSLATION_DEBUG_LOG_PATH` | 任意 | `""` | 翻訳往復のデバッグログの出力先。未設定でログを生成しない |
 | `DB_PATH` | 任意 | `./translator.db` | SQLite ファイルのパス |
 | `HTTP_ADDR` | 任意 | `:8080` | アバターバッジ HTTP サーバーのアドレス |
 | `PUBLIC_BASE_URL` | 任意 | `""` | アバターバッジ URL のベース（末尾スラッシュなし） |
@@ -268,7 +289,7 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 ## 13. エラーハンドリングの方針
 
-- すべてのエラーは `main.go` の各ハンドラで `log.Printf` してから処理を継続します（ボットは落ちません）。
+- すべてのエラーは `main.go` の各ハンドラで `log.Printf` してから処理を継続します（ボットは落ちません）。翻訳失敗の詳細は `TRANSLATION_DEBUG_LOG_PATH` のデバッグログにのみ残ります。
 - `service.go` 内では最初のエラーで即時 `return` します。途中で失敗した場合、成功したチャンネルへの投稿はロールバックされません。
 - Discord API エラー（レート制限・ネットワーク障害など）はリトライしません。
 

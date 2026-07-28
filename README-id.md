@@ -71,6 +71,7 @@ TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
+# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
 | Variabel | Wajib | Deskripsi |
@@ -87,10 +88,11 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | Batas permintaan per IP per menit untuk endpoint badge `/avatar` (default: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Tidak | Hari retensi `message_links` di SQLite sebelum pembersihan otomatis. `0` (default) menonaktifkan pembersihan; mis. `60` menghapus tautan lebih dari 60 hari saat startup dan setiap 24 jam |
 | `GUILD_DATA_RETENTION_DAYS` | Tidak | Hari penyimpanan data SQLite server setelah bot dikeluarkan. `0` (default) menonaktifkan pembersihan; mis. `30` menghapus data server yang sudah lebih dari 30 hari ditinggalkan saat startup dan setiap 24 jam. Bergabung kembali sebelum tenggat membatalkan penghapusan terjadwal |
+| `TRANSLATION_DEBUG_LOG_PATH` | Tidak | Hanya untuk debug. Path berkas JSON Lines yang menerima satu entri per putaran terjemahan. Tidak diatur (default) berarti tidak menulis apa pun |
 
 ### Kontrak operasional Amazon Bedrock
 
-Terjemahan memakai Mantle Responses API non-streaming dengan `google.gemma-4-26b-a4b` di `your-aws-bedrock-region`; setiap permintaan ditetapkan ke Project `your-aws-bedrock-project-id` melalui header `OpenAI-Project`: timeout **30 detik**, **provider-default temperature 1.0**, **max_output_tokens 4096**, dan JSON berpanduan schema yang divalidasi ketat oleh bot. Semua bahasa dibuat dalam satu permintaan. Batas 4K, penghentian abnormal, atau JSON tidak valid membuat semuanya gagal secara fail-closed; tidak ada retry, pemisahan, atau fallback. Bot tidak mencatat prompt, respons, atau kredensial. Deployment GCE memvalidasi kredensial, akses model, dan kontrak respons sebelum penggantian melalui `--bedrock-prewarm` dengan batas lima menit.
+Terjemahan memakai Mantle Responses API non-streaming dengan `google.gemma-4-26b-a4b` di `your-aws-bedrock-region`; setiap permintaan ditetapkan ke Project `your-aws-bedrock-project-id` melalui header `OpenAI-Project`: timeout **30 detik**, **provider-default temperature 1.0**, **max_output_tokens 4096**, dan JSON berpanduan schema yang divalidasi ketat oleh bot. Semua bahasa dibuat dalam satu permintaan. Batas 4K, penghentian abnormal, atau JSON tidak valid membuat semuanya gagal secara fail-closed; tidak ada retry, pemisahan, atau fallback. Secara default bot tidak mencatat prompt, respons, atau kredensial; dengan `TRANSLATION_DEBUG_LOG_PATH` bot menulis payload permintaan dan respons mentah (termasuk item reasoning) sebagai JSON Lines untuk penelusuran masalah. Deployment GCE memvalidasi kredensial, akses model, dan kontrak respons sebelum penggantian melalui `--bedrock-prewarm` dengan batas lima menit.
 
 ### 4. Jalankan
 
