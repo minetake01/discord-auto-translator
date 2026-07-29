@@ -12,7 +12,7 @@
 
 ## 功能特性
 
-- **全面同步** — 不仅是新消息：编辑、删除、回复、转发消息、表情回应、置顶、子区（文字 / 论坛 / 媒体频道）以及仅含附件的消息，都会在整个组内镜像同步。
+- **全面同步** — 不仅是新消息：编辑、删除、回复、转发消息、表情回应、置顶、子区（文字 / 论坛 / 媒体频道）、已映射的论坛标签以及仅含附件的消息，都会在整个组内镜像同步。
 - **消息如同本人发送** — 镜像消息通过 Webhook 发送，显示原作者的名字和头像。
 - **自然的翻译** — Gemma 4 26B-A4B 会参考频道名称、主题和最近的对话历史作为上下文；每个服务器还可配置术语表，为人名和专业术语指定固定译法。
 - **智能链接处理** — 指向受管理频道或消息的链接和提及会被改写为各语言频道的对应目标；带有 `hreflang` 备选版本的 URL 会替换为目标语言版本。
@@ -151,13 +151,14 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 | 命令 | 说明 |
 |---|---|
 | `/new-channel language:[语言] channel:<频道> group:<组>` | 新建翻译组。省略 `channel` 时使用当前频道；省略 `group` 时使用频道名称 |
-| `/join-channel group:[组] language:[语言] channel:<频道>` | 向组中添加频道。省略 `channel` 时使用当前频道 |
+| `/join-channel group:[组] language:[语言] channel:<频道>` | 向组中添加频道。若组内已有带标签的论坛/媒体频道，会打开标签映射界面。省略 `channel` 时使用当前频道 |
 | `/leave-channel group:[组] channel:<频道>` | 使频道退出组。省略 `channel` 时使用当前频道 |
 | `/delete-group group:[组]` | 删除整个组 |
 | `/list-groups` | 列出此服务器的翻译组及其频道 |
 | `/add-glossary term:[术语] translation:[译文] attribute:<属性> always_include:<布尔>` | 向服务器术语表注册优先译法。`attribute` 为带候选的自由输入；`always_include` 默认为 `false` |
 | `/list-glossary` | 列出服务器的术语表 |
 | `/remove-glossary term:[术语]` | 删除术语表条目 |
+| `/edit-forum-tags group:[组] channel:<论坛>` | 编辑组内频道的论坛/媒体标签映射。省略 `channel` 时使用当前频道 |
 | `/set-style group:[组] preset:<预设> custom:<自定义指示>` | 设置组的翻译风格。指定 `preset` 或 `custom` 之一，不可同时指定 |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 允许此服务器中的自动消息来源。`source_type:bot` 时，`source_id` 是机器人用户 ID；`source_type:webhook` 时，它是 Webhook ID |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 从此服务器的允许列表中删除匹配的自动消息来源 |
@@ -171,6 +172,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - 普通术语仅当待翻译正文中包含 `term`（不区分大小写）时才会加入系统指令；`always_include:true` 的术语则始终加入
 - 省略 `channel` 选项时，命令作用于执行命令的频道
 - 支持的频道类型：文字、公告、论坛、媒体
+- 论坛/媒体标签映射可在 `/join-channel` 成功后（存在带标签的对等频道时）或通过 `/edit-forum-tags` 编辑。选择“（无对应）”并保存可清除该映射
 
 ## 测试
 

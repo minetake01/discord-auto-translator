@@ -12,7 +12,7 @@
 
 ## 功能特色
 
-- **全面同步** — 不只是新訊息：編輯、刪除、回覆、轉發訊息、表情反應、釘選、討論串（文字 / 論壇 / 媒體頻道）以及僅含附件的訊息，都會在整個群組內鏡像同步。
+- **全面同步** — 不只是新訊息：編輯、刪除、回覆、轉發訊息、表情反應、釘選、討論串（文字 / 論壇 / 媒體頻道）、已對應的論壇標籤以及僅含附件的訊息，都會在整個群組內鏡像同步。
 - **訊息如同本人發送** — 鏡像訊息透過 Webhook 發送，顯示原作者的名稱與頭像。
 - **自然的翻譯** — Gemma 4 26B-A4B 會參考頻道名稱、主題與最近的對話紀錄作為上下文；每個伺服器還可設定詞彙表，為人名與專業術語指定固定譯法。
 - **智慧連結處理** — 指向受管理頻道或訊息的連結與提及會被改寫為各語言頻道的對應目標；具有 `hreflang` 替代版本的 URL 會替換為目標語言版本。
@@ -151,13 +151,14 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 | 指令 | 說明 |
 |---|---|
 | `/new-channel language:[語言] channel:<頻道> group:<群組>` | 建立新的翻譯群組。省略 `channel` 時使用目前頻道；省略 `group` 時使用頻道名稱 |
-| `/join-channel group:[群組] language:[語言] channel:<頻道>` | 將頻道加入群組。省略 `channel` 時使用目前頻道 |
+| `/join-channel group:[群組] language:[語言] channel:<頻道>` | 將頻道加入群組。若群組內已有含標籤的論壇/媒體頻道，會開啟標籤對應介面。省略 `channel` 時使用目前頻道 |
 | `/leave-channel group:[群組] channel:<頻道>` | 使頻道退出群組。省略 `channel` 時使用目前頻道 |
 | `/delete-group group:[群組]` | 刪除整個群組 |
 | `/list-groups` | 列出此伺服器的翻譯群組及其頻道 |
 | `/add-glossary term:[詞彙] translation:[譯文] attribute:<屬性> always_include:<布林>` | 在伺服器詞彙表註冊優先譯法。`attribute` 為附候選的自由輸入；`always_include` 預設為 `false` |
 | `/list-glossary` | 列出伺服器的詞彙表 |
 | `/remove-glossary term:[詞彙]` | 刪除詞彙表項目 |
+| `/edit-forum-tags group:[群組] channel:<論壇>` | 編輯群組內頻道的論壇/媒體標籤對應。省略 `channel` 時使用目前頻道 |
 | `/set-style group:[群組] preset:<預設> custom:<自訂指示>` | 設定群組的翻譯風格。指定 `preset` 或 `custom` 其中之一，不可同時指定 |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 允許此伺服器中的自動訊息來源。`source_type:bot` 時，`source_id` 是機器人使用者 ID；`source_type:webhook` 時則是 Webhook ID |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 從此伺服器的允許清單移除符合的自動訊息來源 |
@@ -171,6 +172,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - 一般詞彙僅在待翻譯內文包含 `term`（不分大小寫）時才會加入系統指令；`always_include:true` 的詞彙則永遠加入
 - 省略 `channel` 選項時，指令作用於執行指令的頻道
 - 支援的頻道類型：文字、公告、論壇、媒體
+- 論壇/媒體標籤對應可在 `/join-channel` 成功後（有含標籤的對等頻道時）或以 `/edit-forum-tags` 編輯。選擇「（無對應）」並儲存可清除該對應
 
 ## 測試
 

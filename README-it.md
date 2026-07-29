@@ -12,7 +12,7 @@ Collega un canale per lingua formando un **gruppo di traduzione**. Ogni messaggi
 
 ## Funzionalità
 
-- **Tutto rimane sincronizzato** — non solo i nuovi messaggi: modifiche, eliminazioni, risposte, messaggi inoltrati, reazioni, messaggi fissati, thread (canali testo / forum / media) e messaggi con soli allegati vengono tutti rispecchiati nel gruppo.
+- **Tutto rimane sincronizzato** — non solo i nuovi messaggi: modifiche, eliminazioni, risposte, messaggi inoltrati, reazioni, messaggi fissati, thread (canali testo / forum / media), tag del forum mappati e messaggi con soli allegati vengono tutti rispecchiati nel gruppo.
 - **I messaggi sembrano inviati dal mittente originale** — i messaggi rispecchiati vengono consegnati tramite webhook con il nome e l'avatar dell'autore originale.
 - **Traduzioni naturali** — Gemma 4 26B-A4B utilizza il nome del canale, l'argomento e la cronologia recente della conversazione come contesto; un glossario per server permette di fissare le traduzioni preferite per nomi e termini tecnici.
 - **Gestione intelligente dei link** — i link e le menzioni che puntano a canali o messaggi gestiti vengono riscritti verso i loro equivalenti in ogni lingua, e gli URL con alternative `hreflang` vengono sostituiti con la versione nella lingua di destinazione.
@@ -154,13 +154,14 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 | Comando | Descrizione |
 |---|---|
 | `/new-channel language:[lingua] channel:<canale> group:<gruppo>` | Creare un nuovo gruppo di traduzione. `channel` usa il canale corrente per impostazione predefinita; `group` usa il nome del canale per impostazione predefinita |
-| `/join-channel group:[gruppo] language:[lingua] channel:<canale>` | Aggiungere un canale a un gruppo. `channel` usa il canale corrente per impostazione predefinita |
+| `/join-channel group:[gruppo] language:[lingua] channel:<canale>` | Aggiungere un canale a un gruppo. Per forum/media con peer etichettati nel gruppo, apre l’UI di mappatura dei tag. `channel` usa il canale corrente per impostazione predefinita |
 | `/leave-channel group:[gruppo] channel:<canale>` | Rimuovere un canale da un gruppo. `channel` usa il canale corrente per impostazione predefinita |
 | `/delete-group group:[gruppo]` | Eliminare un intero gruppo |
 | `/list-groups` | Elencare i gruppi di traduzione e i relativi canali in questo server |
 | `/add-glossary term:[termine] translation:[traduzione] attribute:<attributo> always_include:<bool>` | Registrare una traduzione preferita nel glossario del server. `attribute` è testo libero con suggerimenti; `always_include` è `false` per impostazione predefinita |
 | `/list-glossary` | Visualizzare il glossario del server |
 | `/remove-glossary term:[termine]` | Rimuovere una voce dal glossario |
+| `/edit-forum-tags group:[gruppo] channel:<forum>` | Modificare le mappature dei tag forum/media di un canale nel gruppo. `channel` usa il canale corrente per impostazione predefinita |
 | `/set-style group:[gruppo] preset:<preset> custom:<istruzione personalizzata>` | Impostare lo stile di traduzione di un gruppo. Specificare `preset` o `custom`, non entrambi |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Consentire una fonte di messaggi automatizzata in questo server. Con `source_type:bot`, `source_id` è l'ID utente del bot; con `source_type:webhook`, è l'ID del webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Rimuovere la fonte di messaggi automatizzata corrispondente dall'elenco consentito di questo server |
@@ -174,6 +175,7 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 - I termini normali vengono aggiunti alle istruzioni di sistema solo se il corpo del messaggio da tradurre contiene `term` (senza distinzione tra maiuscole e minuscole). I termini con `always_include:true` vengono sempre aggiunti
 - Se l'opzione `channel` viene omessa, il comando si applica al canale in cui è stato eseguito
 - Tipi di canale supportati: testo, notizie, forum e media
+- Le mappature dei tag forum/media si impostano dopo `/join-channel` (se esiste un peer etichettato) o con `/edit-forum-tags`. Salvare con “(nessuna mappatura)” rimuove la coppia
 
 ## Test
 

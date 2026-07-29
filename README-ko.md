@@ -12,7 +12,7 @@
 
 ## 주요 기능
 
-- **모든 것이 동기화됩니다** — 새 메시지뿐만 아니라 수정, 삭제, 답장, 전달된 메시지, 반응(리액션), 고정(핀), 스레드(텍스트 / 포럼 / 미디어 채널), 첨부 파일만 있는 메시지까지 그룹 전체에 미러링됩니다.
+- **모든 것이 동기화됩니다** — 새 메시지뿐만 아니라 수정, 삭제, 답장, 전달된 메시지, 반응(리액션), 고정(핀), 스레드(텍스트 / 포럼 / 미디어 채널), 매핑된 포럼 태그, 첨부 파일만 있는 메시지까지 그룹 전체에 미러링됩니다.
 - **본인이 보낸 것처럼 보입니다** — 미러링된 메시지는 웹훅을 통해 원래 작성자의 이름과 아바타로 전송됩니다.
 - **자연스러운 번역** — Gemma 4 26B-A4B는 채널 이름, 주제, 최근 대화 기록을 문맥으로 참고합니다. 서버별 용어집으로 인명이나 전문 용어의 번역을 고정할 수도 있습니다.
 - **스마트한 링크 처리** — 관리 대상 채널이나 메시지를 가리키는 링크와 멘션은 각 언어 채널의 대응 대상으로 재작성되며, `hreflang` 대체 버전이 있는 URL은 대상 언어 버전으로 교체됩니다.
@@ -151,13 +151,14 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 | 명령어 | 설명 |
 |---|---|
 | `/new-channel language:[언어] channel:<채널> group:<그룹>` | 번역 그룹 새로 만들기. `channel`을 생략하면 명령을 실행한 채널, `group`을 생략하면 채널 이름이 사용됩니다 |
-| `/join-channel group:[그룹] language:[언어] channel:<채널>` | 그룹에 채널 추가. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
+| `/join-channel group:[그룹] language:[언어] channel:<채널>` | 그룹에 채널 추가. 그룹에 태그가 있는 다른 포럼/미디어가 있으면 태그 매핑 UI를 표시합니다. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
 | `/leave-channel group:[그룹] channel:<채널>` | 그룹에서 채널 제외. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
 | `/delete-group group:[그룹]` | 그룹 전체 삭제 |
 | `/list-groups` | 이 서버의 번역 그룹과 채널 목록 표시 |
 | `/add-glossary term:[용어] translation:[번역] attribute:<속성> always_include:<불리언>` | 서버 용어집에 우선 번역 등록. `attribute`는 후보가 표시되는 자유 입력입니다. `always_include` 기본값은 `false`입니다 |
 | `/list-glossary` | 서버의 용어집 목록 표시 |
 | `/remove-glossary term:[용어]` | 용어집 항목 삭제 |
+| `/edit-forum-tags group:[그룹] channel:<포럼>` | 그룹 내 채널의 포럼/미디어 태그 매핑을 편집. `channel`을 생략하면 명령을 실행한 채널이 대상이 됩니다 |
 | `/set-style group:[그룹] preset:<프리셋> custom:<사용자 지정 지시>` | 그룹의 번역 스타일 설정. `preset` 또는 `custom` 중 하나만 지정하세요 |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | 이 서버에서 자동 메시지 출처를 허용합니다. `source_type:bot`이면 `source_id`는 봇 사용자 ID이고, `source_type:webhook`이면 웹후크 ID입니다 |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | 이 서버의 허용 목록에서 일치하는 자동 메시지 출처를 제거합니다 |
@@ -171,6 +172,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - 일반 용어는 번역 대상 본문에 `term`이 포함될 때만(대소문자 무시) 시스템 지시에 추가됩니다. `always_include:true`인 용어는 항상 추가됩니다
 - `channel` 옵션을 생략하면 명령어를 실행한 채널이 대상이 됩니다
 - 지원 채널 유형: 텍스트, 공지, 포럼, 미디어
+- 포럼/미디어 태그 매핑은 `/join-channel` 성공 후(태그가 있는 피어가 있을 때) 또는 `/edit-forum-tags`로 편집할 수 있습니다. “(대응 없음)”을 선택해 저장하면 해당 매핑이 해제됩니다
 
 ## 테스트
 
