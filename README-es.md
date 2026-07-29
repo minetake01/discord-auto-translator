@@ -171,7 +171,7 @@ Por defecto, los comandos de barra diagonal de administración solo pueden ejecu
 - `attribute` sugiere "nombre de persona", "nombre de lugar", "argot", "abreviatura" y "término técnico", pero se puede introducir cualquier valor libremente. El atributo se usa como contexto para que Gemma 4 26B-A4B entienda el significado del término
 - Los términos normales se añaden a las instrucciones del sistema solo si el mensaje a traducir contiene `term` (sin distinción de mayúsculas). Los términos con `always_include:true` siempre se añaden
 - Si se omite la opción `channel`, el comando se aplica al canal en el que se ejecutó
-- Tipos de canal admitidos: texto, anuncios, foro y multimedia
+- Tipos de canal admitidos: texto, anuncios, foro y multimedia. Todos los canales de un grupo deben ser del mismo tipo.
 - Las correspondencias de etiquetas de foro/medios se configuran tras `/join-channel` (si hay un par etiquetado) o con `/edit-forum-tags`. Guardar con “(sin correspondencia)” elimina el par
 
 ## Pruebas

@@ -171,7 +171,7 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 - `attribute` propose "nom de personne", "nom de lieu", "argot", "abréviation" et "terme technique", mais toute valeur peut être saisie librement. L'attribut est utilisé comme contexte pour que Gemma 4 26B-A4B comprenne la signification du terme
 - Les termes ordinaires ne sont ajoutés aux instructions système que si le message à traduire contient `term` (insensible à la casse). Les termes avec `always_include:true` sont toujours ajoutés
 - Si l'option `channel` est omise, la commande s'applique au salon dans lequel elle est exécutée
-- Types de salons pris en charge : texte, annonces, forum et média
+- Types de salons pris en charge : texte, annonces, forum et média. Tous les salons d'un groupe doivent être du même type.
 - Les correspondances de tags forum/média se configurent après `/join-channel` (si un pair étiqueté existe) ou avec `/edit-forum-tags`. Enregistrer avec « (aucune correspondance) » efface la paire
 
 ## Tests

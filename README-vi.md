@@ -174,7 +174,7 @@ Theo mặc định, các lệnh slash quản trị chỉ có thể được ch�
 - `attribute` gợi ý "tên người", "tên địa điểm", "tiếng lóng", "từ viết tắt" và "thuật ngữ kỹ thuật", nhưng có thể nhập bất kỳ giá trị nào tùy ý. Thuộc tính được sử dụng làm ngữ cảnh để Gemma 4 26B-A4B hiểu ý nghĩa của thuật ngữ
 - Các thuật ngữ thông thường chỉ được thêm vào hướng dẫn hệ thống khi nội dung tin nhắn cần dịch có chứa `term` (không phân biệt chữ hoa/thường). Các thuật ngữ có `always_include:true` luôn được thêm vào
 - Nếu tùy chọn `channel` bị bỏ qua, lệnh sẽ áp dụng cho kênh nơi lệnh được chạy
-- Các loại kênh được hỗ trợ: văn bản, tin tức, diễn đàn và phương tiện
+- Các loại kênh được hỗ trợ: văn bản, tin tức, diễn đàn và phương tiện. Tất cả kênh trong một nhóm phải cùng loại.
 - Ánh xạ thẻ diễn đàn/phương tiện có thể đặt sau `/join-channel` (khi có peer gắn thẻ) hoặc bằng `/edit-forum-tags`. Lưu với “(không ánh xạ)” sẽ xóa cặp đó
 
 ## Kiểm thử

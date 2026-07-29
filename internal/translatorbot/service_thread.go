@@ -19,13 +19,11 @@ type threadCreateRequest struct {
 	InitialMessageID        string
 	InitialMessageAuthor    string
 	InitialMessageUsername  string
-	InitialMessageAvatar    string
 	InitialMessageRoleColor int
 	InitialMessageText      string
 	InitialMessagePoll      *DiscordPoll
 	InitialMessageFiles     []DiscordAttachment
 	InitialMessageStickers  []DiscordSticker
-	InitialMessageTTS       bool
 	DeferWithoutSourceMsg   bool
 }
 
@@ -160,29 +158,6 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		return false, nil
 	}
 
-	if initialMessageID == "" && (translatedInitial != "" || len(embeds) > 0 || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0) {
-		synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
-		if err != nil {
-			return false, err
-		}
-		if !synced {
-			content, err := messageContentWithAssetURLs(translatedInitial, req.InitialMessageFiles, req.InitialMessageStickers)
-			if err != nil {
-				return false, err
-			}
-			avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, req.InitialMessageAvatar, target.Language, req.InitialMessageRoleColor)
-			if err := s.sendAndSaveLink(ctx, target, threadID, WebhookSend{
-				Content: content, Username: req.InitialMessageUsername, AvatarURL: avatar, TTS: req.InitialMessageTTS, ThreadID: threadID, Embeds: embeds,
-			}, MessageLink{
-				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
-				TargetChannelID: threadID, TargetLanguage: target.Language,
-				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
-			}, MessageReference{}); err != nil {
-				return false, err
-			}
-		}
-		return true, nil
-	}
 	if initialMessageID != "" {
 		synced, err := s.targetAlreadySynced(ctx, req.SourceThreadID, req.InitialMessageID, threadID)
 		if err != nil {
@@ -240,13 +215,11 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageID = m.ID
 		req.InitialMessageAuthor = m.AuthorID
 		req.InitialMessageUsername = m.AuthorDisplayName
-		req.InitialMessageAvatar = m.AuthorAvatarURL
 		req.InitialMessageRoleColor = m.AuthorRoleColor
 		req.InitialMessageText = m.Content
 		req.InitialMessagePoll = m.Poll
 		req.InitialMessageFiles = m.Attachments
 		req.InitialMessageStickers = m.Stickers
-		req.InitialMessageTTS = m.TTS
 	} else {
 		req.SourceMessageID = m.ChannelID
 	}
@@ -428,8 +401,8 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 
 // createTargetThread creates the mirrored thread in one target channel.
 // For forum/media targets the thread starts with the translated initial
-// message; for text targets it is attached to the mirrored source message
-// when one exists, or deferred when DeferWithoutSourceMsg is set.
+// message. For text/news targets it is attached to the mirrored source
+// message when one exists, or deferred when DeferWithoutSourceMsg is set.
 func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
 	if isThreadOnlyChannelType(target.ChannelType) {
 		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)

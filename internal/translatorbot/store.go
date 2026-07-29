@@ -16,6 +16,7 @@ var (
 	ErrDuplicateGroup       = errors.New("translation group already exists in this guild")
 	ErrDuplicateChannel     = errors.New("channel already exists in this group")
 	ErrDuplicateLanguage    = errors.New("language already exists in this group")
+	ErrChannelTypeMismatch  = errors.New("channel type does not match existing channels in this group")
 	ErrGroupNotFound        = errors.New("translation group not found in this guild")
 	ErrChannelNotFound      = errors.New("channel is not joined to this group")
 	ErrGlossaryFull         = errors.New("glossary is full for this server")
@@ -301,7 +302,23 @@ func (s *Store) CreateGroupWithChannel(ctx context.Context, g TranslationGroup, 
 }
 
 func (s *Store) JoinChannel(ctx context.Context, ch GroupChannel) error {
-	return insertGroupChannel(ctx, s.db, ch)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var existingType int
+	err = tx.QueryRowContext(ctx, `SELECT channel_type FROM group_channels WHERE guild_id=? AND group_id=? LIMIT 1`, ch.GuildID, ch.GroupID).Scan(&existingType)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && existingType != ch.ChannelType {
+		return ErrChannelTypeMismatch
+	}
+	if err := insertGroupChannel(ctx, tx, ch); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error {

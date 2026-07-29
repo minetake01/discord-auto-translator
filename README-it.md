@@ -174,7 +174,7 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 - `attribute` suggerisce "nome di persona", "nome di luogo", "slang", "abbreviazione" e "termine tecnico", ma può essere inserito qualsiasi valore liberamente. L'attributo viene usato come contesto affinché Gemma 4 26B-A4B comprenda il significato del termine
 - I termini normali vengono aggiunti alle istruzioni di sistema solo se il corpo del messaggio da tradurre contiene `term` (senza distinzione tra maiuscole e minuscole). I termini con `always_include:true` vengono sempre aggiunti
 - Se l'opzione `channel` viene omessa, il comando si applica al canale in cui è stato eseguito
-- Tipi di canale supportati: testo, notizie, forum e media
+- Tipi di canale supportati: testo, notizie, forum e media. Tutti i canali di un gruppo devono essere dello stesso tipo.
 - Le mappature dei tag forum/media si impostano dopo `/join-channel` (se esiste un peer etichettato) o con `/edit-forum-tags`. Salvare con “(nessuna mappatura)” rimuove la coppia
 
 ## Test

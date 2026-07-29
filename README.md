@@ -187,7 +187,7 @@ By default, the admin slash commands can only be run by **server administrators*
 - `attribute` suggests "person name", "place name", "slang", "abbreviation", and "technical term", but any value can be entered. The attribute is used as context for Gemma 4 26B-A4B to understand the term's meaning
 - Regular terms are added to the system instructions only when the message body contains `term` (case-insensitive). Terms with `always_include:true` are always added
 - If the `channel` option is omitted, the command applies to the channel it was run in
-- Supported channel types: text, news, forum, and media
+- Supported channel types: text, news, forum, and media. All channels in a group must be the same channel type.
 - Forum/media tag mappings can be set after `/join-channel` (when another tagged forum/media peer exists) or with `/edit-forum-tags`. Saving with “(no mapping)” clears that pair
 
 ## Testing
