@@ -12,7 +12,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 ## Fonctionnalités
 
-- **Tout reste synchronisé** — pas seulement les nouveaux messages : les modifications, suppressions, réponses, messages transférés, réactions, épingles, fils (salons texte / forum / média) et messages ne contenant que des pièces jointes sont tous dupliqués dans le groupe.
+- **Tout reste synchronisé** — pas seulement les nouveaux messages : les modifications, suppressions, réponses, messages transférés, réactions, épingles, fils (salons texte / forum / média), tags de forum mappés et messages ne contenant que des pièces jointes sont tous dupliqués dans le groupe.
 - **Les messages semblent envoyés par leur auteur** — les messages dupliqués sont envoyés via webhooks avec le nom et l'avatar de l'auteur original.
 - **Traductions naturelles** — Gemma 4 26B-A4B utilise le nom du salon, le sujet et l'historique récent de la conversation comme contexte ; un glossaire par serveur permet de fixer les traductions préférées pour les noms et le jargon.
 - **Gestion intelligente des liens** — les liens et mentions pointant vers des salons ou messages gérés sont réécrits vers leurs équivalents dans chaque langue, et les URL disposant d'alternatives `hreflang` sont remplacées par la version dans la langue cible.
@@ -151,13 +151,14 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 | Commande | Description |
 |---|---|
 | `/new-channel language:[langue] channel:<salon> group:<groupe>` | Créer un nouveau groupe de traduction. `channel` vaut le salon actuel par défaut ; `group` vaut le nom du salon par défaut |
-| `/join-channel group:[groupe] language:[langue] channel:<salon>` | Ajouter un salon à un groupe. `channel` vaut le salon actuel par défaut |
+| `/join-channel group:[groupe] language:[langue] channel:<salon>` | Ajouter un salon à un groupe. Pour un forum/média avec des pairs étiquetés dans le groupe, ouvre l’UI de correspondance des tags. `channel` vaut le salon actuel par défaut |
 | `/leave-channel group:[groupe] channel:<salon>` | Retirer un salon d'un groupe. `channel` vaut le salon actuel par défaut |
 | `/delete-group group:[groupe]` | Supprimer un groupe entier |
 | `/list-groups` | Afficher les groupes de traduction et leurs salons sur ce serveur |
 | `/add-glossary term:[terme] translation:[traduction] attribute:<attribut> always_include:<bool>` | Enregistrer une traduction préférée dans le glossaire du serveur. `attribute` est libre avec suggestions ; `always_include` vaut `false` par défaut |
 | `/list-glossary` | Afficher le glossaire du serveur |
 | `/remove-glossary term:[terme]` | Supprimer une entrée du glossaire |
+| `/edit-forum-tags group:[groupe] channel:<forum>` | Modifier les correspondances de tags forum/média pour un salon du groupe. `channel` vaut le salon actuel par défaut |
 | `/set-style group:[groupe] preset:<préréglage> custom:<instruction personnalisée>` | Définir le style de traduction d'un groupe. Spécifier `preset` ou `custom`, pas les deux |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Autoriser une source de messages automatisée sur ce serveur. Avec `source_type:bot`, `source_id` est l'ID utilisateur du bot ; avec `source_type:webhook`, c'est l'ID du webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Retirer la source de messages automatisée correspondante de la liste d'autorisation de ce serveur |
@@ -171,6 +172,7 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 - Les termes ordinaires ne sont ajoutés aux instructions système que si le message à traduire contient `term` (insensible à la casse). Les termes avec `always_include:true` sont toujours ajoutés
 - Si l'option `channel` est omise, la commande s'applique au salon dans lequel elle est exécutée
 - Types de salons pris en charge : texte, annonces, forum et média
+- Les correspondances de tags forum/média se configurent après `/join-channel` (si un pair étiqueté existe) ou avec `/edit-forum-tags`. Enregistrer avec « (aucune correspondance) » efface la paire
 
 ## Tests
 

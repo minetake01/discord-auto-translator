@@ -12,7 +12,7 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 ## Funcionalidades
 
-- **Todo permanece sincronizado** — no solo los mensajes nuevos: ediciones, eliminaciones, respuestas, mensajes reenviados, reacciones, anclajes, hilos (canales de texto / foro / multimedia) y mensajes con solo archivos adjuntos se replican en todo el grupo.
+- **Todo permanece sincronizado** — no solo los mensajes nuevos: ediciones, eliminaciones, respuestas, mensajes reenviados, reacciones, anclajes, hilos (canales de texto / foro / multimedia), etiquetas de foro asignadas y mensajes con solo archivos adjuntos se replican en todo el grupo.
 - **Los mensajes parecen enviados por su autor** — los mensajes replicados se envían mediante webhooks con el nombre y el avatar del autor original.
 - **Traducciones naturales** — Gemma 4 26B-A4B usa el nombre del canal, el tema y el historial reciente de la conversación como contexto; un glosario por servidor permite fijar las traducciones preferidas para nombres y jerga.
 - **Gestión inteligente de enlaces** — los enlaces y menciones que apuntan a canales o mensajes gestionados se reescriben hacia sus equivalentes en cada idioma, y las URL con alternativas `hreflang` se sustituyen por la versión en el idioma de destino.
@@ -151,13 +151,14 @@ Por defecto, los comandos de barra diagonal de administración solo pueden ejecu
 | Comando | Descripción |
 |---|---|
 | `/new-channel language:[idioma] channel:<canal> group:<grupo>` | Crear un nuevo grupo de traducción. `channel` usa el canal actual por defecto; `group` usa el nombre del canal por defecto |
-| `/join-channel group:[grupo] language:[idioma] channel:<canal>` | Añadir un canal a un grupo. `channel` usa el canal actual por defecto |
+| `/join-channel group:[grupo] language:[idioma] channel:<canal>` | Añadir un canal a un grupo. En foros/medios con pares etiquetados en el grupo, abre la UI de correspondencia de etiquetas. `channel` usa el canal actual por defecto |
 | `/leave-channel group:[grupo] channel:<canal>` | Eliminar un canal de un grupo. `channel` usa el canal actual por defecto |
 | `/delete-group group:[grupo]` | Eliminar un grupo completo |
 | `/list-groups` | Mostrar los grupos de traducción y sus canales en este servidor |
 | `/add-glossary term:[término] translation:[traducción] attribute:<atributo> always_include:<bool>` | Registrar una traducción preferida en el glosario del servidor. `attribute` es de texto libre con sugerencias; `always_include` es `false` por defecto |
 | `/list-glossary` | Mostrar el glosario del servidor |
 | `/remove-glossary term:[término]` | Eliminar una entrada del glosario |
+| `/edit-forum-tags group:[grupo] channel:<foro>` | Editar las correspondencias de etiquetas de foro/medios de un canal del grupo. `channel` usa el canal actual por defecto |
 | `/set-style group:[grupo] preset:<preajuste> custom:<instrucción personalizada>` | Establecer el estilo de traducción de un grupo. Especificar `preset` o `custom`, no ambos |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Permitir una fuente de mensajes automatizada en este servidor. Con `source_type:bot`, `source_id` es el ID de usuario del bot; con `source_type:webhook`, es el ID del webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Eliminar la fuente de mensajes automatizada correspondiente de la lista de permitidos de este servidor |
@@ -171,6 +172,7 @@ Por defecto, los comandos de barra diagonal de administración solo pueden ejecu
 - Los términos normales se añaden a las instrucciones del sistema solo si el mensaje a traducir contiene `term` (sin distinción de mayúsculas). Los términos con `always_include:true` siempre se añaden
 - Si se omite la opción `channel`, el comando se aplica al canal en el que se ejecutó
 - Tipos de canal admitidos: texto, anuncios, foro y multimedia
+- Las correspondencias de etiquetas de foro/medios se configuran tras `/join-channel` (si hay un par etiquetado) o con `/edit-forum-tags`. Guardar con “(sin correspondencia)” elimina el par
 
 ## Pruebas
 

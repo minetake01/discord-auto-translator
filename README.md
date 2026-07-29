@@ -12,7 +12,7 @@ Link one channel per language into a **translation group**. Every message posted
 
 ## Features
 
-- **Everything stays in sync** — not just new messages: edits, deletions, replies, forwarded messages, reactions, pins, threads (text / forum / media channels), and attachment-only messages are all mirrored across the group.
+- **Everything stays in sync** — not just new messages: edits, deletions, replies, forwarded messages, reactions, pins, threads (text / forum / media channels), mapped forum tags, and attachment-only messages are all mirrored across the group.
 - **Messages look like they came from the sender** — mirrored messages are delivered via webhooks with the original author's name and avatar.
 - **Natural translations** — Gemma 4 26B-A4B sees the channel name, topic, and recent conversation history as context, and a per-server glossary lets you enforce preferred translations for names and jargon.
 - **Smart link handling** — links and mentions pointing to managed channels or messages are rewritten to each language's counterpart, and URLs with `hreflang` alternates are swapped for the target-language version.
@@ -167,13 +167,14 @@ By default, the admin slash commands can only be run by **server administrators*
 | Command | Description |
 |---|---|
 | `/new-channel language:[lang] channel:<channel> group:<group>` | Create a new translation group. `channel` defaults to the current channel; `group` defaults to the channel name |
-| `/join-channel group:[group] language:[lang] channel:<channel>` | Add a channel to a group. `channel` defaults to the current channel |
+| `/join-channel group:[group] language:[lang] channel:<channel>` | Add a channel to a group. For forum/media channels with tagged peers in the group, opens a tag-mapping UI. `channel` defaults to the current channel |
 | `/leave-channel group:[group] channel:<channel>` | Remove a channel from a group. `channel` defaults to the current channel |
 | `/delete-group group:[group]` | Delete an entire group |
 | `/list-groups` | List translation groups and their channels for this server |
 | `/add-glossary term:[term] translation:[translation] attribute:<attribute> always_include:<bool>` | Register a preferred translation in the server glossary. `attribute` is free-form with suggestions; `always_include` defaults to `false` |
 | `/list-glossary` | List the server's glossary entries |
 | `/remove-glossary term:[term]` | Remove a glossary entry |
+| `/edit-forum-tags group:[group] channel:<forum>` | Edit forum/media tag mappings for a channel in a group. `channel` defaults to the current channel |
 | `/set-style group:[group] preset:<preset> custom:<custom>` | Set translation style for a group. Specify `preset` or `custom`, not both |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Allow an automated message source in this server. For `source_type:bot`, `source_id` is the bot user ID; for `source_type:webhook`, it is the webhook ID |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Remove the matching automated message source from this server's allowlist |
@@ -187,6 +188,7 @@ By default, the admin slash commands can only be run by **server administrators*
 - Regular terms are added to the system instructions only when the message body contains `term` (case-insensitive). Terms with `always_include:true` are always added
 - If the `channel` option is omitted, the command applies to the channel it was run in
 - Supported channel types: text, news, forum, and media
+- Forum/media tag mappings can be set after `/join-channel` (when another tagged forum/media peer exists) or with `/edit-forum-tags`. Saving with “(no mapping)” clears that pair
 
 ## Testing
 

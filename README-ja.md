@@ -12,7 +12,7 @@
 
 ## 特徴
 
-- **すべてが同期される** — 新規メッセージだけでなく、編集・削除・リプライ・転送メッセージ・リアクション・ピン留め・スレッド（テキスト / フォーラム / メディア）・添付ファイルのみのメッセージも、グループ全体にミラーリングされます。
+- **すべてが同期される** — 新規メッセージだけでなく、編集・削除・リプライ・転送メッセージ・リアクション・ピン留め・スレッド（テキスト / フォーラム / メディア）・対応付けたフォーラムタグ・添付ファイルのみのメッセージも、グループ全体にミラーリングされます。
 - **本人が投稿したように見える** — ミラーメッセージはウェブフック経由で、元の投稿者の名前とアバターで送信されます。
 - **自然な翻訳** — Gemma 4 26B-A4B はチャンネル名・トピック・直近の会話履歴を文脈として参照します。サーバー単位の用語集で、人名や専門用語の訳語を固定することもできます。
 - **リンクの賢い扱い** — 管理対象のチャンネルやメッセージへのリンク・メンションは各言語の対応先に書き換えられ、`hreflang` 代替版のある URL は対象言語版に差し替えられます。
@@ -167,13 +167,14 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 | コマンド | 説明 |
 |---|---|
 | `/new-channel language:[言語] channel:<チャンネル> group:<グループ>` | 翻訳グループを新規作成。`channel` を省略すると実行したチャンネル、`group` を省略するとチャンネル名が使われます |
-| `/join-channel group:[グループ] language:[言語] channel:<チャンネル>` | グループにチャンネルを追加。`channel` を省略すると実行したチャンネルが対象になります |
+| `/join-channel group:[グループ] language:[言語] channel:<チャンネル>` | グループにチャンネルを追加。タグ付きの他フォーラム／メディアがグループ内にある場合はタグ対応付け UI を表示。`channel` を省略すると実行したチャンネルが対象になります |
 | `/leave-channel group:[グループ] channel:<チャンネル>` | グループからチャンネルを離脱。`channel` を省略すると実行したチャンネルが対象になります |
 | `/delete-group group:[グループ]` | グループ全体を削除 |
 | `/list-groups` | このサーバーの翻訳グループとチャンネルを一覧表示 |
 | `/add-glossary term:[用語] translation:[訳] attribute:<属性> always_include:<常時使用>` | サーバー用語集に優先訳を登録。`attribute` は候補付き自由入力です。`always_include` の既定値は `false` です |
 | `/list-glossary` | サーバーの用語集を一覧表示 |
 | `/remove-glossary term:[用語]` | 用語集エントリを削除 |
+| `/edit-forum-tags group:[グループ] channel:<フォーラム>` | グループ内チャンネルのフォーラム／メディアタグ対応付けを編集。`channel` を省略すると実行したチャンネルが対象になります |
 | `/set-style group:[グループ] preset:<プリセット> custom:<カスタム指示>` | グループの翻訳スタイルを設定。`preset` か `custom` のどちらか一方を指定してください |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | このサーバーで自動送信元を許可。`source_type:bot` の `source_id` は Bot ユーザー ID、`source_type:webhook` では Webhook ID です |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | このサーバーの許可リストから一致する自動送信元を削除 |
@@ -187,6 +188,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - 通常の用語は翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけシステム指示に追加されます。`always_include:true` の用語は常に追加されます
 - `channel` オプションを省略すると、コマンドを実行したチャンネルが対象になります
 - 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア
+- フォーラム／メディアのタグ対応付けは `/join-channel` 成功時（タグ付きピアがある場合）または `/edit-forum-tags` で編集できます。「対応なし」を選んで保存するとその対応を解除します
 
 ## テスト
 

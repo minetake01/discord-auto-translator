@@ -12,7 +12,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 ## Funktionen
 
-- **Alles bleibt synchronisiert** — nicht nur neue Nachrichten: Bearbeitungen, Löschungen, Antworten, weitergeleitete Nachrichten, Reaktionen, Pins, Threads (Text- / Forum- / Medien-Channel) und Nachrichten, die nur Anhänge enthalten, werden alle in der Gruppe gespiegelt.
+- **Alles bleibt synchronisiert** — nicht nur neue Nachrichten: Bearbeitungen, Löschungen, Antworten, weitergeleitete Nachrichten, Reaktionen, Pins, Threads (Text- / Forum- / Medien-Channel), gemappte Forum-Tags und Nachrichten, die nur Anhänge enthalten, werden alle in der Gruppe gespiegelt.
 - **Nachrichten sehen aus, als kämen sie vom Absender** — gespiegelte Nachrichten werden über Webhooks mit dem Namen und Avatar des ursprünglichen Autors gesendet.
 - **Natürliche Übersetzungen** — Gemma 4 26B-A4B verwendet Channel-Name, Thema und den jüngsten Gesprächsverlauf als Kontext; ein serverseitiges Glossar erlaubt es, bevorzugte Übersetzungen für Namen und Fachbegriffe festzulegen.
 - **Intelligente Link-Behandlung** — Links und Erwähnungen, die auf verwaltete Channel oder Nachrichten zeigen, werden in die jeweiligen Entsprechungen jeder Sprache umgeschrieben; URLs mit `hreflang`-Alternativen werden durch die Zielsprachversion ersetzt.
@@ -150,13 +150,14 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 | Befehl | Beschreibung |
 |---|---|
 | `/new-channel language:[Sprache] channel:<Channel> group:<Gruppe>` | Neue Übersetzungsgruppe erstellen. `channel` ist standardmäßig der aktuelle Channel; `group` ist standardmäßig der Channel-Name |
-| `/join-channel group:[Gruppe] language:[Sprache] channel:<Channel>` | Channel zu einer Gruppe hinzufügen. `channel` ist standardmäßig der aktuelle Channel |
+| `/join-channel group:[Gruppe] language:[Sprache] channel:<Channel>` | Channel zu einer Gruppe hinzufügen. Bei Forum/Media mit getaggten Peers in der Gruppe öffnet sich die Tag-Zuordnungs-UI. `channel` ist standardmäßig der aktuelle Channel |
 | `/leave-channel group:[Gruppe] channel:<Channel>` | Channel aus einer Gruppe entfernen. `channel` ist standardmäßig der aktuelle Channel |
 | `/delete-group group:[Gruppe]` | Gesamte Gruppe löschen |
 | `/list-groups` | Übersetzungsgruppen und Channels dieses Servers anzeigen |
 | `/add-glossary term:[Begriff] translation:[Übersetzung] attribute:<Attribut> always_include:<Bool>` | Bevorzugte Übersetzung im Server-Glossar registrieren. `attribute` ist Freitext mit Vorschlägen; `always_include` ist standardmäßig `false` |
 | `/list-glossary` | Glossar des Servers anzeigen |
 | `/remove-glossary term:[Begriff]` | Glossareintrag entfernen |
+| `/edit-forum-tags group:[Gruppe] channel:<Forum>` | Forum-/Media-Tag-Zuordnungen für einen Channel in der Gruppe bearbeiten. `channel` ist standardmäßig der aktuelle Channel |
 | `/set-style group:[Gruppe] preset:<Voreinstellung> custom:<eigene Anweisung>` | Übersetzungsstil für eine Gruppe festlegen. `preset` oder `custom` angeben, nicht beides |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Eine automatisierte Nachrichtenquelle auf diesem Server zulassen. Bei `source_type:bot` ist `source_id` die Bot-Benutzer-ID, bei `source_type:webhook` die Webhook-ID |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Die entsprechende automatisierte Nachrichtenquelle aus der Zulassungsliste dieses Servers entfernen |
@@ -170,6 +171,7 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 - Normale Begriffe werden den Systemanweisungen nur hinzugefügt, wenn die zu übersetzende Nachricht `term` enthält (Groß-/Kleinschreibung ignoriert). Begriffe mit `always_include:true` werden immer hinzugefügt
 - Wird die Option `channel` weggelassen, gilt der Befehl für den Channel, in dem er ausgeführt wurde
 - Unterstützte Channel-Typen: Text, Ankündigungen, Forum und Medien
+- Forum-/Media-Tag-Zuordnungen können nach `/join-channel` (wenn ein getaggter Peer existiert) oder mit `/edit-forum-tags` bearbeitet werden. Speichern mit „(keine Zuordnung)“ entfernt das Paar
 
 ## Tests
 

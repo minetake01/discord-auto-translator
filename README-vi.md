@@ -12,7 +12,7 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 
 ## Tính năng
 
-- **Mọi thứ được đồng bộ hóa** — không chỉ tin nhắn mới: chỉnh sửa, xóa, trả lời, tin nhắn được chuyển tiếp, phản ứng, ghim, chủ đề (kênh văn bản / diễn đàn / phương tiện) và tin nhắn chỉ có tệp đính kèm đều được phản chiếu trên toàn nhóm.
+- **Mọi thứ được đồng bộ hóa** — không chỉ tin nhắn mới: chỉnh sửa, xóa, trả lời, tin nhắn được chuyển tiếp, phản ứng, ghim, chủ đề (kênh văn bản / diễn đàn / phương tiện), thẻ diễn đàn đã ánh xạ và tin nhắn chỉ có tệp đính kèm đều được phản chiếu trên toàn nhóm.
 - **Tin nhắn trông như được gửi bởi chính người gửi** — các tin nhắn phản chiếu được gửi qua webhook với tên và ảnh đại diện của tác giả gốc.
 - **Dịch thuật tự nhiên** — Gemma 4 26B-A4B sử dụng tên kênh, chủ đề và lịch sử cuộc trò chuyện gần đây làm ngữ cảnh; bảng thuật ngữ theo từng máy chủ cho phép cố định các bản dịch ưa thích cho tên riêng và thuật ngữ chuyên ngành.
 - **Xử lý liên kết thông minh** — các liên kết và lượt đề cập trỏ đến kênh hoặc tin nhắn được quản lý sẽ được viết lại thành các tương đương trong mỗi ngôn ngữ, và các URL có lựa chọn thay thế `hreflang` sẽ được thay bằng phiên bản ngôn ngữ đích.
@@ -154,13 +154,14 @@ Theo mặc định, các lệnh slash quản trị chỉ có thể được ch�
 | Lệnh | Mô tả |
 |---|---|
 | `/new-channel language:[ngôn ngữ] channel:<kênh> group:<nhóm>` | Tạo nhóm dịch thuật mới. Bỏ qua `channel` sẽ dùng kênh hiện tại; bỏ qua `group` sẽ dùng tên kênh |
-| `/join-channel group:[nhóm] language:[ngôn ngữ] channel:<kênh>` | Thêm kênh vào nhóm. Bỏ qua `channel` sẽ dùng kênh hiện tại |
+| `/join-channel group:[nhóm] language:[ngôn ngữ] channel:<kênh>` | Thêm kênh vào nhóm. Với diễn đàn/phương tiện có peer gắn thẻ trong nhóm, mở UI ánh xạ thẻ. Bỏ qua `channel` sẽ dùng kênh hiện tại |
 | `/leave-channel group:[nhóm] channel:<kênh>` | Xóa kênh khỏi nhóm. Bỏ qua `channel` sẽ dùng kênh hiện tại |
 | `/delete-group group:[nhóm]` | Xóa toàn bộ nhóm |
 | `/list-groups` | Liệt kê các nhóm dịch và kênh trên máy chủ này |
 | `/add-glossary term:[thuật ngữ] translation:[bản dịch] attribute:<thuộc tính> always_include:<bool>` | Đăng ký bản dịch ưa thích trong bảng thuật ngữ của máy chủ. `attribute` là văn bản tự do có gợi ý; `always_include` mặc định là `false` |
 | `/list-glossary` | Liệt kê bảng thuật ngữ của máy chủ |
 | `/remove-glossary term:[thuật ngữ]` | Xóa mục trong bảng thuật ngữ |
+| `/edit-forum-tags group:[nhóm] channel:<diễn đàn>` | Chỉnh ánh xạ thẻ diễn đàn/phương tiện cho một kênh trong nhóm. Bỏ qua `channel` sẽ dùng kênh hiện tại |
 | `/set-style group:[nhóm] preset:<preset> custom:<chỉ dẫn tùy chỉnh>` | Đặt phong cách dịch cho nhóm. Chỉ định `preset` hoặc `custom`, không phải cả hai |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Cho phép nguồn tin nhắn tự động trong máy chủ này. Với `source_type:bot`, `source_id` là ID người dùng bot; với `source_type:webhook`, đó là ID webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Xóa nguồn tin nhắn tự động tương ứng khỏi danh sách cho phép của máy chủ này |
@@ -174,6 +175,7 @@ Theo mặc định, các lệnh slash quản trị chỉ có thể được ch�
 - Các thuật ngữ thông thường chỉ được thêm vào hướng dẫn hệ thống khi nội dung tin nhắn cần dịch có chứa `term` (không phân biệt chữ hoa/thường). Các thuật ngữ có `always_include:true` luôn được thêm vào
 - Nếu tùy chọn `channel` bị bỏ qua, lệnh sẽ áp dụng cho kênh nơi lệnh được chạy
 - Các loại kênh được hỗ trợ: văn bản, tin tức, diễn đàn và phương tiện
+- Ánh xạ thẻ diễn đàn/phương tiện có thể đặt sau `/join-channel` (khi có peer gắn thẻ) hoặc bằng `/edit-forum-tags`. Lưu với “(không ánh xạ)” sẽ xóa cặp đó
 
 ## Kiểm thử
 

@@ -12,7 +12,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 ## Funcionalidades
 
-- **Tudo fica sincronizado** — não só novas mensagens: edições, exclusões, respostas, mensagens encaminhadas, reações, fixações, tópicos (canais de texto / fórum / mídia) e mensagens com apenas anexos são todos espelhados pelo grupo.
+- **Tudo fica sincronizado** — não só novas mensagens: edições, exclusões, respostas, mensagens encaminhadas, reações, fixações, tópicos (canais de texto / fórum / mídia), tags de fórum mapeadas e mensagens com apenas anexos são todos espelhados pelo grupo.
 - **As mensagens parecem enviadas pelo remetente** — as mensagens espelhadas são entregues via webhooks com o nome e avatar do autor original.
 - **Traduções naturais** — o Gemma 4 26B-A4B usa o nome do canal, o tópico e o histórico recente de conversa como contexto; um glossário por servidor permite fixar traduções preferidas para nomes e jargões.
 - **Tratamento inteligente de links** — links e menções apontando para canais ou mensagens gerenciados são reescritos para seus equivalentes em cada idioma, e URLs com alternativas `hreflang` são substituídas pela versão no idioma de destino.
@@ -151,13 +151,14 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 | Comando | Descrição |
 |---|---|
 | `/new-channel language:[idioma] channel:<canal> group:<grupo>` | Criar um novo grupo de tradução. `channel` usa o canal atual por padrão; `group` usa o nome do canal por padrão |
-| `/join-channel group:[grupo] language:[idioma] channel:<canal>` | Adicionar um canal a um grupo. `channel` usa o canal atual por padrão |
+| `/join-channel group:[grupo] language:[idioma] channel:<canal>` | Adicionar um canal a um grupo. Em fórum/mídia com pares etiquetados no grupo, abre a UI de mapeamento de tags. `channel` usa o canal atual por padrão |
 | `/leave-channel group:[grupo] channel:<canal>` | Remover um canal de um grupo. `channel` usa o canal atual por padrão |
 | `/delete-group group:[grupo]` | Excluir um grupo inteiro |
 | `/list-groups` | Listar os grupos de tradução e seus canais neste servidor |
 | `/add-glossary term:[termo] translation:[tradução] attribute:<atributo> always_include:<bool>` | Registrar uma tradução preferida no glossário do servidor. `attribute` é texto livre com sugestões; `always_include` tem padrão `false` |
 | `/list-glossary` | Listar o glossário do servidor |
 | `/remove-glossary term:[termo]` | Remover uma entrada do glossário |
+| `/edit-forum-tags group:[grupo] channel:<fórum>` | Editar o mapeamento de tags de fórum/mídia de um canal no grupo. `channel` usa o canal atual por padrão |
 | `/set-style group:[grupo] preset:<predefinição> custom:<instrução personalizada>` | Definir o estilo de tradução de um grupo. Especifique `preset` ou `custom`, não ambos |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Permitir uma fonte de mensagens automatizada neste servidor. Com `source_type:bot`, `source_id` é o ID de usuário do bot; com `source_type:webhook`, é o ID do webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Remover a fonte de mensagens automatizada correspondente da lista de permissões deste servidor |
@@ -171,6 +172,7 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 - Termos normais são adicionados às instruções do sistema apenas quando o corpo da mensagem a traduzir contém `term` (sem distinção de maiúsculas). Termos com `always_include:true` são sempre adicionados
 - Se a opção `channel` for omitida, o comando se aplica ao canal em que foi executado
 - Tipos de canal suportados: texto, notícias, fórum e mídia
+- O mapeamento de tags de fórum/mídia pode ser definido após `/join-channel` (quando há um par etiquetado) ou com `/edit-forum-tags`. Salvar com “(sem mapeamento)” remove o par
 
 ## Testes
 

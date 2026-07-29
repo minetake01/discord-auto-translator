@@ -12,7 +12,7 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
 
 ## Fitur
 
-- **Semuanya tetap tersinkronisasi** — bukan hanya pesan baru: pengeditan, penghapusan, balasan, pesan yang diteruskan, reaksi, pin, utas (saluran teks / forum / media), dan pesan yang hanya berisi lampiran semuanya dicerminkan ke seluruh grup.
+- **Semuanya tetap tersinkronisasi** — bukan hanya pesan baru: pengeditan, penghapusan, balasan, pesan yang diteruskan, reaksi, pin, utas (saluran teks / forum / media), tag forum yang dipetakan, dan pesan yang hanya berisi lampiran semuanya dicerminkan ke seluruh grup.
 - **Pesan terlihat seperti dikirim langsung oleh pengirimnya** — pesan yang dicerminkan dikirim melalui webhook dengan nama dan avatar penulis asli.
 - **Terjemahan yang natural** — Gemma 4 26B-A4B menggunakan nama saluran, topik, dan riwayat percakapan terkini sebagai konteks; glosarium per server memungkinkan Anda menetapkan terjemahan pilihan untuk nama dan istilah khusus.
 - **Penanganan tautan yang cerdas** — tautan dan mention yang mengarah ke saluran atau pesan yang dikelola ditulis ulang ke padanannya di setiap bahasa, dan URL dengan alternatif `hreflang` diganti dengan versi dalam bahasa target.
@@ -151,13 +151,14 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 | Perintah | Deskripsi |
 |---|---|
 | `/new-channel language:[bahasa] channel:<saluran> group:<grup>` | Buat grup terjemahan baru. `channel` default ke saluran saat ini; `group` default ke nama saluran |
-| `/join-channel group:[grup] language:[bahasa] channel:<saluran>` | Tambahkan saluran ke grup. `channel` default ke saluran saat ini |
+| `/join-channel group:[grup] language:[bahasa] channel:<saluran>` | Tambahkan saluran ke grup. Untuk forum/media dengan peer ber-tag di grup, membuka UI pemetaan tag. `channel` default ke saluran saat ini |
 | `/leave-channel group:[grup] channel:<saluran>` | Hapus saluran dari grup. `channel` default ke saluran saat ini |
 | `/delete-group group:[grup]` | Hapus seluruh grup |
 | `/list-groups` | Tampilkan grup terjemahan dan salurannya di server ini |
 | `/add-glossary term:[istilah] translation:[terjemahan] attribute:<atribut> always_include:<bool>` | Daftarkan terjemahan pilihan di glosarium server. `attribute` adalah teks bebas dengan saran; `always_include` defaultnya `false` |
 | `/list-glossary` | Tampilkan glosarium server |
 | `/remove-glossary term:[istilah]` | Hapus entri glosarium |
+| `/edit-forum-tags group:[grup] channel:<forum>` | Edit pemetaan tag forum/media untuk saluran dalam grup. `channel` default ke saluran saat ini |
 | `/set-style group:[grup] preset:<preset> custom:<instruksi kustom>` | Atur gaya terjemahan untuk grup. Tentukan `preset` atau `custom`, bukan keduanya |
 | `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Izinkan sumber pesan otomatis di server ini. Untuk `source_type:bot`, `source_id` adalah ID pengguna bot; untuk `source_type:webhook`, nilainya adalah ID webhook |
 | `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Hapus sumber pesan otomatis yang cocok dari daftar izin server ini |
@@ -171,6 +172,7 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 - Istilah biasa hanya ditambahkan ke instruksi sistem jika teks pesan yang akan diterjemahkan mengandung `term` (tidak peka huruf besar/kecil). Istilah dengan `always_include:true` selalu ditambahkan
 - Jika opsi `channel` dihilangkan, perintah berlaku untuk saluran tempat perintah dijalankan
 - Jenis saluran yang didukung: teks, berita, forum, dan media
+- Pemetaan tag forum/media dapat diatur setelah `/join-channel` (jika ada peer ber-tag) atau dengan `/edit-forum-tags`. Menyimpan dengan “(tanpa pemetaan)” menghapus pasangan tersebut
 
 ## Pengujian
 
