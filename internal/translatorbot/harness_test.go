@@ -20,6 +20,7 @@ type fakeDiscordAPI struct {
 	pinCalls          []pinCall
 	edits             []threadEditCall
 	deletes           []string
+	channels          map[string]*discordgo.Channel
 	guildNames        map[string]string
 	guildDescriptions map[string]string
 	channelNames      map[string]string
@@ -46,10 +47,12 @@ type threadCall struct {
 	name        string
 	content     string
 	embeds      []*discordgo.MessageEmbed
+	appliedTags []string
 }
 type threadEditCall struct {
-	threadID string
-	name     string
+	threadID    string
+	name        string
+	appliedTags *[]string
 }
 type webhookEditCall struct {
 	messageID string
@@ -135,13 +138,13 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
 	f.pinCalls = append(f.pinCalls, pinCall{channelID: channelID, messageID: messageID, pinned: false})
 	return nil
 }
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (threadID, initialMessageID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (threadID, initialMessageID string, err error) {
 	f.nextID++
 	threadID = fmt.Sprintf("thread-%d", f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds, appliedTags: append([]string(nil), appliedTags...)})
 	return threadID, initialMessageID, nil
 }
 func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
@@ -149,13 +152,26 @@ func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name stri
 	f.threads = append(f.threads, threadCall{channelID: channelID, messageID: messageID, name: name})
 	return fmt.Sprintf("thread-%d", f.nextID), nil
 }
-func (f *fakeDiscordAPI) EditThread(threadID, name string) error {
-	f.edits = append(f.edits, threadEditCall{threadID: threadID, name: name})
+func (f *fakeDiscordAPI) EditThread(threadID, name string, appliedTags *[]string) error {
+	call := threadEditCall{threadID: threadID, name: name}
+	if appliedTags != nil {
+		tags := append([]string(nil), (*appliedTags)...)
+		call.appliedTags = &tags
+	}
+	f.edits = append(f.edits, call)
 	return nil
 }
 func (f *fakeDiscordAPI) DeleteThread(threadID string) error {
 	f.deletes = append(f.deletes, threadID)
 	return nil
+}
+func (f *fakeDiscordAPI) Channel(channelID string) (*discordgo.Channel, error) {
+	if f.channels != nil {
+		if ch, ok := f.channels[channelID]; ok {
+			return ch, nil
+		}
+	}
+	return &discordgo.Channel{ID: channelID}, nil
 }
 
 type echoTranslator struct {

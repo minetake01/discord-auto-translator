@@ -54,9 +54,10 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 | コマンド | 説明 |
 |---|---|
 | `/new-channel language:[言語] [channel:[チャンネル]] [group:[グループ名]]` | 翻訳グループを新規作成して最初のチャンネルを登録する |
-| `/join-channel group:[グループ] language:[言語] [channel:[チャンネル]]` | 既存グループに追加チャンネルを参加させる |
+| `/join-channel group:[グループ] language:[言語] [channel:[チャンネル]]` | 既存グループに追加チャンネルを参加させる（フォーラム／メディアで他にタグ付きピアがある場合はタグ対応付け UI を表示） |
 | `/leave-channel group:[グループ] [channel:[チャンネル]]` | グループからチャンネルを退出させる |
 | `/delete-group group:[グループ]` | グループ全体を削除する |
+| `/edit-forum-tags group:[グループ] [channel:[フォーラム]]` | フォーラム／メディアのタグ対応付けを編集する |
 | `/set-style group:[グループ] [preset:[プリセット]] [custom:[カスタム指示]]` | 翻訳グループの翻訳スタイルを設定する（プリセットまたはカスタム指示は排他） |
 | `/add-glossary term:[用語] translation:[訳] attribute:[属性] always_include:[常時使用]` | サーバー用語集に優先訳を登録する（`attribute` は候補付き自由入力、`always_include` の既定値は `false`） |
 | `/list-glossary` | サーバーの用語集を一覧表示する |
@@ -65,6 +66,7 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 - `language` と `group` オプションはオートコンプリートに対応しています。
 - `channel` を省略した場合、コマンドを実行したチャンネルが対象になります。
 - 対応チャンネルタイプ: テキスト・ニュース・フォーラム・メディア
+- フォーラム／メディアのタグ対応付けは `/join-channel` 成功時（ピアがある場合）および `/edit-forum-tags` のエフェメラル Select Menu で編集する。相手タグで「対応なし」を選んで保存するとその対応を削除する
 - 用語集はサーバーごとに最大 50 件まで登録可能
 
 #### 翻訳スタイル（グループ単位）
@@ -200,10 +202,11 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 |---|---|
 | テキスト/ニュースチャンネルのメッセージから作成されたスレッド | ターゲットにも同じ親メッセージから `CreateThreadFromMessage` で作成。親メッセージリンクが未存在の場合は `THREAD_STARTER_MESSAGE` まで遅延 |
 | スタンドアロンスレッド（メッセージなし） | ターゲットに `ThreadStart` で作成 |
-| フォーラム/メディアポスト | タイトルと初期本文を1回の翻訳リクエストで翻訳して `ForumThreadStart` で作成 |
+| フォーラム/メディアポスト | タイトルと初期本文を1回の翻訳リクエストで翻訳して `ForumThreadStart` で作成。ソースの `applied_tags` は `forum_tag_maps` で対応付けたタグ ID に変換して付与する。未マップのタグは省略。宛先が `REQUIRE_TAG` でマップ結果が空のときはそのターゲット作成を失敗させる |
 | フォーラムソース → テキストターゲット | テキストターゲットにスレッドを作成後、ウェブフックで最初のメッセージを送信 |
 | スレッド内メッセージ | ウェブフック実行時に `thread_id` を指定して対応スレッドへ投稿 |
 | スレッド名変更 | 翻訳した名前で対象スレッドを `EditThread` |
+| フォーラムタグ変更 | `THREAD_UPDATE` の `applied_tags` 差分をマップして対象スレッドへ同期。マップ後の集合が既存と同一なら no-op |
 | スレッド削除 | 対象スレッドを `DeleteThread` し DB のリンクを削除 |
 
 スレッド作成処理は `sync.Mutex` でシリアライズされ、重複作成を防ぎます。スレッド作成時のタイトルと初期本文は構造化レスポンス（`name` / `message`）でまとめて翻訳し、投票がある場合だけ別リクエストにします。名前変更はタイトルのみの既存翻訳パスを使います。
@@ -390,6 +393,18 @@ thread_links (
     PRIMARY KEY (group_id, source_thread_id, target_channel_id)
 )
 
+-- フォーラム/メディアタグのチャンネル間対応（無向。保存時に channel_a_id < channel_b_id へ正規化）
+forum_tag_maps (
+    guild_id TEXT,
+    group_id TEXT,
+    channel_a_id TEXT,
+    tag_a_id TEXT,
+    channel_b_id TEXT,
+    tag_b_id TEXT,
+    PRIMARY KEY (guild_id, group_id, channel_a_id, tag_a_id, channel_b_id),
+    UNIQUE (guild_id, group_id, channel_b_id, tag_b_id, channel_a_id)
+)
+
 -- ピン留め状態（エコー防止用）
 pin_states (
     channel_id TEXT,
@@ -425,10 +440,12 @@ Discordゲートウェイ
         ├── InteractionCreate (スラッシュコマンド)
         │       └── CommandHandler.Handle
         │               ├── /new-channel  → Store.CreateGroupWithChannel
-        │               ├── /join-channel → Store.JoinChannel
+        │               ├── /join-channel → Store.JoinChannel（フォーラム時はタグ UI）
         │               ├── /leave-channel → Store.LeaveChannel
         │               ├── /delete-group → Store.DeleteGroup
+        │               ├── /edit-forum-tags → タグ対応付け UI
         │               ├── /set-style → Store.SetGroupStyle
+        │               ├── MessageComponent (ftm:*) → forum tag map upsert/delete
         │               ├── /add-glossary → Store.UpsertGlossaryEntry
         │               ├── /list-glossary → Store.ListGlossaryEntries
         │               └── /remove-glossary → Store.RemoveGlossaryEntry
@@ -443,8 +460,8 @@ Discordゲートウェイ
         ├── MessageUpdate → Translate → EditWebhook
         ├── MessageDelete → DeleteWebhook
         ├── MessageReactionAdd/Remove → SyncReaction
-        ├── ThreadCreate → SyncThreadCreateFromGateway
-        ├── ThreadUpdate → SyncThreadUpdate（名前変更のみ）
+        ├── ThreadCreate → SyncThreadCreateFromGateway（applied_tags 含む）
+        ├── ThreadUpdate → SyncThreadUpdate（名前および applied_tags）
         └── ThreadDelete → SyncThreadDelete
 ```
 

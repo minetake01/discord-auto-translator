@@ -29,10 +29,11 @@ type DiscordAPI interface {
 	RemoveOwnReaction(channelID, messageID, emoji string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
-	CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (threadID, initialMessageID string, err error)
+	CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (threadID, initialMessageID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
-	EditThread(threadID, name string) error
+	EditThread(threadID, name string, appliedTags *[]string) error
 	DeleteThread(threadID string) error
+	Channel(channelID string) (*discordgo.Channel, error)
 }
 
 type WebhookSend struct {
@@ -257,7 +258,7 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
-func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
+func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
 		if strings.TrimSpace(initialMessage) == "" && len(embeds) == 0 {
 			initialMessage = name
@@ -266,6 +267,7 @@ func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, init
 		t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
 			Name:                name,
 			AutoArchiveDuration: 1440,
+			AppliedTags:         appliedTags,
 		}, message)
 		if err != nil {
 			return "", "", err
@@ -295,12 +297,23 @@ func (d DiscordGoAPI) CreateThreadFromMessage(channelID, messageID, name string)
 	return t.ID, nil
 }
 
-func (d DiscordGoAPI) EditThread(threadID, name string) error {
-	_, err := d.session.ChannelEdit(threadID, &discordgo.ChannelEdit{Name: name})
+func (d DiscordGoAPI) EditThread(threadID, name string, appliedTags *[]string) error {
+	edit := &discordgo.ChannelEdit{}
+	if name != "" {
+		edit.Name = name
+	}
+	if appliedTags != nil {
+		edit.AppliedTags = appliedTags
+	}
+	_, err := d.session.ChannelEdit(threadID, edit)
 	return err
 }
 
 func (d DiscordGoAPI) DeleteThread(threadID string) error {
 	_, err := d.session.ChannelDelete(threadID)
 	return err
+}
+
+func (d DiscordGoAPI) Channel(channelID string) (*discordgo.Channel, error) {
+	return d.session.Channel(channelID)
 }

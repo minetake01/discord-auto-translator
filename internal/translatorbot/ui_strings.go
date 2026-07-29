@@ -80,6 +80,19 @@ const (
 	uiKeyNoAllowedSources        uiKey = "noAllowedSources"
 	uiKeyAllowedSourcesHeader    uiKey = "allowedSourcesHeader"
 	uiKeyAllowedSourcesTruncated uiKey = "allowedSourcesTruncated"
+
+	uiKeyForumTagMapHeader         uiKey = "forumTagMapHeader"
+	uiKeyForumTagMapNone           uiKey = "forumTagMapNone"
+	uiKeyForumTagMapLine           uiKey = "forumTagMapLine"
+	uiKeyForumTagMapSelectPeer     uiKey = "forumTagMapSelectPeer"
+	uiKeyForumTagMapSelectFocusTag uiKey = "forumTagMapSelectFocusTag"
+	uiKeyForumTagMapSelectPeerTag  uiKey = "forumTagMapSelectPeerTag"
+	uiKeyForumTagMapNoMapping      uiKey = "forumTagMapNoMapping"
+	uiKeyForumTagMapSave           uiKey = "forumTagMapSave"
+	uiKeyForumTagMapDone           uiKey = "forumTagMapDone"
+	uiKeyForumTagMapFinished       uiKey = "forumTagMapFinished"
+	uiKeyForumTagMapNeedForum      uiKey = "forumTagMapNeedForum"
+	uiKeyForumTagMapNoPeers        uiKey = "forumTagMapNoPeers"
 )
 
 // uiStrings maps a supported UI language to its full message catalog.
@@ -158,6 +171,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "No bot or webhook sources are allowed in this server.",
 		uiKeyAllowedSourcesHeader:    "Allowed message sources (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(remaining sources omitted)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"ja": {
 		uiKeyViewOriginalLink:       "原文メッセージへ移動",
@@ -231,6 +257,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "このサーバーでは bot または webhook ソースが許可されていません。",
 		uiKeyAllowedSourcesHeader:    "許可済みメッセージソース (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n（残りのソースは表示を省略しました）",
+
+		uiKeyForumTagMapHeader: "タグ対応付け: <#%[1]s> ↔ <#%[2]s>\n現在の対応:",
+		uiKeyForumTagMapNone: "(なし)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "相手のフォーラム/メディア",
+		uiKeyForumTagMapSelectFocusTag: "このチャンネルのタグ",
+		uiKeyForumTagMapSelectPeerTag: "相手チャンネルのタグ",
+		uiKeyForumTagMapNoMapping: "(対応なし)",
+		uiKeyForumTagMapSave: "対応を保存",
+		uiKeyForumTagMapDone: "完了",
+		uiKeyForumTagMapFinished: "フォーラムタグの対応付けを終了しました。",
+		uiKeyForumTagMapNeedForum: "グループに参加済みのフォーラムまたはメディアチャンネルを指定してください。",
+		uiKeyForumTagMapNoPeers: "このグループに、タグを持つ他のフォーラム/メディアチャンネルがありません。",
 	},
 	"zh-CN": {
 		uiKeyViewOriginalLink:       "前往原文消息",
@@ -304,6 +343,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "此服务器未允许任何 bot 或 webhook 来源。",
 		uiKeyAllowedSourcesHeader:    "已允许的消息来源 (%[1]d)：",
 		uiKeyAllowedSourcesTruncated: "\n（已省略其余来源）",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"zh-TW": {
 		uiKeyViewOriginalLink:       "前往原文訊息",
@@ -377,6 +429,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "此伺服器未允許任何 bot 或 webhook 來源。",
 		uiKeyAllowedSourcesHeader:    "已允許的訊息來源 (%[1]d)：",
 		uiKeyAllowedSourcesTruncated: "\n（其餘來源已省略）",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"ko": {
 		uiKeyViewOriginalLink:       "원문 메시지로 이동",
@@ -450,6 +515,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "이 서버에는 허용된 bot 또는 webhook 소스가 없습니다.",
 		uiKeyAllowedSourcesHeader:    "허용된 메시지 소스 (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(나머지 소스 생략)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"fr": {
 		uiKeyViewOriginalLink:       "Aller au message original",
@@ -523,6 +601,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Aucune source bot ou webhook n’est autorisée sur ce serveur.",
 		uiKeyAllowedSourcesHeader:    "Sources de messages autorisées (%[1]d) :",
 		uiKeyAllowedSourcesTruncated: "\n(sources restantes omises)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"de": {
 		uiKeyViewOriginalLink:       "Zur Originalnachricht",
@@ -596,6 +687,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Auf diesem Server sind keine Bot- oder Webhook-Quellen erlaubt.",
 		uiKeyAllowedSourcesHeader:    "Erlaubte Nachrichtenquellen (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(weitere Quellen ausgelassen)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"es": {
 		uiKeyViewOriginalLink:       "Ir al mensaje original",
@@ -669,6 +773,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "No hay orígenes bot o webhook permitidos en este servidor.",
 		uiKeyAllowedSourcesHeader:    "Orígenes de mensajes permitidos (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(se omitieron los orígenes restantes)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"pt-BR": {
 		uiKeyViewOriginalLink:       "Ir para a mensagem original",
@@ -742,6 +859,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Nenhuma origem bot ou webhook é permitida neste servidor.",
 		uiKeyAllowedSourcesHeader:    "Origens de mensagens permitidas (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(demais origens omitidas)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"it": {
 		uiKeyViewOriginalLink:       "Vai al messaggio originale",
@@ -815,6 +945,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Nessuna origine bot o webhook è consentita in questo server.",
 		uiKeyAllowedSourcesHeader:    "Origini messaggio consentite (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(altre origini omesse)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"id": {
 		uiKeyViewOriginalLink:       "Buka pesan asli",
@@ -888,6 +1031,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Tidak ada sumber bot atau webhook yang diizinkan di server ini.",
 		uiKeyAllowedSourcesHeader:    "Sumber pesan yang diizinkan (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(sumber lainnya dihilangkan)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"th": {
 		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
@@ -961,6 +1117,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "ไม่มีแหล่งที่มา bot หรือ webhook ที่ได้รับอนุญาตในเซิร์ฟเวอร์นี้",
 		uiKeyAllowedSourcesHeader:    "แหล่งที่มาของข้อความที่อนุญาต (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(ละแหล่งที่มาที่เหลือ)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 	"vi": {
 		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
@@ -1034,6 +1203,19 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyNoAllowedSources:        "Không có nguồn bot hoặc webhook nào được cho phép trong máy chủ này.",
 		uiKeyAllowedSourcesHeader:    "Nguồn tin nhắn được cho phép (%[1]d):",
 		uiKeyAllowedSourcesTruncated: "\n(đã lược bỏ các nguồn còn lại)",
+
+		uiKeyForumTagMapHeader: "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
+		uiKeyForumTagMapNone: "(none)",
+		uiKeyForumTagMapLine: "• %[1]s → %[2]s",
+		uiKeyForumTagMapSelectPeer: "Peer forum/media channel",
+		uiKeyForumTagMapSelectFocusTag: "Tag on this channel",
+		uiKeyForumTagMapSelectPeerTag: "Tag on peer channel",
+		uiKeyForumTagMapNoMapping: "(no mapping)",
+		uiKeyForumTagMapSave: "Save mapping",
+		uiKeyForumTagMapDone: "Done",
+		uiKeyForumTagMapFinished: "Finished editing forum tag mappings.",
+		uiKeyForumTagMapNeedForum: "Specify a forum or media channel that has joined the group.",
+		uiKeyForumTagMapNoPeers: "No other forum/media channels with tags are available in this group.",
 	},
 }
 

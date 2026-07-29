@@ -627,6 +627,102 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	}
 }
 
+func TestForumTagMapUpsertLookupAndDelete(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "forum-ja", ChannelType: 15, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: "forum-en", ChannelType: 15, Language: "en", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "forum-ja", "tag-ja-1", "forum-en", "tag-en-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "forum-en", "tag-en-2", "forum-ja", "tag-ja-2"); err != nil {
+		t.Fatal(err)
+	}
+
+	forward, err := s.ForumTagMapsBetween(ctx, "g1", "team", "forum-ja", "forum-en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forward["tag-ja-1"] != "tag-en-1" || forward["tag-ja-2"] != "tag-en-2" {
+		t.Fatalf("unexpected forward map: %#v", forward)
+	}
+	reverse, err := s.ForumTagMapsBetween(ctx, "g1", "team", "forum-en", "forum-ja")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reverse["tag-en-1"] != "tag-ja-1" || reverse["tag-en-2"] != "tag-ja-2" {
+		t.Fatalf("unexpected reverse map: %#v", reverse)
+	}
+
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "forum-ja", "tag-ja-1", "forum-en", "tag-en-9"); err != nil {
+		t.Fatal(err)
+	}
+	forward, err = s.ForumTagMapsBetween(ctx, "g1", "team", "forum-ja", "forum-en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forward["tag-ja-1"] != "tag-en-9" {
+		t.Fatalf("upsert did not replace: %#v", forward)
+	}
+
+	if err := s.DeleteForumTagMap(ctx, "g1", "team", "forum-ja", "tag-ja-1", "forum-en"); err != nil {
+		t.Fatal(err)
+	}
+	forward, err = s.ForumTagMapsBetween(ctx, "g1", "team", "forum-ja", "forum-en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := forward["tag-ja-1"]; ok {
+		t.Fatalf("deleted mapping still present: %#v", forward)
+	}
+	if forward["tag-ja-2"] != "tag-en-2" {
+		t.Fatalf("unrelated mapping removed: %#v", forward)
+	}
+}
+
+func TestLeaveChannelRemovesForumTagMaps(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "forum-ja", ChannelType: 15, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: "forum-en", ChannelType: 15, Language: "en", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "forum-ja", "tag-ja-1", "forum-en", "tag-en-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LeaveChannel(ctx, "g1", "team", "forum-en"); err != nil {
+		t.Fatal(err)
+	}
+	forward, err := s.ForumTagMapsBetween(ctx, "g1", "team", "forum-ja", "forum-en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(forward) != 0 {
+		t.Fatalf("forum tag maps were not removed: %#v", forward)
+	}
+}
+
+func TestMapAppliedForumTags(t *testing.T) {
+	mapping := map[string]string{"a": "x", "b": "y"}
+	got := MapAppliedForumTags(mapping, []string{"a", "missing", "b", "a"})
+	if len(got) != 2 || got[0] != "x" || got[1] != "y" {
+		t.Fatalf("unexpected mapped tags: %#v", got)
+	}
+	if got := MapAppliedForumTags(nil, []string{"a"}); got != nil {
+		t.Fatalf("want nil, got %#v", got)
+	}
+}
+
 func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

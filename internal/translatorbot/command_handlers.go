@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -15,10 +16,18 @@ type CommandHandler struct {
 	api   DiscordAPI
 	// respond delivers the interaction response; replaced in tests.
 	respond func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
+
+	tagUIMu sync.Mutex
+	tagUI   map[string]*forumTagUISession
 }
 
 func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
-	return &CommandHandler{store: store, api: api, respond: respondInteraction}
+	return &CommandHandler{
+		store:   store,
+		api:     api,
+		respond: respondInteraction,
+		tagUI:   make(map[string]*forumTagUISession),
+	}
 }
 
 // commandLocale resolves the invoking user's Discord client locale to a
@@ -33,6 +42,13 @@ func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCre
 }
 
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	if i.Type == discordgo.InteractionMessageComponent {
+		data := i.MessageComponentData()
+		if strings.HasPrefix(data.CustomID, "ftm:") {
+			h.handleForumTagComponent(s, i)
+		}
+		return
+	}
 	if i.Type != discordgo.InteractionApplicationCommand && i.Type != discordgo.InteractionApplicationCommandAutocomplete {
 		return
 	}
@@ -70,6 +86,8 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleRemoveGlossary(s, i, data)
 	case "set-style":
 		h.handleSetStyle(s, i, data)
+	case editForumTagsCommand:
+		h.handleEditForumTags(s, i, data)
 	case botWhitelistCommandName:
 		h.handleBotWhitelist(s, i, data)
 	}
@@ -217,7 +235,7 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 		h.replyGroupError(s, i, "join-channel", groupID, err)
 		return
 	}
-	h.reply(s, i, uiKeyChannelJoined, groupID, ch.ID, language)
+	h.maybeOpenForumTagUIAfterJoin(s, i, groupID, ch, language)
 }
 
 func (h *CommandHandler) handleLeaveChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {

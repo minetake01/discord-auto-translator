@@ -88,6 +88,17 @@ func Commands() []*discordgo.ApplicationCommand {
 			},
 		},
 		{
+			Name:        editForumTagsCommand,
+			Description: "Edit forum/media tag mappings for a channel in a translation group",
+			Options: []*discordgo.ApplicationCommandOption{
+				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
+				{Name: "channel", Description: "Forum or media channel to edit", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: []discordgo.ChannelType{
+					discordgo.ChannelTypeGuildForum,
+					discordgo.ChannelTypeGuildMedia,
+				}},
+			},
+		},
+		{
 			Name:        botWhitelistCommandName,
 			Description: "Manage allowed bot and webhook sources for this server",
 			Options: []*discordgo.ApplicationCommandOption{
