@@ -185,18 +185,20 @@ func main() {
 		if t.Channel == nil || !t.NewlyCreated || t.OwnerID == s.State.User.ID || t.ParentID == "" {
 			return
 		}
-		if err := service.SyncThreadCreateFromGateway(context.Background(), t.GuildID, t.ParentID, t.ID, t.Name); err != nil {
+		if err := service.SyncThreadCreateFromGateway(context.Background(), t.GuildID, t.ParentID, t.ID, t.Name, t.AppliedTags); err != nil {
 			log.Printf("thread create sync: %v", err)
 		}
 	})
 	dg.AddHandler(func(s *discordgo.Session, t *discordgo.ThreadUpdate) {
-		if t.Channel == nil || t.Name == "" {
+		if t.Channel == nil {
 			return
 		}
-		if t.BeforeUpdate != nil && t.BeforeUpdate.Name == t.Name {
+		nameChanged := t.Name != "" && (t.BeforeUpdate == nil || t.BeforeUpdate.Name != t.Name)
+		tagsChanged := t.BeforeUpdate == nil || !translatorbot.ForumTagSetsEqual(t.BeforeUpdate.AppliedTags, t.AppliedTags)
+		if !nameChanged && !tagsChanged {
 			return
 		}
-		if err := service.SyncThreadUpdate(context.Background(), t.GuildID, t.ID, t.Name); err != nil {
+		if err := service.SyncThreadUpdate(context.Background(), t.GuildID, t.ID, t.Name, t.AppliedTags, nameChanged, tagsChanged); err != nil {
 			log.Printf("thread update sync: %v", err)
 		}
 	})

@@ -60,6 +60,28 @@ func TestCommandDefaultPermissions(t *testing.T) {
 	}
 }
 
+func TestEditForumTagsCommandDefinition(t *testing.T) {
+	var found *discordgo.ApplicationCommand
+	for _, command := range Commands() {
+		if command.Name == editForumTagsCommand {
+			found = command
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("missing edit-forum-tags command")
+	}
+	if found.DefaultMemberPermissions == nil || *found.DefaultMemberPermissions != discordgo.PermissionAdministrator {
+		t.Fatalf("permissions: %v", found.DefaultMemberPermissions)
+	}
+	if len(found.Options) != 2 || found.Options[0].Name != "group" || !found.Options[0].Required {
+		t.Fatalf("options: %#v", found.Options)
+	}
+	if found.Options[1].Name != "channel" || found.Options[1].Required {
+		t.Fatalf("channel option: %#v", found.Options[1])
+	}
+}
+
 func TestSourceAllowlistCommandDefinitions(t *testing.T) {
 	var whitelist *discordgo.ApplicationCommand
 	for _, command := range Commands() {

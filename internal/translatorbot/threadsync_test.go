@@ -19,7 +19,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].name != "[en] topic" {
@@ -93,7 +93,7 @@ func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
@@ -117,7 +117,7 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000006", "topic"); err != nil {
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000006", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 	if len(discord.threads) != 0 {
@@ -185,7 +185,7 @@ func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
@@ -212,10 +212,10 @@ func TestSyncThreadCreateIsIdempotent(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +239,7 @@ func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000006", "議題"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000006", "議題", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -268,7 +268,7 @@ func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "議題"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "議題", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -377,11 +377,11 @@ func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル"); err != nil {
+	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル", nil, true, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -400,7 +400,7 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
-	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic"); err != nil {
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
@@ -451,7 +451,7 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 		}
 	}
 
-	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル"); err != nil {
+	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル", nil, true, false); err != nil {
 		t.Fatal(err)
 	}
 
@@ -533,5 +533,103 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 	}
 	if len(discord.sent) != 1 || discord.sent[0].Content != "<@123> `example` <:wave:456>" {
 		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+func TestSyncThreadCreateAppliesMappedForumTags(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		channels: map[string]*discordgo.Channel{
+			"en": {ID: "en", Type: discordgo.ChannelTypeGuildForum},
+		},
+	}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertForumTagMap(ctx, "guild", "g", "ja", "tag-ja", "en", "tag-en"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "議題", []string{"tag-ja", "unmapped"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0].appliedTags; len(got) != 1 || got[0] != "tag-en" {
+		t.Fatalf("applied tags: %#v", got)
+	}
+}
+
+func TestSyncThreadCreateFailsWhenRequireTagAndUnmapped(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		channels: map[string]*discordgo.Channel{
+			"en": {ID: "en", Type: discordgo.ChannelTypeGuildForum, Flags: discordgo.ChannelFlagRequireTag},
+		},
+	}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "議題", []string{"tag-ja"})
+	if err == nil {
+		t.Fatal("expected require-tag failure")
+	}
+}
+
+func TestSyncThreadUpdateSyncsMappedForumTags(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{
+		channels: map[string]*discordgo.Channel{
+			"en":       {ID: "en", Type: discordgo.ChannelTypeGuildForum},
+			"thread-1": {ID: "thread-1", AppliedTags: []string{}},
+		},
+	}
+	service := NewService(store, discord, &echoTranslator{})
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertForumTagMap(ctx, "guild", "g", "ja", "tag-ja", "en", "tag-en"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000007", "topic", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000007", "topic", []string{"tag-ja"}, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.edits) != 1 || discord.edits[0].appliedTags == nil {
+		t.Fatalf("edits: %#v", discord.edits)
+	}
+	if got := *discord.edits[0].appliedTags; len(got) != 1 || got[0] != "tag-en" {
+		t.Fatalf("edited tags: %#v", got)
 	}
 }
