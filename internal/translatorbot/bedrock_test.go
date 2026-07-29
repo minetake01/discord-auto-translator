@@ -102,6 +102,33 @@ func TestNewBedrockTranslatorRejectsInvalidLocation(t *testing.T) {
 	}
 }
 
+func TestNewBedrockHTTPClientUsesKeepAliveTransport(t *testing.T) {
+	client := newBedrockHTTPClient()
+	if client == http.DefaultClient {
+		t.Fatal("expected dedicated client, got http.DefaultClient")
+	}
+	if client.Timeout != 0 {
+		t.Fatalf("client Timeout = %s, want 0 (per-attempt context deadline owns limits)", client.Timeout)
+	}
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport == nil {
+		t.Fatalf("Transport = %#v, want *http.Transport", client.Transport)
+	}
+	if transport.IdleConnTimeout != bedrockHTTPIdleConnTimeout {
+		t.Fatalf("IdleConnTimeout = %s, want %s", transport.IdleConnTimeout, bedrockHTTPIdleConnTimeout)
+	}
+	if transport.DialContext == nil {
+		t.Fatal("DialContext is nil")
+	}
+	translator, err := NewBedrockTranslator(context.Background(), "AKID", "SECRET", "us-west-2", testBedrockProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if translator.client == http.DefaultClient {
+		t.Fatal("NewBedrockTranslator still uses http.DefaultClient")
+	}
+}
+
 func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	signer := &recordingSigner{}
 	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -118,7 +145,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if input.Model != "google.gemma-4-26b-a4b" || input.MaxOutputTokens != 4096 || input.Store {
+		if input.Model != "google.gemma-4-26b-a4b" || input.MaxOutputTokens != 4096 || input.Store || input.ServiceTier != "priority" {
 			t.Fatalf("request config = %#v", input)
 		}
 		if len(input.Input) != 2 || input.Input[0].Role != "system" || input.Input[1].Role != "user" {

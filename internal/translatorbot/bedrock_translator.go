@@ -28,6 +28,14 @@ const (
 	bedrockRetryAttempts  = 2 // initial attempt + one retry
 	bedrockRetryBackoff   = 1 * time.Second
 
+	// Keep TCP probes active and drop idle pooled connections before common
+	// middlebox idle timeouts silently invalidate them. Per-attempt deadlines
+	// still come from context; the client itself has no overall Timeout.
+	bedrockHTTPDialTimeout     = 30 * time.Second
+	bedrockHTTPKeepAlive       = 30 * time.Second
+	bedrockHTTPIdleConnTimeout = 45 * time.Second
+	bedrockServiceTier         = "priority"
+
 	bedrockTranslationJSONSchema            = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
 	bedrockPollTranslationJSONSchema        = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`
 	bedrockThreadCreateTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`
@@ -79,6 +87,7 @@ type bedrockResponsesRequest struct {
 	Input           []bedrockInputMessage `json:"input"`
 	MaxOutputTokens int                   `json:"max_output_tokens"`
 	Store           bool                  `json:"store"`
+	ServiceTier     string                `json:"service_tier"`
 }
 
 type bedrockInputMessage struct {
@@ -146,12 +155,34 @@ func NewBedrockTranslator(_ context.Context, accessKeyID, secretAccessKey, regio
 		return nil, errors.New("AWS Bedrock project ID is invalid")
 	}
 	return newBedrockTranslator(
-		http.DefaultClient,
+		newBedrockHTTPClient(),
 		v4.NewSigner(),
 		credentials.NewStaticCredentialsProvider(accessKeyID, secretAccessKey, ""),
 		region,
 		projectID,
 	), nil
+}
+
+// newBedrockHTTPClient builds a Mantle-only client with explicit TCP keepalive
+// and a short idle-pool lifetime so long-quiet bots do not reuse half-open
+// connections through NAT/firewalls.
+func newBedrockHTTPClient() *http.Client {
+	dialer := &net.Dialer{
+		Timeout:   bedrockHTTPDialTimeout,
+		KeepAlive: bedrockHTTPKeepAlive,
+	}
+	return &http.Client{
+		Transport: &http.Transport{
+			Proxy:                 http.ProxyFromEnvironment,
+			DialContext:           dialer.DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			MaxIdleConnsPerHost:   10,
+			IdleConnTimeout:       bedrockHTTPIdleConnTimeout,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
 }
 
 func newBedrockTranslator(client bedrockHTTPClient, signer bedrockRequestSigner, provider aws.CredentialsProvider, region, projectID string) *BedrockTranslator {
@@ -282,6 +313,7 @@ func (t *BedrockTranslator) invokePrepared(ctx context.Context, prepared prepare
 		},
 		MaxOutputTokens: bedrockMaxTokens,
 		Store:           false,
+		ServiceTier:     bedrockServiceTier,
 	}
 	start := t.now()
 	entry := bedrockDebugEntry{
