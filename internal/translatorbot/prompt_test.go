@@ -210,15 +210,18 @@ func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
 	if !strings.Contains(systemInstruction, "site_context") {
 		t.Fatal("site flag should surface site_context in system instruction")
 	}
+	if !strings.Contains(systemInstruction, "[SITE:N]") {
+		t.Fatal("site flag should tell the model to match site id to [SITE:N]")
+	}
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		Sites: []SiteContextEntry{
-			{Title: "Example Article", Description: "A short description"},
-			{Title: "Example Article:2", Description: "Second <page>"},
+			{ID: "1", Title: "Example Article", Description: "A short description"},
+			{ID: "2", Title: "Example Article", Description: "Second <page>"},
 		},
 	}, func(b *strings.Builder) {
-		writeAttributedElement(b, "final_message", "", "see [SITE:Example Article]")
+		writeAttributedElement(b, "final_message", "", "see [SITE:1]")
 	})
-	if !strings.Contains(prompt, `<site_context><site title="Example Article">A short description</site><site title="Example Article:2">Second &lt;page&gt;</site></site_context>`) {
+	if !strings.Contains(prompt, `<site_context><site id="1" title="Example Article">A short description</site><site id="2" title="Example Article">Second &lt;page&gt;</site></site_context>`) {
 		t.Fatalf("missing site_context:\n%s", prompt)
 	}
 	if strings.Contains(prompt, "site_name") {
@@ -288,7 +291,7 @@ func TestBuildTranslationUserPromptPreservesNewlinesAndBlockquotes(t *testing.T)
 			{Author: "bob", Content: "line1\nline2"},
 		},
 		Sites: []SiteContextEntry{
-			{Title: "Doc", Description: "first\nsecond"},
+			{ID: "1", Title: "Doc", Description: "first\nsecond"},
 		},
 	}, func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "alice", content)
@@ -304,7 +307,7 @@ func TestBuildTranslationUserPromptPreservesNewlinesAndBlockquotes(t *testing.T)
 	if !strings.Contains(prompt, `<message author="bob">line1`+"\n"+`line2</message>`) {
 		t.Fatalf("expected literal newline in history:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, `<site title="Doc">first`+"\n"+`second</site>`) {
+	if !strings.Contains(prompt, `<site id="1" title="Doc">first`+"\n"+`second</site>`) {
 		t.Fatalf("expected literal newline in site description:\n%s", prompt)
 	}
 }

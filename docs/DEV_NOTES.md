@@ -206,16 +206,16 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
     <message author="Bob">Earlier reply target</message>
   </reply_context>
   <site_context>
-    <site title="Example Article">Page description from OGP</site>
+    <site id="1" title="Example Article">Page description from OGP</site>
   </site_context>
-  <final_message author="Carol">How are you? [SITE:Example Article]</final_message>
+  <final_message author="Carol">How are you? [SITE:1]</final_message>
 </translation_request>
 ```
 
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から最大3件の原文を収集します。
 - `<reply_context>` はリプライ先を最大3件遡った引用チェイン（古い順）です。`<recent_context>` より優先して解釈に使います。引用チェインに含まれるメッセージは `<recent_context>` から除外されます。
-- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site title>` は `[SITE:...]` プレースホルダのラベルと一致します。
+- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。
 - 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。

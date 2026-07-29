@@ -222,9 +222,9 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | 直近の会話履歴（最大3件、24時間以内） | 翻訳グループ内の全チャンネル（または同期済みスレッド）の DB `source_content_snapshot` | 会話の流れを踏まえた翻訳。各メッセージは原文スナップショットと投稿者表示名（`author`）付き |
 | リプライ引用チェイン（最大3件、時間制限なし） | `message_links` による原文解決 + Discord API で参照を遡る | `<recent_context>` より優先して、返信先メッセージの原文を解釈に利用。各メッセージは `author` 付き |
 | 翻訳対象メッセージの投稿者 | 処理中 `DiscordMessage.AuthorDisplayName` | `<final_message author="...">` として翻訳対象の話者を明示 |
-| 共有 URL のページメタ（title / description） | 本文中の HTTP(S) URL を GET して OGP / Twitter / `<title>` 等から抽出 | `<site_context>` と `[SITE:title]` プレースホルダでリンク先の背景を翻訳に反映 |
+| 共有 URL のページメタ（title / description） | 本文中の HTTP(S) URL を GET して OGP / Twitter / `<title>` 等から抽出 | `<site_context>` と `[SITE:N]` プレースホルダでリンク先の背景を翻訳に反映 |
 
-翻訳対象テキストがあるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの title ラベルと対応付けます。
+翻訳対象テキストがあるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの `[SITE:N]` と `<site id="N">` で対応付けます。
 
 ### 3.9 URL の代替版置換
 
@@ -313,8 +313,7 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | `<@&id>` (@mod) | `[ROLE:mod]` |
 | `</command:id>` | `[CMD:command]` |
 | `<t:unix>` | `[TIME]` |
-| `https://host/path`（title あり） | `[SITE:title]`（同一 title が複数なら `:2` 以降） |
-| `https://host/path`（title なし） | `[SITE]` |
+| `https://host/path` | `[SITE:N]`（本文中の URL 出現順の連番。title がある場合のみ `<site id="N" title="...">` を付与） |
 | `` `code` ``, ` ```code``` ` | `[CODE]` |
 
 名前が取得できないメンションは `[USER]`, `[CHANNEL]`, `[ROLE]` のようにラベルを省略します。
