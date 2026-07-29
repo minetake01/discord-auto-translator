@@ -48,7 +48,7 @@
 
 ### 2. 設定 Amazon Bedrock
 
-在 `your-aws-bedrock-region` 的 Amazon Bedrock 中啟用 `google.gemma-4-26b-a4b`。建立僅對該模型擁有 `bedrock-mantle:CreateInference` 權限的 IAM 使用者，並在 `.env` 設定 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 與 `AWS_BEDROCK_PROJECT_ID`。模型、60 秒逾時（暫時失敗時再試 1 次）與 4096 token 上限固定於程式碼中；區域與 Project ID 是必要的本機部署設定。
+在 `your-aws-bedrock-region` 的 Amazon Bedrock 中啟用 `google.gemma-4-26b-a4b`。建立僅對該模型擁有 `bedrock-mantle:CreateInference` 權限的 IAM 使用者，並在 `.env` 設定 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 與 `AWS_BEDROCK_PROJECT_ID`。模型、逾時與輸出上限固定於程式碼中；區域與 Project ID 是必要的本機部署設定。
 
 ### 3. 設定環境變數
 
@@ -89,10 +89,6 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `MESSAGE_LINK_RETENTION_DAYS` | 選用 | SQLite 中 `message_links` 自動清理前的保留天數。`0`（預設）停用清理；例如 `60` 會在啟動時及每 24 小時刪除超過 60 天的連結 |
 | `GUILD_DATA_RETENTION_DAYS` | 選用 | Bot 從伺服器移除後，該伺服器 SQLite 資料的保留天數。`0`（預設）停用清理；例如 `30` 會在啟動時及每 24 小時刪除已移除超過 30 天的伺服器資料。到期前重新加入會取消排定的刪除 |
 | `TRANSLATION_DEBUG_LOG_PATH` | 選用 | 僅供除錯。JSON Lines 檔案路徑，每次翻譯往返寫入一筆記錄。未設定（預設）時不寫入任何內容 |
-
-### Amazon Bedrock 營運約定
-
-翻譯使用 `your-aws-bedrock-region` 中 `google.gemma-4-26b-a4b` 的非串流 Mantle Responses API，並透過 `OpenAI-Project` 標頭將所有請求指派給 Project `your-aws-bedrock-project-id`，固定 **60 秒**逾時（暫時失敗時 1 秒後再試 1 次）、**provider-default temperature 1.0**、**max_output_tokens 4096** 與由 schema 指引並由 Bot 嚴格驗證的 JSON。所有語言在一次請求中產生。4K 上限、異常停止或無效 JSON 會使整體 fail-closed；暫時失敗僅再試 1 次；沒有分割或 fallback。Bot 預設不記錄 prompt、回應或憑證；設定 `TRANSLATION_DEBUG_LOG_PATH` 後，會以 JSON Lines 記錄請求負載與原始回應（含 reasoning item）以便排查問題。GCE 部署在替換前使用五分鐘期限的 `--bedrock-prewarm` 驗證憑證、模型存取權與回應契約。
 
 ### 4. 啟動
 

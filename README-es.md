@@ -48,7 +48,7 @@ Vincula un canal por idioma formando un **grupo de traducción**. Cada mensaje p
 
 ### 2. Configurar Amazon Bedrock
 
-Habilita `google.gemma-4-26b-a4b` en Amazon Bedrock en `your-aws-bedrock-region`. Crea un usuario IAM con únicamente `bedrock-mantle:CreateInference` para el modelo y configura `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` y `AWS_BEDROCK_PROJECT_ID` en `.env`. El modelo, el tiempo de espera de 60 segundos (1 reintento en fallos transitorios) y el límite de 4096 tokens están fijados en el código; la región y el Project ID son ajustes locales obligatorios del despliegue.
+Habilita `google.gemma-4-26b-a4b` en Amazon Bedrock en `your-aws-bedrock-region`. Crea un usuario IAM con únicamente `bedrock-mantle:CreateInference` para el modelo y configura `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` y `AWS_BEDROCK_PROJECT_ID` en `.env`. El modelo, el tiempo de espera y el límite de salida están fijados en el código; la región y el Project ID son ajustes locales obligatorios del despliegue.
 
 ### 3. Configurar las variables de entorno
 
@@ -89,10 +89,6 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Días de retención de `message_links` en SQLite antes de la purga automática. `0` (predeterminado) desactiva la purga; p. ej. `60` elimina enlaces de más de 60 días al inicio y cada 24 horas |
 | `GUILD_DATA_RETENTION_DAYS` | No | Días que se conservan en SQLite los datos de un servidor tras retirar el bot. `0` (predeterminado) desactiva la purga; p. ej. `30` elimina al inicio y cada 24 horas los datos de servidores retirados hace más de 30 días. Volver a unir el bot antes del vencimiento cancela la purga programada |
 | `TRANSLATION_DEBUG_LOG_PATH` | No | Solo para depuración. Ruta de un archivo JSON Lines que recibe una entrada por cada ida y vuelta de traducción. Sin definir (predeterminado) no escribe nada |
-
-### Contrato operativo de Amazon Bedrock
-
-La traducción usa Mantle Responses API sin streaming con `google.gemma-4-26b-a4b` en `your-aws-bedrock-region`; cada solicitud se asigna al Project `your-aws-bedrock-project-id` mediante el encabezado `OpenAI-Project`: espera de **60 s** (1 reintento tras 1 s en fallos transitorios), **provider-default temperature 1.0**, **max_output_tokens 4096** y JSON guiado por schema y validado estrictamente por el bot. Todos los idiomas se generan en una solicitud. El límite de 4K, una parada anómala o JSON inválido hacen fallar todo en modo fail-closed; solo 1 reintento en fallos transitorios; sin división ni fallback. De forma predeterminada el bot no registra prompts, respuestas ni credenciales; con `TRANSLATION_DEBUG_LOG_PATH` escribe el payload de la solicitud y la respuesta sin procesar (incluidos los elementos de razonamiento) como JSON Lines para depurar. El despliegue GCE valida las credenciales, el acceso al modelo y el contrato de respuesta antes de reemplazar el binario mediante `--bedrock-prewarm` con cinco minutos de límite.
 
 ### 4. Ejecutar
 
