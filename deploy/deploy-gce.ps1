@@ -157,7 +157,11 @@ function Invoke-GcloudSsh {
         [string]$RemoteCommand
     )
 
-    Invoke-Checked "gcloud" "compute", "ssh", $config.InstanceName, "--zone", $config.Zone, "--command", $RemoteCommand
+    # PowerShell here-strings keep the script file's line endings. On Windows that is
+    # CRLF, which bash treats as part of the last token (e.g. path$'\r') and breaks
+    # if/fi parsing. Normalize to LF before sending to the remote shell.
+    $normalized = $RemoteCommand -replace "`r`n", "`n" -replace "`r", "`n"
+    Invoke-Checked "gcloud" "compute", "ssh", $config.InstanceName, "--zone", $config.Zone, "--command", $normalized
 }
 
 $BinaryName = "discord-auto-translator-linux-amd64"
