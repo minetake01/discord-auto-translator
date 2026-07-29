@@ -163,7 +163,7 @@ func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, gr
 	peerIDs := make([]string, 0)
 	peerTags := make(map[string][]discordgo.ForumTag)
 	for _, c := range channels {
-		if c.ChannelID == focus.ID || !isThreadOnlyChannelType(c.ChannelType) {
+		if c.ChannelID == focus.ID {
 			continue
 		}
 		ch, err := h.api.Channel(c.ChannelID)

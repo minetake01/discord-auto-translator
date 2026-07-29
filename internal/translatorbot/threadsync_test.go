@@ -4,7 +4,6 @@ package translatorbot
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -331,46 +330,6 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 }
 
 // SPEC 3.7
-func TestForumInitialMessageSendsFirstMessageToNonForumTargetThread(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
-	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.JoinChannel(ctx, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
-		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(discord.threads) != 1 || discord.threads[0].channelID != "en" || discord.threads[0].content != "" {
-		t.Fatalf("threads: %#v", discord.threads)
-	}
-	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" || discord.sent[0].Content != "[en] 最初の本文" {
-		t.Fatalf("sent: %#v", discord.sent)
-	}
-	links, err := store.MessageTargets(ctx, "100000000000000007", "100000000000000007")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(links) != 1 || links[0].TargetChannelID != "thread-1" || links[0].TargetMessageID != "sent-2" {
-		t.Fatalf("unexpected forum starter message link: %#v", links)
-	}
-}
-
-// SPEC 3.7
 func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -464,43 +423,6 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 }
 
 // SPEC 3.7
-func TestForumInitialMessageForwardsTTSAndStickersToNonForumTargetThread(t *testing.T) {
-	ctx := context.Background()
-	store := newTestStore(t)
-	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
-	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.JoinChannel(ctx, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "100000000000000007", ChannelID: "100000000000000007", GuildID: "guild", ParentChannelID: "ja", ThreadName: "議題",
-		AuthorID: "u", AuthorDisplayName: "u", Content: "最初の本文", TTS: true,
-		Stickers: []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(discord.sent) != 1 {
-		t.Fatalf("sent: %#v", discord.sent)
-	}
-	if !discord.sent[0].TTS {
-		t.Fatalf("expected TTS on deferred initial message, got %#v", discord.sent[0])
-	}
-	if !strings.HasSuffix(discord.sent[0].Content, "\nhttps://cdn.discordapp.com/stickers/9.png") {
-		t.Fatalf("expected sticker URL on deferred initial message, got %q", discord.sent[0].Content)
-	}
-}
-
-// SPEC 3.7
 func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -513,7 +435,7 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 		t.Fatal(err)
 	}
 	if err := store.JoinChannel(ctx, GroupChannel{
-		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildText), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -531,8 +453,14 @@ func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T
 	if translator.contexts[0].ThreadName != "" {
 		t.Fatalf("thread create translation should not put the name in discord_context: %#v", translator.contexts[0])
 	}
-	if len(discord.sent) != 1 || discord.sent[0].Content != "<@123> `example` <:wave:456>" {
-		t.Fatalf("sent: %#v", discord.sent)
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	if got := discord.threads[0]; got.channelID != "en" || got.name != "[en] 議題" || got.content != "<@123> `example` <:wave:456>" {
+		t.Fatalf("unexpected forum thread sync: %#v", got)
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("forum starter should not be sent as a second message: %#v", discord.sent)
 	}
 }
 

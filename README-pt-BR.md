@@ -171,7 +171,7 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 - `attribute` sugere "nome de pessoa", "nome de lugar", "gíria", "abreviação" e "termo técnico", mas qualquer valor pode ser inserido livremente. O atributo é usado como contexto para o Gemma 4 26B-A4B entender o significado do termo
 - Termos normais são adicionados às instruções do sistema apenas quando o corpo da mensagem a traduzir contém `term` (sem distinção de maiúsculas). Termos com `always_include:true` são sempre adicionados
 - Se a opção `channel` for omitida, o comando se aplica ao canal em que foi executado
-- Tipos de canal suportados: texto, notícias, fórum e mídia
+- Tipos de canal suportados: texto, notícias, fórum e mídia. Todos os canais de um grupo devem ser do mesmo tipo.
 - O mapeamento de tags de fórum/mídia pode ser definido após `/join-channel` (quando há um par etiquetado) ou com `/edit-forum-tags`. Salvar com “(sem mapeamento)” remove o par
 
 ## Testes

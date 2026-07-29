@@ -171,7 +171,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - `attribute` 会提示「人名」「地名」「俚语」「缩写」「专业术语」等候选，也可自由输入任意属性。指定的属性将作为 Gemma 4 26B-A4B 判断术语含义的上下文
 - 普通术语仅当待翻译正文中包含 `term`（不区分大小写）时才会加入系统指令；`always_include:true` 的术语则始终加入
 - 省略 `channel` 选项时，命令作用于执行命令的频道
-- 支持的频道类型：文字、公告、论坛、媒体
+- 支持的频道类型：文字、公告、论坛、媒体。同一组内的所有频道必须是相同类型。
 - 论坛/媒体标签映射可在 `/join-channel` 成功后（存在带标签的对等频道时）或通过 `/edit-forum-tags` 编辑。选择“（无对应）”并保存可清除该映射
 
 ## 测试

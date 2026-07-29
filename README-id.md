@@ -171,7 +171,7 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 - `attribute` menyarankan "nama orang", "nama tempat", "slang", "singkatan", dan "istilah teknis", tetapi nilai apa pun dapat dimasukkan secara bebas. Atribut digunakan sebagai konteks agar Gemma 4 26B-A4B memahami arti istilah tersebut
 - Istilah biasa hanya ditambahkan ke instruksi sistem jika teks pesan yang akan diterjemahkan mengandung `term` (tidak peka huruf besar/kecil). Istilah dengan `always_include:true` selalu ditambahkan
 - Jika opsi `channel` dihilangkan, perintah berlaku untuk saluran tempat perintah dijalankan
-- Jenis saluran yang didukung: teks, berita, forum, dan media
+- Jenis saluran yang didukung: teks, berita, forum, dan media. Semua channel dalam satu grup harus berjenis sama.
 - Pemetaan tag forum/media dapat diatur setelah `/join-channel` (jika ada peer ber-tag) atau dengan `/edit-forum-tags`. Menyimpan dengan “(tanpa pemetaan)” menghapus pasangan tersebut
 
 ## Pengujian

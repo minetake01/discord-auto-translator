@@ -218,6 +218,18 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 	if !ok {
 		return
 	}
+	// Reject mismatched channel types before creating the webhook so a
+	// type error does not leave an orphaned webhook behind.
+	peers, err := h.store.ChannelsInGroup(ctx, i.GuildID, groupID)
+	if err != nil {
+		log.Printf("join-channel list channels: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	if len(peers) > 0 && peers[0].ChannelType != int(ch.Type) {
+		h.reply(s, i, uiKeyChannelTypeMismatch, groupID)
+		return
+	}
 	webhookID, token, err := h.api.CreateWebhook(ch.ID, defaultWebhookName)
 	if err != nil {
 		log.Printf("join-channel create webhook: %v", err)
@@ -271,6 +283,8 @@ func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.Inte
 		h.reply(s, i, uiKeyDuplicateChannel, groupID)
 	case errors.Is(err, ErrDuplicateLanguage):
 		h.reply(s, i, uiKeyDuplicateLanguage, groupID)
+	case errors.Is(err, ErrChannelTypeMismatch):
+		h.reply(s, i, uiKeyChannelTypeMismatch, groupID)
 	case errors.Is(err, ErrChannelNotFound):
 		h.reply(s, i, uiKeyChannelNotJoined, groupID)
 	default:

@@ -170,7 +170,7 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 - `attribute` schlägt „Personenname", „Ortsname", „Slang", „Abkürzung" und „Fachbegriff" vor, aber jeder Wert kann frei eingegeben werden. Das Attribut wird als Kontext genutzt, damit Gemma 4 26B-A4B die Bedeutung des Begriffs versteht
 - Normale Begriffe werden den Systemanweisungen nur hinzugefügt, wenn die zu übersetzende Nachricht `term` enthält (Groß-/Kleinschreibung ignoriert). Begriffe mit `always_include:true` werden immer hinzugefügt
 - Wird die Option `channel` weggelassen, gilt der Befehl für den Channel, in dem er ausgeführt wurde
-- Unterstützte Channel-Typen: Text, Ankündigungen, Forum und Medien
+- Unterstützte Channel-Typen: Text, Ankündigungen, Forum und Medien. Alle Kanäle in einer Gruppe müssen denselben Typ haben.
 - Forum-/Media-Tag-Zuordnungen können nach `/join-channel` (wenn ein getaggter Peer existiert) oder mit `/edit-forum-tags` bearbeitet werden. Speichern mit „(keine Zuordnung)“ entfernt das Paar
 
 ## Tests

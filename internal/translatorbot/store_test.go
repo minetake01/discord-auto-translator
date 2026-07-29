@@ -562,6 +562,42 @@ func TestJoinChannelRejectsDuplicateLanguageAndChannel(t *testing.T) {
 	}
 }
 
+func TestJoinChannelRejectsMismatchedChannelType(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "c1", ChannelType: 0, Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "forum-en", ChannelType: 15, Language: "en", WebhookID: "w2", WebhookToken: "t2",
+	}); !errors.Is(err, ErrChannelTypeMismatch) {
+		t.Fatalf("want ErrChannelTypeMismatch for forum into text group, got %v", err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "news-en", ChannelType: 5, Language: "en", WebhookID: "w3", WebhookToken: "t3",
+	}); !errors.Is(err, ErrChannelTypeMismatch) {
+		t.Fatalf("want ErrChannelTypeMismatch for news into text group, got %v", err)
+	}
+
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "forums", GuildID: "g1", DisplayName: "forums", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "forums", GuildID: "g1", ChannelID: "forum-ja", ChannelType: 15, Language: "ja", WebhookID: "w4", WebhookToken: "t4",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "forums", GuildID: "g1", ChannelID: "text-en", ChannelType: 0, Language: "en", WebhookID: "w5", WebhookToken: "t5",
+	}); !errors.Is(err, ErrChannelTypeMismatch) {
+		t.Fatalf("want ErrChannelTypeMismatch for text into forum group, got %v", err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{
+		GroupID: "forums", GuildID: "g1", ChannelID: "forum-en", ChannelType: 15, Language: "en", WebhookID: "w6", WebhookToken: "t6",
+	}); err != nil {
+		t.Fatalf("same-type join should succeed: %v", err)
+	}
+}
+
 func TestGroupAutocompleteQuery(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

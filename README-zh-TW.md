@@ -171,7 +171,7 @@ cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/term
 - `attribute` 會提示「人名」「地名」「俚語」「縮寫」「專業術語」等候選，也可自由輸入任意屬性。指定的屬性將作為 Gemma 4 26B-A4B 判斷詞彙含義的上下文
 - 一般詞彙僅在待翻譯內文包含 `term`（不分大小寫）時才會加入系統指令；`always_include:true` 的詞彙則永遠加入
 - 省略 `channel` 選項時，指令作用於執行指令的頻道
-- 支援的頻道類型：文字、公告、論壇、媒體
+- 支援的頻道類型：文字、公告、論壇、媒體。同一群組內的所有頻道必須是相同類型。
 - 論壇/媒體標籤對應可在 `/join-channel` 成功後（有含標籤的對等頻道時）或以 `/edit-forum-tags` 編輯。選擇「（無對應）」並儲存可清除該對應
 
 ## 測試
