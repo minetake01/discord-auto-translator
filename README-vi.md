@@ -53,6 +53,7 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 3. Tạo access key rồi đặt `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY` trong `.env`.
 
 Model, timeout và giới hạn đầu ra được cố định trong mã. Region và Project ID là cấu hình deployment cục bộ bắt buộc qua `AWS_BEDROCK_REGION` và `AWS_BEDROCK_PROJECT_ID`. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`) có thể điều chỉnh giới hạn token theo máy chủ.
+
 ### 3. Cấu hình biến môi trường
 
 ```sh
@@ -92,10 +93,6 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `MESSAGE_LINK_RETENTION_DAYS` | Không | Số ngày giữ `message_links` trong SQLite trước khi dọn tự động. `0` (mặc định) tắt dọn; ví dụ `60` xóa liên kết cũ hơn 60 ngày khi khởi động và mỗi 24 giờ |
 | `GUILD_DATA_RETENTION_DAYS` | Không | Số ngày giữ dữ liệu SQLite của máy chủ sau khi bot bị gỡ. `0` (mặc định) tắt dọn; ví dụ `30` xóa dữ liệu của máy chủ đã gỡ bot quá 30 ngày khi khởi động và mỗi 24 giờ. Tham gia lại trước hạn sẽ hủy lịch xóa |
 | `TRANSLATION_DEBUG_LOG_PATH` | Không | Chỉ để gỡ lỗi. Đường dẫn tệp JSON Lines nhận một bản ghi cho mỗi lượt dịch. Không đặt (mặc định) thì không ghi gì |
-
-### Hợp đồng vận hành Amazon Bedrock
-
-Bản dịch dùng Mantle Responses API không streaming với `google.gemma-4-26b-a4b` tại `your-aws-bedrock-region`; mọi yêu cầu được gán cho Project `your-aws-bedrock-project-id` qua header `OpenAI-Project`: timeout **60 giây** (retry đúng 1 lần sau 1 giây khi lỗi tạm thời), **provider-default temperature 1.0**, **max_output_tokens 4096** và JSON theo schema được bot kiểm tra nghiêm ngặt. Mọi ngôn ngữ được tạo trong một yêu cầu. Giới hạn 4K, dừng bất thường hoặc JSON không hợp lệ làm toàn bộ thất bại theo fail-closed; chỉ retry 1 lần khi lỗi tạm thời; không chia nhỏ hay fallback. Theo mặc định bot không ghi prompt, phản hồi hoặc thông tin xác thực; khi đặt `TRANSLATION_DEBUG_LOG_PATH`, bot ghi payload yêu cầu và phản hồi thô (gồm cả reasoning item) dưới dạng JSON Lines để chẩn đoán lỗi. Deploy GCE xác minh thông tin xác thực, quyền truy cập mô hình và hợp đồng phản hồi trước khi thay thế bằng `--bedrock-prewarm` với giới hạn năm phút.
 
 ### 4. Chạy
 

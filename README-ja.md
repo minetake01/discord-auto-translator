@@ -94,22 +94,6 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `GUILD_DATA_RETENTION_DAYS` | 任意 | Bot がギルドから削除された後、そのギルドの SQLite データを保持する日数。`0`（デフォルト）で自動削除を無効。例: `30` で削除から 30 日を超えたギルドのデータを起動時および 24 時間ごとに削除。期限前に再参加すると削除予定を取り消す |
 | `TRANSLATION_DEBUG_LOG_PATH` | 任意 | デバッグ専用。翻訳の1往復ごとに1エントリを追記する JSON Lines ファイルのパス。未設定（デフォルト）では何も出力しない |
 
-### Amazon Bedrock 運用契約
-
-翻訳は `AWS_BEDROCK_REGION` の `google.gemma-4-26b-a4b` を非ストリーミング Mantle Responses API で実行します。すべてのリクエストは `OpenAI-Project` ヘッダーで `AWS_BEDROCK_PROJECT_ID` に割り当てます。固定パラメータは試行タイムアウト **60 秒**、タイムアウト／通信エラー／HTTP 429+5xx 時の **1 秒後にちょうど 1 回の再試行**、**provider-default temperature 1.0**、**max_output_tokens 4096**、`store=false`、**`service_tier=priority`** です。Gemma 4はBedrock Structured Outputs非対応のため、固定JSON Schemaをsystem instructionへ含め、返された複数言語の `translations` 配列をBotが厳密検証します。
-
-対象言語すべてを1回のリクエストで生成します。一時的な Mantle 障害は1回だけ再試行します。4K出力上限への到達、正常以外の終了理由、不正JSON、言語タグの欠落・順序違い、空の翻訳、余分なフィールド、および429以外の4xxは再試行せず全体失敗です。リクエスト分割、別プロバイダーへのfallback、互換経路はありません。
-
-ボットは既定でプロンプト・応答・認証情報・プロバイダーのエラーメッセージをログに出しません。Mantleはリクエスト単位のBedrock metadata非対応なので、Discord IDをmetadataとして送信しません。安全な診断情報はエラーtype、code、param、request IDだけです。翻訳失敗とレート制限超過は **fail-closed** — メッセージはミラーリングされず、投稿元チャンネルにローカライズ通知が送られます。
-
-GCEデプロイスクリプトは稼働中バイナリを置換する前に、5分期限の `--bedrock-prewarm` で認証情報・モデルアクセス・レスポンス契約を検証します。通常サービスは試行ごとに60秒の期限と1回の再試行を適用します。
-
-### 翻訳デバッグログ
-
-`TRANSLATION_DEBUG_LOG_PATH` を設定すると、障害調査専用のログが有効になり、Bedrock との1往復ごとに1つの JSON オブジェクトを追記します。リクエストペイロード、生のレスポンス本文（パーサーが捨てる reasoning item やトークン内訳を含む）、HTTP ステータス、所要時間、失敗理由、Discord と突き合わせるための guild ID・message ID を記録します。認証情報は記録せず、Mantle へ送るリクエストの内容も変わりません。
-
-メッセージ本文を含むため `0600` で作成し、64 MiB を超えると `<path>.1` へローテートします。ファイルを開けない場合は起動時に終了します。調査が終わったら、プライバシーポリシーに定める保存期間に沿ってログを削除してください。
-
 ### 4. 起動
 
 ```sh

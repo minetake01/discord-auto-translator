@@ -53,6 +53,7 @@ Collega un canale per lingua formando un **gruppo di traduzione**. Ogni messaggi
 3. Crea una chiave di accesso e imposta `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` in `.env`.
 
 Modello, timeout e limite di output sono fissi nel codice. Regione e Project ID sono impostazioni locali obbligatorie tramite `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID`. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (predefinito `100000`) regola facoltativamente il limite di token per server.
+
 ### 3. Configurare le variabili d'ambiente
 
 ```sh
@@ -92,10 +93,6 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `MESSAGE_LINK_RETENTION_DAYS` | No | Giorni di conservazione di `message_links` in SQLite prima della purge automatica. `0` (predefinito) disabilita la purge; es. `60` elimina i link più vecchi di 60 giorni all'avvio e ogni 24 ore |
 | `GUILD_DATA_RETENTION_DAYS` | No | Giorni di conservazione in SQLite dei dati di un server dopo la rimozione del bot. `0` (predefinito) disabilita la purge; es. `30` elimina all'avvio e ogni 24 ore i dati dei server rimossi da più di 30 giorni. Un nuovo ingresso prima della scadenza annulla l'eliminazione programmata |
 | `TRANSLATION_DEBUG_LOG_PATH` | No | Solo per debug. Percorso di un file JSON Lines che riceve una voce per ogni scambio di traduzione. Non impostato (predefinito) non scrive nulla |
-
-### Contratto operativo Amazon Bedrock
-
-La traduzione usa Mantle Responses API non streaming con `google.gemma-4-26b-a4b` in `your-aws-bedrock-region`; ogni richiesta viene assegnata al Project `your-aws-bedrock-project-id` tramite l'header `OpenAI-Project`: timeout **60 s** (1 retry dopo 1 s su errori transienti), **provider-default temperature 1.0**, **max_output_tokens 4096** e JSON guidato dallo schema e convalidato rigorosamente dal bot. Tutte le lingue sono generate in una richiesta. Limite 4K, arresto anomalo o JSON non valido fanno fallire tutto in modalità fail-closed; un solo retry su errori transienti; nessuna suddivisione o fallback. Per impostazione predefinita il bot non registra prompt, risposte o credenziali; con `TRANSLATION_DEBUG_LOG_PATH` scrive il payload della richiesta e la risposta grezza (inclusi gli item di reasoning) come JSON Lines per la diagnosi. Il deploy GCE convalida credenziali, accesso al modello e contratto di risposta prima della sostituzione tramite `--bedrock-prewarm` con limite di cinque minuti.
 
 ### 4. Avviare
 
