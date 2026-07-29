@@ -96,7 +96,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 
 ### Amazon Bedrock 運用契約
 
-翻訳は `AWS_BEDROCK_REGION` の `google.gemma-4-26b-a4b` を非ストリーミング Mantle Responses API で実行します。すべてのリクエストは `OpenAI-Project` ヘッダーで `AWS_BEDROCK_PROJECT_ID` に割り当てます。固定パラメータは試行タイムアウト **60 秒**、タイムアウト／通信エラー／HTTP 429+5xx 時の **1 秒後にちょうど 1 回の再試行**、**provider-default temperature 1.0**、**max_output_tokens 4096**、`store=false` です。Gemma 4はBedrock Structured Outputs非対応のため、固定JSON Schemaをsystem instructionへ含め、返された複数言語の `translations` 配列をBotが厳密検証します。
+翻訳は `AWS_BEDROCK_REGION` の `google.gemma-4-26b-a4b` を非ストリーミング Mantle Responses API で実行します。すべてのリクエストは `OpenAI-Project` ヘッダーで `AWS_BEDROCK_PROJECT_ID` に割り当てます。固定パラメータは試行タイムアウト **60 秒**、タイムアウト／通信エラー／HTTP 429+5xx 時の **1 秒後にちょうど 1 回の再試行**、**provider-default temperature 1.0**、**max_output_tokens 4096**、`store=false`、**`service_tier=priority`** です。Gemma 4はBedrock Structured Outputs非対応のため、固定JSON Schemaをsystem instructionへ含め、返された複数言語の `translations` 配列をBotが厳密検証します。
 
 対象言語すべてを1回のリクエストで生成します。一時的な Mantle 障害は1回だけ再試行します。4K出力上限への到達、正常以外の終了理由、不正JSON、言語タグの欠落・順序違い、空の翻訳、余分なフィールド、および429以外の4xxは再試行せず全体失敗です。リクエスト分割、別プロバイダーへのfallback、互換経路はありません。
 

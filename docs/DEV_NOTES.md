@@ -69,6 +69,7 @@ const bedrockModel = "google.gemma-4-26b-a4b"
 // per-attempt timeout: 60s
 // transient retry: exactly once after 1s (timeout / transport / HTTP 429+5xx)
 // temperature: omitted (Gemma provider default 1.0), max_output_tokens: 4096
+// service_tier: priority (on-demand Priority; premium vs Standard)
 ```
 
 Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、既定ではプロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
