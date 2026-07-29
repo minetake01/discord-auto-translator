@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -20,25 +21,25 @@ type NameMaps struct {
 }
 
 type SiteContextEntry struct {
-	Title       string
+	ID          string // matches N in [SITE:N]
+	Title       string // page title for model background only
 	Description string
 }
 
 type Protector struct {
-	names             NameMaps
-	siteDescriptions  map[string]string
-	items             map[string]string
-	counts            map[string]int
-	sites             []SiteContextEntry
-	siteURLsSeen      map[string]struct{}
+	names            NameMaps
+	siteDescriptions map[string]string
+	items            map[string]string
+	counts           map[string]int
+	sites            []SiteContextEntry
+	siteSeq          int
 }
 
 func NewProtector(names NameMaps) *Protector {
 	return &Protector{
-		names:        names,
-		items:        map[string]string{},
-		counts:       map[string]int{},
-		siteURLsSeen: map[string]struct{}{},
+		names:  names,
+		items:  map[string]string{},
+		counts: map[string]int{},
 	}
 }
 
@@ -64,8 +65,15 @@ func (p *Protector) Protect(text string) string {
 }
 
 func (p *Protector) Restore(text string) string {
-	for key, value := range p.items {
-		text = strings.ReplaceAll(text, key, value)
+	keys := make([]string, 0, len(p.items))
+	for key := range p.items {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+	for _, key := range keys {
+		text = strings.ReplaceAll(text, key, p.items[key])
 	}
 	return text
 }
@@ -108,36 +116,29 @@ func (p *Protector) tokenFor(match string) string {
 
 	case strings.HasPrefix(match, "http") || strings.HasPrefix(match, "<http"):
 		rawURL := strings.Trim(match, "<>")
+		p.siteSeq++
+		id := strconv.Itoa(p.siteSeq)
 		title := ""
 		if p.names.Sites != nil {
 			title = p.names.Sites[rawURL]
 		}
-		token := p.nextToken("SITE", sanitizeLabel(title))
-		p.recordSiteContext(rawURL, token, title)
-		return token
+		p.recordSiteContext(rawURL, id, title)
+		return "[SITE:" + id + "]"
 
 	default:
 		return p.nextToken("CODE", "")
 	}
 }
 
-func (p *Protector) recordSiteContext(rawURL, token, title string) {
+func (p *Protector) recordSiteContext(rawURL, id, title string) {
 	if strings.TrimSpace(title) == "" {
-		return
-	}
-	if _, seen := p.siteURLsSeen[rawURL]; seen {
-		return
-	}
-	p.siteURLsSeen[rawURL] = struct{}{}
-	label := strings.TrimPrefix(strings.Trim(token, "[]"), "SITE:")
-	if label == "" {
 		return
 	}
 	desc := ""
 	if p.siteDescriptions != nil {
 		desc = p.siteDescriptions[rawURL]
 	}
-	p.sites = append(p.sites, SiteContextEntry{Title: label, Description: desc})
+	p.sites = append(p.sites, SiteContextEntry{ID: id, Title: title, Description: desc})
 }
 
 func emojiName(match string) string {

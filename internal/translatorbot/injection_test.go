@@ -40,7 +40,7 @@ func TestProtectorRestoresURLsAndMarkdown(t *testing.T) {
 	if strings.Contains(protected, "https://example.com") || strings.Contains(protected, "`code`") {
 		t.Fatalf("not protected: %s", protected)
 	}
-	if !strings.Contains(protected, "[SITE]") || !strings.Contains(protected, "[CODE]") {
+	if !strings.Contains(protected, "[SITE:1]") || !strings.Contains(protected, "[CODE]") {
 		t.Fatalf("unexpected protected form: %s", protected)
 	}
 	if got := p.Restore(protected); got != in {
@@ -63,7 +63,7 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 	})
 	in := "see https://example.com/a and https://example.com/b and https://other.com/c"
 	protected := p.Protect(in)
-	want := "see [SITE:Example Article] and [SITE:Example Article:2] and [SITE:Other]"
+	want := "see [SITE:1] and [SITE:2] and [SITE:3]"
 	if protected != want {
 		t.Fatalf("got %q want %q", protected, want)
 	}
@@ -71,14 +71,61 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 	if len(sites) != 3 {
 		t.Fatalf("sites = %+v", sites)
 	}
-	if sites[0] != (SiteContextEntry{Title: "Example Article", Description: "First page"}) {
+	if sites[0] != (SiteContextEntry{ID: "1", Title: "Example Article", Description: "First page"}) {
 		t.Fatalf("sites[0] = %+v", sites[0])
 	}
-	if sites[1] != (SiteContextEntry{Title: "Example Article:2", Description: "Second page"}) {
+	if sites[1] != (SiteContextEntry{ID: "2", Title: "Example Article", Description: "Second page"}) {
 		t.Fatalf("sites[1] = %+v", sites[1])
 	}
-	if sites[2] != (SiteContextEntry{Title: "Other", Description: "Other page"}) {
+	if sites[2] != (SiteContextEntry{ID: "3", Title: "Other", Description: "Other page"}) {
 		t.Fatalf("sites[2] = %+v", sites[2])
+	}
+	if got := p.Restore(protected); got != in {
+		t.Fatalf("restore got %q want %q", got, in)
+	}
+}
+
+func TestProtectorOpaqueSiteIgnoresMessyTitle(t *testing.T) {
+	messy := "시노 on Instagram: \"셀프 커버는 언제나 옳다\n\n나토리 LIVE\""
+	p := NewProtector(NameMaps{
+		Sites: map[string]string{
+			"https://www.instagram.com/p/abc/": messy,
+		},
+	})
+	p.SetSiteDescriptions(map[string]string{
+		"https://www.instagram.com/p/abc/": "caption body",
+	})
+	in := "good!! https://www.instagram.com/p/abc/"
+	protected := p.Protect(in)
+	if protected != "good!! [SITE:1]" {
+		t.Fatalf("got %q", protected)
+	}
+	if strings.Contains(protected, "Instagram") || strings.Contains(protected, "\n") {
+		t.Fatalf("title leaked into placeholder: %q", protected)
+	}
+	sites := p.SiteContext()
+	if len(sites) != 1 || sites[0].ID != "1" || sites[0].Title != messy || sites[0].Description != "caption body" {
+		t.Fatalf("sites = %+v", sites)
+	}
+	if got := p.Restore(protected); got != in {
+		t.Fatalf("restore got %q want %q", got, in)
+	}
+}
+
+func TestProtectorRestorePrefersLongerSiteTokens(t *testing.T) {
+	p := NewProtector(NameMaps{})
+	var b strings.Builder
+	for i := 0; i < 10; i++ {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("https://example.com/")
+		b.WriteByte('a' + byte(i))
+	}
+	in := b.String()
+	protected := p.Protect(in)
+	if !strings.Contains(protected, "[SITE:10]") || !strings.Contains(protected, "[SITE:1]") {
+		t.Fatalf("protected = %q", protected)
 	}
 	if got := p.Restore(protected); got != in {
 		t.Fatalf("restore got %q want %q", got, in)
