@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -101,63 +102,22 @@ func main() {
 		failGuildLifecycle("ready", lifecycle.handleReady(context.Background(), time.Now, ready), log.Fatalf)
 	})
 	dg.AddHandler(commands.Handle)
-	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		if m.Author == nil {
-			return
-		}
-		parentChannelID, threadName := threadContext(s, m.ChannelID)
-		forwarded, err := forwardedMessageFields(m.MessageReference, m.MessageSnapshots)
-		if err != nil {
-			log.Printf("message create forward payload: %v", err)
-			return
-		}
-		refID, refChannelID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
-		mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
-		err = service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
-			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
-			ParentChannelID: parentChannelID, ThreadName: threadName,
-			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
-			Attachments:                attachmentsFromDiscord(m.Attachments),
-			Stickers:                   stickersFromDiscord(m.StickerItems),
-			ReferencedMessageID:        refID,
-			ReferencedMessageChannelID: refChannelID,
-			ReferencedMessageContent:   refContent,
-			ForwardedMessage:           forwarded,
-			Poll:                       pollFromDiscord(m.Poll),
-			PollResult:                 pollResultFromDiscord(m.Message),
-			TTS:                        m.TTS,
-			WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
-			MentionedUsers:    mentionedUsers,
-			MentionedChannels: mentionedChannels,
-			MentionedRoles:    mentionedRoles,
-		})
-		if err != nil {
-			log.Printf("message create sync: %v", err)
-		}
-	})
-	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageUpdate) {
-		if m.Author == nil || isThreadSystemMessage(m.Type) {
-			return
-		}
-		ctx := context.Background()
-		if err := service.HandleMessagePinUpdate(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
-			log.Printf("pin sync: %v", err)
-		}
-		if strings.TrimSpace(m.Content) == "" {
-			return
-		}
-		parentChannelID, threadName := threadContext(s, m.ChannelID)
-		mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
-		err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
-			ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
-			ParentChannelID: parentChannelID, ThreadName: threadName,
-			AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
-			Attachments: attachmentsFromDiscord(m.Attachments), Stickers: stickersFromDiscord(m.StickerItems),
-			WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
-			MentionedUsers: mentionedUsers, MentionedChannels: mentionedChannels, MentionedRoles: mentionedRoles,
-		})
-		if err != nil {
-			log.Printf("message update sync: %v", err)
+	dg.AddHandler(func(s *discordgo.Session, e *discordgo.Event) {
+		switch e.Type {
+		case "MESSAGE_CREATE":
+			var m discordgo.MessageCreate
+			if err := json.Unmarshal(e.RawData, &m); err != nil {
+				log.Printf("message create unmarshal: %v", err)
+				return
+			}
+			handleGatewayMessageCreate(s, service, &m, e.RawData)
+		case "MESSAGE_UPDATE":
+			var m discordgo.MessageUpdate
+			if err := json.Unmarshal(e.RawData, &m); err != nil {
+				log.Printf("message update unmarshal: %v", err)
+				return
+			}
+			handleGatewayMessageUpdate(s, service, &m, e.RawData)
 		}
 	})
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageDelete) {
@@ -278,16 +238,118 @@ func parseStartupOptions(args []string) (startupOptions, error) {
 	return options, nil
 }
 
-func attachmentsFromDiscord(attachments []*discordgo.MessageAttachment) []translatorbot.DiscordAttachment {
+func handleGatewayMessageCreate(s *discordgo.Session, service *translatorbot.Service, m *discordgo.MessageCreate, raw json.RawMessage) {
+	if m.Author == nil {
+		return
+	}
+	parentChannelID, threadName := threadContext(s, m.ChannelID)
+	descriptions, snapshotDescriptions := attachmentDescriptionsFromRaw(raw)
+	forwarded, err := forwardedMessageFields(m.MessageReference, m.MessageSnapshots, snapshotDescriptions)
+	if err != nil {
+		log.Printf("message create forward payload: %v", err)
+		return
+	}
+	refID, refChannelID, refContent := referencedMessageFields(m.MessageReference, m.ReferencedMessage)
+	mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
+	err = service.HandleMessageCreate(context.Background(), translatorbot.DiscordMessage{
+		ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
+		ParentChannelID: parentChannelID, ThreadName: threadName,
+		AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
+		Attachments:                attachmentsFromDiscord(m.Attachments, descriptions),
+		Stickers:                   stickersFromDiscord(m.StickerItems),
+		ReferencedMessageID:        refID,
+		ReferencedMessageChannelID: refChannelID,
+		ReferencedMessageContent:   refContent,
+		ForwardedMessage:           forwarded,
+		Poll:                       pollFromDiscord(m.Poll),
+		PollResult:                 pollResultFromDiscord(m.Message),
+		TTS:                        m.TTS,
+		WebhookID:                  m.WebhookID, Bot: m.Author.Bot, ThreadSystemMessage: isThreadSystemMessage(m.Type), ThreadStarterMessage: isThreadStarterMessage(m.Type),
+		MentionedUsers:    mentionedUsers,
+		MentionedChannels: mentionedChannels,
+		MentionedRoles:    mentionedRoles,
+	})
+	if err != nil {
+		log.Printf("message create sync: %v", err)
+	}
+}
+
+func handleGatewayMessageUpdate(s *discordgo.Session, service *translatorbot.Service, m *discordgo.MessageUpdate, raw json.RawMessage) {
+	if m.Author == nil || isThreadSystemMessage(m.Type) {
+		return
+	}
+	ctx := context.Background()
+	if err := service.HandleMessagePinUpdate(ctx, m.ChannelID, m.ID, m.Pinned); err != nil {
+		log.Printf("pin sync: %v", err)
+	}
+	if strings.TrimSpace(m.Content) == "" {
+		return
+	}
+	parentChannelID, threadName := threadContext(s, m.ChannelID)
+	descriptions, _ := attachmentDescriptionsFromRaw(raw)
+	mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
+	err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
+		ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
+		ParentChannelID: parentChannelID, ThreadName: threadName,
+		AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
+		Attachments: attachmentsFromDiscord(m.Attachments, descriptions), Stickers: stickersFromDiscord(m.StickerItems),
+		WebhookID: m.WebhookID, Bot: m.Author.Bot, Edited: true,
+		MentionedUsers: mentionedUsers, MentionedChannels: mentionedChannels, MentionedRoles: mentionedRoles,
+	})
+	if err != nil {
+		log.Printf("message update sync: %v", err)
+	}
+}
+
+type gatewayAttachmentDescription struct {
+	Description string `json:"description"`
+}
+
+type gatewayMessageAttachments struct {
+	Attachments      []gatewayAttachmentDescription `json:"attachments"`
+	MessageSnapshots []struct {
+		Message struct {
+			Attachments []gatewayAttachmentDescription `json:"attachments"`
+		} `json:"message"`
+	} `json:"message_snapshots"`
+}
+
+func attachmentDescriptionsFromRaw(raw json.RawMessage) (descriptions []string, snapshotDescriptions []string) {
+	var parsed gatewayMessageAttachments
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return nil, nil
+	}
+	descriptions = make([]string, len(parsed.Attachments))
+	for i, attachment := range parsed.Attachments {
+		descriptions[i] = strings.TrimSpace(attachment.Description)
+	}
+	if len(parsed.MessageSnapshots) == 1 {
+		snapshot := parsed.MessageSnapshots[0].Message.Attachments
+		snapshotDescriptions = make([]string, len(snapshot))
+		for i, attachment := range snapshot {
+			snapshotDescriptions[i] = strings.TrimSpace(attachment.Description)
+		}
+	}
+	return descriptions, snapshotDescriptions
+}
+
+func attachmentsFromDiscord(attachments []*discordgo.MessageAttachment, descriptions []string) []translatorbot.DiscordAttachment {
 	out := make([]translatorbot.DiscordAttachment, 0, len(attachments))
+	descIndex := 0
 	for _, attachment := range attachments {
 		if attachment == nil {
 			continue
 		}
+		description := ""
+		if descIndex < len(descriptions) {
+			description = descriptions[descIndex]
+		}
+		descIndex++
 		out = append(out, translatorbot.DiscordAttachment{
 			URL:         attachment.URL,
 			Filename:    attachment.Filename,
 			ContentType: attachment.ContentType,
+			Description: description,
 		})
 	}
 	return out
@@ -476,7 +538,7 @@ func referencedMessageFields(ref *discordgo.MessageReference, referenced *discor
 	return id, channelID, content
 }
 
-func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discordgo.MessageSnapshot) (*translatorbot.DiscordForwardedMessage, error) {
+func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discordgo.MessageSnapshot, snapshotDescriptions []string) (*translatorbot.DiscordForwardedMessage, error) {
 	if ref == nil || ref.Type != discordgo.MessageReferenceTypeForward {
 		return nil, nil
 	}
@@ -489,7 +551,7 @@ func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discord
 	snapshot := snapshots[0].Message
 	return &translatorbot.DiscordForwardedMessage{
 		MessageID: ref.MessageID, ChannelID: ref.ChannelID, GuildID: ref.GuildID, Content: snapshot.Content,
-		Attachments: attachmentsFromDiscord(snapshot.Attachments),
+		Attachments: attachmentsFromDiscord(snapshot.Attachments, snapshotDescriptions),
 		Stickers:    stickersFromDiscord(snapshot.StickerItems),
 	}, nil
 }

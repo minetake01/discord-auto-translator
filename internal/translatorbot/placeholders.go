@@ -13,6 +13,10 @@ func hasTranslatableText(text string) bool {
 	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
 }
 
+func needsTranslation(content string, imageAttachments []DiscordAttachment) bool {
+	return len(imageAttachments) > 0 || hasTranslatableText(content)
+}
+
 type NameMaps struct {
 	Users    map[string]string // userID → display name
 	Channels map[string]string // channelID → channel name (source)
@@ -24,11 +28,13 @@ type SiteContextEntry struct {
 	ID          string // matches N in [SITE:N]
 	Title       string // page title for model background only
 	Description string
+	ImageURL    string
 }
 
 type Protector struct {
 	names            NameMaps
 	siteDescriptions map[string]string
+	siteImages       map[string]string
 	items            map[string]string
 	counts           map[string]int
 	sites            []SiteContextEntry
@@ -45,6 +51,10 @@ func NewProtector(names NameMaps) *Protector {
 
 func (p *Protector) SetSiteDescriptions(descriptions map[string]string) {
 	p.siteDescriptions = descriptions
+}
+
+func (p *Protector) SetSiteImages(images map[string]string) {
+	p.siteImages = images
 }
 
 func (p *Protector) SiteContext() []SiteContextEntry {
@@ -138,7 +148,11 @@ func (p *Protector) recordSiteContext(rawURL, id, title string) {
 	if p.siteDescriptions != nil {
 		desc = p.siteDescriptions[rawURL]
 	}
-	p.sites = append(p.sites, SiteContextEntry{ID: id, Title: title, Description: desc})
+	imageURL := ""
+	if p.siteImages != nil {
+		imageURL = p.siteImages[rawURL]
+	}
+	p.sites = append(p.sites, SiteContextEntry{ID: id, Title: title, Description: desc, ImageURL: imageURL})
 }
 
 func emojiName(match string) string {

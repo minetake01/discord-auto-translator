@@ -36,7 +36,7 @@ const (
 	bedrockHTTPIdleConnTimeout = 45 * time.Second
 	bedrockServiceTier         = "priority"
 
-	bedrockTranslationJSONSchema            = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
+	bedrockTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
 	bedrockPollTranslationJSONSchema        = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`
 	bedrockThreadCreateTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`
 )
@@ -91,8 +91,18 @@ type bedrockResponsesRequest struct {
 }
 
 type bedrockInputMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+type bedrockInputImagePart struct {
+	Type     string `json:"type"`
+	ImageURL string `json:"image_url"`
+}
+
+type bedrockInputTextPart struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 type bedrockResponsesResponse struct {
@@ -207,15 +217,15 @@ func (t *BedrockTranslator) TranslateMulti(ctx context.Context, prepared prepare
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, bedrockTranslationJSONSchema)
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, translationJSONSchema(prepared.attachmentCount))
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	translations, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector)
+	translations, descriptions, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content, prepared.attachmentCount)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	return MultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+	return MultiTranslationResult{Translations: translations, AttachmentDescriptions: descriptions, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
 func (t *BedrockTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
@@ -303,13 +313,47 @@ func isBedrockRetryable(err error) bool {
 	return errors.As(err, &netErr)
 }
 
+func translationJSONSchema(attachmentCount int) string {
+	if attachmentCount <= 0 {
+		return bedrockTranslationJSONSchema
+	}
+	return fmt.Sprintf(
+		`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text","attachment_descriptions"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly %d attachment descriptions in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string."}}}}}}`,
+		attachmentCount,
+	)
+}
+
+func bedrockTextContent(text string) json.RawMessage {
+	encoded, err := json.Marshal(text)
+	if err != nil {
+		return json.RawMessage(`""`)
+	}
+	return encoded
+}
+
+func bedrockUserContent(images []visionImage, text string) json.RawMessage {
+	if len(images) == 0 {
+		return bedrockTextContent(text)
+	}
+	parts := make([]any, 0, len(images)+1)
+	for _, img := range images {
+		parts = append(parts, bedrockInputImagePart{Type: "input_image", ImageURL: img.DataURL})
+	}
+	parts = append(parts, bedrockInputTextPart{Type: "input_text", Text: text})
+	encoded, err := json.Marshal(parts)
+	if err != nil {
+		return bedrockTextContent(text)
+	}
+	return encoded
+}
+
 func (t *BedrockTranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, jsonSchema string) (text string, inputTokens, outputTokens int, err error) {
 	systemInstruction := prepared.systemInstruction + "\nReturn only JSON matching this exact schema, without markdown fences: " + jsonSchema
 	payload := bedrockResponsesRequest{
 		Model: bedrockModel,
 		Input: []bedrockInputMessage{
-			{Role: "system", Content: systemInstruction},
-			{Role: "user", Content: prepared.userPrompt},
+			{Role: "system", Content: bedrockTextContent(systemInstruction)},
+			{Role: "user", Content: bedrockUserContent(prepared.visionImages, prepared.userPrompt)},
 		},
 		MaxOutputTokens: bedrockMaxTokens,
 		Store:           false,

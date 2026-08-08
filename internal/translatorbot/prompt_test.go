@@ -333,9 +333,39 @@ func TestLanguageSuggestionsAllowRepresentativeCodes(t *testing.T) {
 	}
 }
 
+func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
+	prepared, err := prepareMultiTranslation([]string{"en"}, "see this", TranslationContext{
+		Author: "alice",
+		Attachments: []TranslationAttachment{
+			{Index: 1, Filename: "shot.png", Description: "出口"},
+			{Index: 2, Filename: "deco.png"},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prepared.systemInstruction, "attachment_descriptions") {
+		t.Fatal(prepared.systemInstruction)
+	}
+	if !strings.Contains(prepared.userPrompt, `<attachment index="1" filename="shot.png">出口</attachment>`) {
+		t.Fatalf("missing attachment 1:\n%s", prepared.userPrompt)
+	}
+	if !strings.Contains(prepared.userPrompt, `<attachment index="2" filename="deco.png"></attachment>`) {
+		t.Fatalf("missing attachment 2:\n%s", prepared.userPrompt)
+	}
+	attachIndex := strings.Index(prepared.userPrompt, "<attachments>")
+	finalIndex := strings.Index(prepared.userPrompt, "<final_message")
+	if attachIndex == -1 || finalIndex == -1 || attachIndex > finalIndex {
+		t.Fatalf("attachments should appear before final_message:\n%s", prepared.userPrompt)
+	}
+	if prepared.attachmentCount != 2 {
+		t.Fatalf("attachmentCount = %d", prepared.attachmentCount)
+	}
+}
+
 func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	got, err := parseMultiTranslationResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`, []string{"en", "ja"}, p)
+	got, _, err := parseMultiTranslationResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`, []string{"en", "ja"}, p, "Hello", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +379,7 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
 		`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは","extra":true}]}`,
 	} {
-		if _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p); err == nil {
+		if _, _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p, "Hello", 0); err == nil {
 			t.Fatalf("expected strict validation error for %s", raw)
 		}
 	}
@@ -357,10 +387,12 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 
 func TestParseMultiTranslationResponseUnescapesHTMLEntities(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	got, err := parseMultiTranslationResponse(
+	got, _, err := parseMultiTranslationResponse(
 		`{"translations":[{"language":"en","translated_text":"Working now~&#xA;&gt; Also fixed failures."}]}`,
 		[]string{"en"},
 		p,
+		"Working now~\n> Also fixed failures.",
+		0,
 	)
 	if err != nil {
 		t.Fatal(err)

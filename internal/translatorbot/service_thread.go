@@ -305,7 +305,7 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		if len(pending) == 0 {
 			continue
 		}
-		var translations map[string]string
+		var translations MultiTranslationResult
 		if nameChanged && strings.TrimSpace(name) != "" {
 			contextFn := func() TranslationContext {
 				return TranslationContext{GuildID: guildID, MessageID: sourceThreadID, StyleInstructions: s.groupStyleInstructions(ctx, guildID, groupID)}
@@ -314,10 +314,10 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 			for _, p := range pending {
 				languages = append(languages, p.target.Language)
 			}
-			translations, err = s.translateWithLimit(ctx, guildID, name, languages, contextFn)
+			translations, err = s.translateWithLimit(ctx, guildID, name, nil, languages, contextFn)
 			if err != nil {
 				if errors.Is(err, errTranslationRateLimited) {
-					translations = nil
+					translations = MultiTranslationResult{}
 				} else {
 					return err
 				}
@@ -325,8 +325,8 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		}
 		for _, p := range pending {
 			editName := ""
-			if translations != nil {
-				editName = translations[p.target.Language]
+			if translations.Translations != nil {
+				editName = translations.Translations[p.target.Language]
 			}
 			var editTags *[]string
 			if tagsChanged && isThreadOnlyChannelType(p.target.ChannelType) {
@@ -409,7 +409,12 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if err != nil {
 			return "", "", err
 		}
-		if content == "" && len(embeds) == 0 {
+		loaded, err := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
+		if err != nil {
+			return "", "", err
+		}
+		files := webhookFilesForImages(loaded, sourceImageDescriptions(req.InitialMessageFiles))
+		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			if req.DeferWithoutSourceMsg {
 				return "", "", nil
 			}
@@ -419,7 +424,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if err != nil {
 			return "", "", err
 		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags)
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags, files)
 	}
 	if req.SourceMessageID != "" {
 		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
@@ -436,7 +441,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", nil
 		}
 	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil)
+		threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
 	return threadID, "", err
 }
 

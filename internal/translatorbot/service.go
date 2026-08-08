@@ -30,6 +30,7 @@ type Service struct {
 	translator    Translator
 	rateLimiter   *TokenRateLimiter
 	urlPages      *urlPageCache
+	httpClient    *http.Client
 	publicBaseURL string
 	selfBotUserID string
 	threadMu      sync.Mutex
@@ -92,38 +93,52 @@ func (s *Service) notifyTranslationIssue(channelID, messageID, language string, 
 	_ = s.discord.SendChannelMessage(channelID, messageID, localizedUIString(language, key))
 }
 
-// translateWithLimit translates content into every requested language while
-// enforcing the per-guild token rate limit. Content without translatable text
-// is returned as-is for every language without calling the translator, in
-// which case contextFn is never invoked (it may perform Discord API calls).
+// translateWithLimit translates content and image attachments into every
+// requested language while enforcing the per-guild token rate limit.
+// Messages without translatable text or image attachments are returned as-is
+// without calling the translator, in which case contextFn is never invoked.
 // Returns errTranslationRateLimited when the guild is over budget.
-func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, languages []string, contextFn func() TranslationContext) (map[string]string, error) {
-	translations := make(map[string]string, len(languages))
-	if strings.TrimSpace(content) == "" || !hasTranslatableText(content) {
+func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext) (MultiTranslationResult, error) {
+	if !needsTranslation(content, attachmentsFromLoaded(loaded)) {
+		translations := make(map[string]string, len(languages))
 		for _, language := range languages {
 			translations[language] = content
 		}
-		return translations, nil
+		return MultiTranslationResult{Translations: translations}, nil
 	}
 	prepared, err := s.prepareTranslation(ctx, guildID, content, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
-		return prepareMultiTranslation(langs, content, tc, glossary)
+		tc.Attachments = translationAttachmentsFromLoaded(loaded)
+		prepared, err := prepareMultiTranslation(langs, content, tc, glossary)
+		if err != nil {
+			return preparedTranslation{}, err
+		}
+		vision := make([]visionImage, 0, visionMaxImages)
+		for _, item := range loaded {
+			vision = append(vision, item.Vision)
+		}
+		remainingSlots := visionMaxImages - len(vision)
+		remainingBytes := visionMaxTotalBytes - visionBytesTotal(vision)
+		vision = append(vision, s.loadOGPVisionImages(ctx, prepared.translationContext.Sites, remainingSlots, remainingBytes)...)
+		prepared.visionImages = vision
+		return prepared, nil
 	})
 	if err != nil {
-		return nil, err
+		return MultiTranslationResult{}, err
 	}
 	result, err := s.translator.TranslateMulti(ctx, prepared)
 	if err != nil {
-		return nil, err
+		return MultiTranslationResult{}, err
 	}
 	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	for _, language := range languages {
-		translated, ok := result.Translations[language]
-		if !ok {
-			return nil, fmt.Errorf("missing translation for %q", language)
+		if _, ok := result.Translations[language]; !ok {
+			return MultiTranslationResult{}, fmt.Errorf("missing translation for %q", language)
 		}
-		translations[language] = translated
+		if len(loaded) > 0 && len(result.AttachmentDescriptions[language]) != len(loaded) {
+			return MultiTranslationResult{}, fmt.Errorf("missing attachment descriptions for %q", language)
+		}
 	}
-	return translations, nil
+	return result, nil
 }
 
 func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question string, answers []string, languages []string, contextFn func() TranslationContext) (map[string]PollTranslation, error) {
@@ -229,6 +244,7 @@ func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
 	}
 	titles := make(map[string]string, len(pages))
 	descriptions := make(map[string]string, len(pages))
+	images := make(map[string]string, len(pages))
 	for rawURL, page := range pages {
 		if title := strings.TrimSpace(page.Title); title != "" {
 			titles[rawURL] = title
@@ -236,16 +252,20 @@ func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
 		if desc := strings.TrimSpace(page.Description); desc != "" {
 			descriptions[rawURL] = desc
 		}
+		if imageURL := strings.TrimSpace(page.ImageURL); imageURL != "" {
+			images[rawURL] = imageURL
+		}
 	}
 	tc.SiteTitles = titles
 	tc.SiteDescriptions = descriptions
+	tc.SiteImages = images
 }
 
 func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared preparedTranslation) error {
 	if s.rateLimiter == nil || len(prepared.targetLanguages) == 0 {
 		return nil
 	}
-	estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPrompt, "") + 200*len(prepared.targetLanguages)
+	estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPrompt, "") + 200*len(prepared.targetLanguages) + visionTokenOverheadPerImage*len(prepared.visionImages)
 	if !s.rateLimiter.Allow(guildID, estimate) {
 		return errTranslationRateLimited
 	}

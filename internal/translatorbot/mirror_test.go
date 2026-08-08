@@ -184,6 +184,7 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
+	stubImageHTTP(service)
 	seedGroup(t, store)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
@@ -197,8 +198,33 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	if got := discord.sent[0].Content; got != "[en] 画像です\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
+	if got := discord.sent[0].Content; got != "[en] 画像です" {
 		t.Fatalf("unexpected content: %q", got)
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "image.png" {
+		t.Fatalf("unexpected files: %#v", discord.sent[0].Files)
+	}
+}
+
+// SPEC 3.2 message mirroring
+func TestHandleMessageCreateTranslatesExistingImageAltText(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "見て",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png", Description: "出口はこちら"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "[en] 見て" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Description != "[en] 出口はこちら" {
+		t.Fatalf("files: %#v", discord.sent[0].Files)
 	}
 }
 
@@ -209,6 +235,7 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
 	seedGroup(t, store)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
@@ -218,11 +245,14 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(translator.contexts) != 0 {
-		t.Fatalf("blank content should not be translated: %#v", translator.contexts)
+	if len(translator.contexts) != 1 {
+		t.Fatalf("image-only messages are translation targets: %#v", translator.contexts)
 	}
-	if len(discord.sent) != 1 || discord.sent[0].Content != "https://cdn.discordapp.com/attachments/1/2/photo.jpg" {
+	if len(discord.sent) != 1 || strings.TrimSpace(discord.sent[0].Content) != "" {
 		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "photo.jpg" {
+		t.Fatalf("unexpected files: %#v", discord.sent[0].Files)
 	}
 }
 
@@ -273,6 +303,28 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndRewritesHreflang
 }
 
 // SPEC 3.2 message mirroring
+func TestHandleMessageCreateSkipsTranslationForStickerOnly(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Stickers: []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("sticker-only messages should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "https://cdn.discordapp.com/stickers/9.png" || len(discord.sent[0].Files) != 0 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+// SPEC 3.2 message mirroring
 func TestHandleMessageCreateTranslatesMarkdownLinkLabel(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -301,7 +353,7 @@ func TestMessageContentAppendsUnsignedBareURLsForAllAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "translated\nhttps://cdn.discordapp.com/attachments/1/2/image.png\nhttps://cdn.discordapp.com/attachments/1/3/archive.zip"
+	want := "translated\nhttps://cdn.discordapp.com/attachments/1/3/archive.zip"
 	if content != want {
 		t.Fatalf("got %q, want %q", content, want)
 	}
@@ -317,7 +369,7 @@ func TestMessageContentRejectsInvalidAttachmentURL(t *testing.T) {
 
 // SPEC 3.2 message mirroring
 func TestMessageContentRejectsDiscordContentLimit(t *testing.T) {
-	_, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.png"}}, nil)
+	_, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.zip", ContentType: "application/zip"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Discord limit") {
 		t.Fatalf("got %v", err)
 	}
@@ -706,8 +758,8 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	if len(links) != 1 || links[0].SourceContentSnapshot != "after" {
 		t.Fatalf("snapshot not updated: %#v", links)
 	}
-	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "[en] after\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
-		t.Fatalf("attachment URL not preserved in edit: %#v", discord.webhookEdits)
+	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "[en] after" {
+		t.Fatalf("image URLs should not be appended on edit: %#v", discord.webhookEdits)
 	}
 }
 

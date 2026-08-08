@@ -4,6 +4,7 @@ package translatorbot
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -56,17 +57,18 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 
 	translatorCalls := len(translator.contexts)
+	stubImageHTTP(service)
 	err = service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000020", ChannelID: "100000000000000005", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
-		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/thread.png?ex=1"}},
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/thread.png?ex=1", Filename: "thread.png", ContentType: "image/png"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != translatorCalls {
-		t.Fatal("attachment-only thread message must not be translated")
+	if len(translator.contexts) != translatorCalls+1 {
+		t.Fatal("image-only thread message must be translated")
 	}
-	if got := discord.sent[1]; got.ThreadID != "thread-1" || got.Content != "https://cdn.discordapp.com/attachments/1/2/thread.png" {
+	if got := discord.sent[1]; got.ThreadID != "thread-1" || strings.TrimSpace(got.Content) != "" || len(got.Files) != 1 {
 		t.Fatalf("unexpected attachment-only thread message: %#v", got)
 	}
 
@@ -76,7 +78,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != translatorCalls {
+	if len(translator.contexts) != translatorCalls+1 {
 		t.Fatal("code-only thread message must not be translated")
 	}
 	if got := discord.sent[2]; got.ThreadID != "thread-1" || got.Content != "`fmt.Println()`" {

@@ -137,7 +137,12 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	for _, dest := range dests {
 		languages = append(languages, dest.channel.Language)
 	}
-	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, languages, contextFn)
+	loaded, err := s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))
+	if err != nil {
+		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
+		return err
+	}
+	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, loaded, languages, contextFn)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
@@ -148,7 +153,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 
 	var errs []error
 	for _, dest := range dests {
-		content := s.postProcessContent(ctx, m.GuildID, translations[dest.channel.Language], dest.channel.Language)
+		content := s.postProcessContent(ctx, m.GuildID, translations.Translations[dest.channel.Language], dest.channel.Language)
 		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
@@ -165,7 +170,8 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, m.Content); err != nil {
+		files := webhookFilesForImages(loaded, translations.AttachmentDescriptions[dest.channel.Language])
+		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, files, m.Content); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
@@ -188,7 +194,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 		}
 	}
 
-	contentTranslations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, languages, contextFn)
+	contentTranslations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
@@ -207,7 +213,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 
 	var errs []error
 	for _, dest := range dests {
-		content := s.postProcessContent(ctx, m.GuildID, contentTranslations[dest.channel.Language], dest.channel.Language)
+		content := s.postProcessContent(ctx, m.GuildID, contentTranslations.Translations[dest.channel.Language], dest.channel.Language)
 		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
@@ -219,7 +225,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 		case quote != "":
 			content = quote
 		}
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
+		content, err = messageContentWithAllAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
@@ -236,7 +242,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 		if embed != nil {
 			embeds = []*discordgo.MessageEmbed{embed}
 		}
-		if err := s.sendMirror(ctx, m, groupID, dest, content, embeds, snapshot); err != nil {
+		if err := s.sendMirror(ctx, m, groupID, dest, content, embeds, nil, snapshot); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
@@ -274,7 +280,7 @@ func (s *Service) mirrorPollResultMessage(ctx context.Context, m DiscordMessage,
 		if quote != "" {
 			content = quote + "\n\n" + body
 		}
-		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, body); err != nil {
+		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, nil, body); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
@@ -307,14 +313,14 @@ func (s *Service) pollResultVictorLabel(ctx context.Context, pollChannelID, poll
 
 // sendMirror posts the prepared content to one destination and records the
 // message link with the given source snapshot.
-func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, snapshot string) error {
+func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) error {
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
 	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
 	if ref.MessageID != "" && ref.ChannelID == "" {
 		ref.ChannelID = m.ChannelID
 	}
 	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
-		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds,
+		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds, Files: files,
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
@@ -406,7 +412,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 		for _, p := range pending {
 			languages = append(languages, p.target.Language)
 		}
-		translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, languages, contextFn)
+		translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn)
 		if err != nil {
 			if errors.Is(err, errTranslationRateLimited) {
 				continue
@@ -414,7 +420,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			return err
 		}
 		for _, p := range pending {
-			content := s.postProcessContent(ctx, m.GuildID, translations[p.target.Language], p.target.Language)
+			content := s.postProcessContent(ctx, m.GuildID, translations.Translations[p.target.Language], p.target.Language)
 			content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
 			if err != nil {
 				return err

@@ -29,6 +29,15 @@ type bedrockRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f bedrockRoundTripFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
+func bedrockContentText(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		t.Fatalf("content %s: %v", raw, err)
+	}
+	return text
+}
+
 func translateMulti(t testing.TB, ctx context.Context, translator *BedrockTranslator, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
 	t.Helper()
 	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
@@ -129,6 +138,52 @@ func TestNewBedrockHTTPClientUsesKeepAliveTransport(t *testing.T) {
 	}
 }
 
+func TestBedrockTranslatorSendsVisionImagesBeforeText(t *testing.T) {
+	signer := &recordingSigner{}
+	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input bedrockResponsesRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if len(input.Input) != 2 {
+			t.Fatalf("prompt shape = %#v", input.Input)
+		}
+		var parts []map[string]any
+		if err := json.Unmarshal(input.Input[1].Content, &parts); err != nil {
+			t.Fatalf("user content = %s", input.Input[1].Content)
+		}
+		if len(parts) != 2 || parts[0]["type"] != "input_image" || parts[1]["type"] != "input_text" {
+			t.Fatalf("parts = %#v", parts)
+		}
+		imageURL, _ := parts[0]["image_url"].(string)
+		if !strings.HasPrefix(imageURL, "data:image/jpeg;base64,") {
+			t.Fatalf("image_url = %#v", parts[0]["image_url"])
+		}
+		text, _ := parts[1]["text"].(string)
+		if !strings.Contains(text, "<attachments>") {
+			t.Fatalf("text part = %#v", parts[1]["text"])
+		}
+		if !strings.Contains(bedrockContentText(t, input.Input[0].Content), `"attachment_descriptions"`) {
+			t.Fatalf("schema missing attachment_descriptions: %s", input.Input[0].Content)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 2)))}, nil
+	})
+	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
+		Attachments: []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	result, err := testTranslator(client, signer).TranslateMulti(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Translations["en"] != "Hello" || result.AttachmentDescriptions["en"][0] != "Exit" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 	signer := &recordingSigner{}
 	client := bedrockRoundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -151,7 +206,7 @@ func TestBedrockTranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if len(input.Input) != 2 || input.Input[0].Role != "system" || input.Input[1].Role != "user" {
 			t.Fatalf("prompt shape = %#v", input.Input)
 		}
-		if !strings.Contains(input.Input[0].Content, bedrockTranslationJSONSchema) || !strings.Contains(input.Input[1].Content, "<target_languages>en</target_languages>") {
+		if !strings.Contains(bedrockContentText(t, input.Input[0].Content), bedrockTranslationJSONSchema) || !strings.Contains(bedrockContentText(t, input.Input[1].Content), "<target_languages>en</target_languages>") {
 			t.Fatalf("prompt contract = %#v", input.Input)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulBedrockResponse(`{"translations":[{"language":"en","translated_text":"Hello [USER:Alice]"}]}`, 1, 2)))}, nil
@@ -288,11 +343,11 @@ func TestBedrockTranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 	if err := json.Unmarshal(entry.Request, &request); err != nil {
 		t.Fatal(err)
 	}
-	if len(request.Input) != 2 || !strings.Contains(request.Input[0].Content, bedrockTranslationJSONSchema) {
+	if len(request.Input) != 2 || !strings.Contains(bedrockContentText(t, request.Input[0].Content), bedrockTranslationJSONSchema) {
 		t.Fatalf("logged system instruction = %#v", request.Input)
 	}
-	if !strings.Contains(request.Input[1].Content, "<final_message>こんにちは [USER:Alice]</final_message>") {
-		t.Fatalf("logged user prompt = %q", request.Input[1].Content)
+	if !strings.Contains(bedrockContentText(t, request.Input[1].Content), "<final_message>こんにちは [USER:Alice]</final_message>") {
+		t.Fatalf("logged user prompt = %q", bedrockContentText(t, request.Input[1].Content))
 	}
 	if string(entry.Response) != response || entry.ResponseText != "" {
 		t.Fatalf("logged response = %s", entry.Response)
@@ -512,7 +567,7 @@ func TestBedrockTranslatorTranslatePollMulti(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(input.Input[0].Content, bedrockPollTranslationJSONSchema) || !strings.Contains(input.Input[1].Content, "<poll>") {
+		if !strings.Contains(bedrockContentText(t, input.Input[0].Content), bedrockPollTranslationJSONSchema) || !strings.Contains(bedrockContentText(t, input.Input[1].Content), "<poll>") {
 			t.Fatalf("unexpected request: %#v", input.Input)
 		}
 		body := successfulBedrockResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`, 3, 4)
@@ -548,11 +603,12 @@ func TestBedrockTranslatorTranslateThreadCreateMulti(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(input.Input[0].Content, bedrockThreadCreateTranslationJSONSchema) || !strings.Contains(input.Input[1].Content, "<thread_create>") {
+		if !strings.Contains(bedrockContentText(t, input.Input[0].Content), bedrockThreadCreateTranslationJSONSchema) || !strings.Contains(bedrockContentText(t, input.Input[1].Content), "<thread_create>") {
 			t.Fatalf("unexpected request: %#v", input.Input)
 		}
-		if !strings.Contains(input.Input[1].Content, "<name>議題</name>") || !strings.Contains(input.Input[1].Content, "<message author=\"alice\">本文</message>") {
-			t.Fatalf("unexpected user prompt: %s", input.Input[1].Content)
+		userPrompt := bedrockContentText(t, input.Input[1].Content)
+		if !strings.Contains(userPrompt, "<name>議題</name>") || !strings.Contains(userPrompt, `<message author="alice">本文</message>`) {
+			t.Fatalf("unexpected user prompt: %s", userPrompt)
 		}
 		body := successfulBedrockResponse(`{"translations":[{"language":"en","name":"Topic","message":"Body"}]}`, 3, 4)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil

@@ -101,6 +101,24 @@ func TestWebhookMessageURLOmitsQueryWithoutThreadID(t *testing.T) {
 	}
 }
 
+func TestDiscordFilesAndMetaIncludesDescription(t *testing.T) {
+	files, attachments, err := discordFilesAndMeta([]WebhookFile{{
+		Name:        "sign.png",
+		ContentType: "image/png",
+		Description: "Exit this way",
+		Data:        png1x1,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Name != "sign.png" || files[0].ContentType != "image/png" {
+		t.Fatalf("files = %#v", files)
+	}
+	if len(attachments) != 1 || attachments[0].ID != "0" || attachments[0].Filename != "sign.png" || attachments[0].Description != "Exit this way" {
+		t.Fatalf("attachments = %#v", attachments)
+	}
+}
+
 func TestFetchedMessageFromDiscordIncludesEmbedTitleForQuotes(t *testing.T) {
 	got := fetchedMessageFromDiscord(&discordgo.Message{
 		Content: "> -# A poll has started. · [Vote](https://discord.com/channels/g/c/m)",

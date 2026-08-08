@@ -135,6 +135,19 @@ func TestReferencedMessageFieldsIgnoresForward(t *testing.T) {
 	}
 }
 
+func TestAttachmentDescriptionsFromRaw(t *testing.T) {
+	descriptions, snapshot := attachmentDescriptionsFromRaw([]byte(`{
+		"attachments":[{"description":"source alt"},{"filename":"b.png"}],
+		"message_snapshots":[{"message":{"attachments":[{"description":"forwarded alt"}]}}]
+	}`))
+	if len(descriptions) != 2 || descriptions[0] != "source alt" || descriptions[1] != "" {
+		t.Fatalf("descriptions = %#v", descriptions)
+	}
+	if len(snapshot) != 1 || snapshot[0] != "forwarded alt" {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+}
+
 func TestForwardedMessageFields(t *testing.T) {
 	got, err := forwardedMessageFields(
 		&discordgo.MessageReference{Type: discordgo.MessageReferenceTypeForward, MessageID: "message", ChannelID: "channel", GuildID: "origin-guild"},
@@ -143,6 +156,7 @@ func TestForwardedMessageFields(t *testing.T) {
 			Attachments:  []*discordgo.MessageAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png"}},
 			StickerItems: []*discordgo.StickerItem{{ID: "sticker", Name: "wave", FormatType: discordgo.StickerFormatTypePNG}},
 		}}},
+		[]string{"alt text"},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -152,6 +166,9 @@ func TestForwardedMessageFields(t *testing.T) {
 	}
 	if len(got.Attachments) != 1 || len(got.Stickers) != 1 {
 		t.Fatalf("snapshot assets were not mapped: %#v", got)
+	}
+	if got.Attachments[0].Description != "alt text" {
+		t.Fatalf("snapshot attachment description = %q", got.Attachments[0].Description)
 	}
 }
 
@@ -205,7 +222,7 @@ func TestForwardedMessageFieldsRejectsMalformedSnapshots(t *testing.T) {
 		"multiple":    {{Message: &discordgo.Message{}}, {Message: &discordgo.Message{}}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got, err := forwardedMessageFields(ref, snapshots); err == nil || got != nil {
+			if got, err := forwardedMessageFields(ref, snapshots, nil); err == nil || got != nil {
 				t.Fatalf("got %#v, err %v", got, err)
 			}
 		})

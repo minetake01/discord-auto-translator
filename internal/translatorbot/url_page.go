@@ -28,6 +28,7 @@ var titleTagPattern = regexp.MustCompile(`(?is)<title[^>]*>([^<]*)</title>`)
 type urlPageInfo struct {
 	Title       string
 	Description string
+	ImageURL    string
 	Hreflangs   map[string]string // hreflang → href
 }
 
@@ -244,20 +245,53 @@ func fetchURLPage(ctx context.Context, client *http.Client, rawURL string) (info
 	if err != nil {
 		return urlPageInfo{}, false
 	}
-	return parseURLPage(string(body)), true
+	info = parseURLPage(string(body))
+	baseURL := parsedRequestURL(resp, rawURL)
+	if info.ImageURL != "" {
+		info.ImageURL = resolveMaybeRelativeURL(baseURL, info.ImageURL)
+	}
+	return info, true
+}
+
+func parsedRequestURL(resp *http.Response, fallback string) *url.URL {
+	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
+		return resp.Request.URL
+	}
+	parsed, err := url.Parse(fallback)
+	if err != nil {
+		return nil
+	}
+	return parsed
+}
+
+func resolveMaybeRelativeURL(base *url.URL, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || base == nil {
+		return ""
+	}
+	parsed, err := url.Parse(ref)
+	if err != nil {
+		return ""
+	}
+	resolved := base.ResolveReference(parsed)
+	if resolved.Scheme != "http" && resolved.Scheme != "https" {
+		return ""
+	}
+	return resolved.String()
 }
 
 func parseURLPage(htmlBody string) urlPageInfo {
-	title, description := extractPageMeta(htmlBody)
+	title, description, imageURL := extractPageMeta(htmlBody)
 	return urlPageInfo{
 		Title:       title,
 		Description: description,
+		ImageURL:    imageURL,
 		Hreflangs:   extractHreflangURLs(htmlBody),
 	}
 }
 
-func extractPageMeta(htmlBody string) (title, description string) {
-	var ogTitle, twitterTitle, ogDescription, twitterDescription, metaDescription string
+func extractPageMeta(htmlBody string) (title, description, imageURL string) {
+	var ogTitle, twitterTitle, ogDescription, twitterDescription, metaDescription, ogImage, twitterImage string
 	for _, tag := range metaTagPattern.FindAllString(htmlBody, -1) {
 		a := attrs(tag)
 		prop := strings.ToLower(strings.TrimSpace(a["property"]))
@@ -277,6 +311,10 @@ func extractPageMeta(htmlBody string) (title, description string) {
 			twitterDescription = content
 		case name == "description" && metaDescription == "":
 			metaDescription = content
+		case prop == "og:image" && ogImage == "":
+			ogImage = content
+		case name == "twitter:image" && twitterImage == "":
+			twitterImage = content
 		}
 	}
 	title = firstNonEmpty(ogTitle, twitterTitle)
@@ -286,7 +324,8 @@ func extractPageMeta(htmlBody string) (title, description string) {
 		}
 	}
 	description = firstNonEmpty(ogDescription, twitterDescription, metaDescription)
-	return truncateRunes(title, urlPageTitleMaxRunes, ""), truncateRunes(description, urlPageDescriptionMaxRunes, "")
+	imageURL = firstNonEmpty(ogImage, twitterImage)
+	return truncateRunes(title, urlPageTitleMaxRunes, ""), truncateRunes(description, urlPageDescriptionMaxRunes, ""), imageURL
 }
 
 func extractHreflangURLs(htmlBody string) map[string]string {

@@ -125,6 +125,7 @@ type DiscordAttachment struct {
 	URL         string
 	Filename    string
 	ContentType string
+	Description string
 }
 
 type DiscordSticker struct {
