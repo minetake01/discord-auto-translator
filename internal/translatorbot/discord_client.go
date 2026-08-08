@@ -1,6 +1,7 @@
 package translatorbot
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
@@ -29,7 +30,7 @@ type DiscordAPI interface {
 	RemoveOwnReaction(channelID, messageID, emoji string) error
 	PinMessage(channelID, messageID string) error
 	UnpinMessage(channelID, messageID string) error
-	CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (threadID, initialMessageID string, err error)
+	CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (threadID, initialMessageID string, err error)
 	CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error)
 	EditThread(threadID, name string, appliedTags *[]string) error
 	DeleteThread(threadID string) error
@@ -43,6 +44,20 @@ type WebhookSend struct {
 	ThreadID  string
 	TTS       bool
 	Embeds    []*discordgo.MessageEmbed
+	Files     []WebhookFile
+}
+
+type WebhookFile struct {
+	Name        string
+	ContentType string
+	Description string
+	Data        []byte
+}
+
+type webhookAttachmentMeta struct {
+	ID          string `json:"id"`
+	Filename    string `json:"filename,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 type DiscordGoAPI struct {
@@ -139,23 +154,101 @@ func (d DiscordGoAPI) SendChannelMessage(channelID, replyToMessageID, content st
 }
 
 func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (string, error) {
-	params := &discordgo.WebhookParams{
-		Content:   msg.Content,
-		Username:  sanitizeWebhookName(msg.Username),
-		AvatarURL: sanitizeWebhookAvatarURL(msg.AvatarURL),
-		TTS:       msg.TTS,
-		Embeds:    msg.Embeds,
+	if len(msg.Files) == 0 {
+		params := &discordgo.WebhookParams{
+			Content:   msg.Content,
+			Username:  sanitizeWebhookName(msg.Username),
+			AvatarURL: sanitizeWebhookAvatarURL(msg.AvatarURL),
+			TTS:       msg.TTS,
+			Embeds:    msg.Embeds,
+		}
+		m, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+			if msg.ThreadID != "" {
+				return d.session.WebhookThreadExecute(webhookID, token, true, msg.ThreadID, params)
+			}
+			return d.session.WebhookExecute(webhookID, token, true, params)
+		})
+		if err != nil {
+			return "", err
+		}
+		return m.ID, nil
 	}
 	m, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
-		if msg.ThreadID != "" {
-			return d.session.WebhookThreadExecute(webhookID, token, true, msg.ThreadID, params)
-		}
-		return d.session.WebhookExecute(webhookID, token, true, params)
+		return d.executeWebhookWithFiles(webhookID, token, msg)
 	})
 	if err != nil {
 		return "", err
 	}
 	return m.ID, nil
+}
+
+type webhookExecutePayload struct {
+	Content     string                    `json:"content,omitempty"`
+	Username    string                    `json:"username,omitempty"`
+	AvatarURL   string                    `json:"avatar_url,omitempty"`
+	TTS         bool                      `json:"tts,omitempty"`
+	Embeds      []*discordgo.MessageEmbed `json:"embeds,omitempty"`
+	Attachments []webhookAttachmentMeta   `json:"attachments,omitempty"`
+}
+
+func (d DiscordGoAPI) executeWebhookWithFiles(webhookID, token string, msg WebhookSend) (*discordgo.Message, error) {
+	files, attachments, err := discordFilesAndMeta(msg.Files)
+	if err != nil {
+		return nil, err
+	}
+	payload := webhookExecutePayload{
+		Content:     msg.Content,
+		Username:    sanitizeWebhookName(msg.Username),
+		AvatarURL:   sanitizeWebhookAvatarURL(msg.AvatarURL),
+		TTS:         msg.TTS,
+		Embeds:      msg.Embeds,
+		Attachments: attachments,
+	}
+	contentType, body, err := discordgo.MultipartBodyWithJSON(payload, files)
+	if err != nil {
+		return nil, err
+	}
+	uri := discordgo.EndpointWebhookToken(webhookID, token)
+	v := url.Values{}
+	v.Set("wait", "true")
+	if msg.ThreadID != "" {
+		v.Set("thread_id", msg.ThreadID)
+	}
+	uri += "?" + v.Encode()
+	response, err := d.session.RequestRaw("POST", uri, contentType, body, discordgo.EndpointWebhookToken("", ""), 0)
+	if err != nil {
+		return nil, err
+	}
+	var message discordgo.Message
+	if err := discordgo.Unmarshal(response, &message); err != nil {
+		return nil, err
+	}
+	return &message, nil
+}
+
+func discordFilesAndMeta(files []WebhookFile) ([]*discordgo.File, []webhookAttachmentMeta, error) {
+	outFiles := make([]*discordgo.File, 0, len(files))
+	attachments := make([]webhookAttachmentMeta, 0, len(files))
+	for i, file := range files {
+		if len(file.Data) == 0 {
+			return nil, nil, fmt.Errorf("webhook file %q is empty", file.Name)
+		}
+		name := strings.TrimSpace(file.Name)
+		if name == "" {
+			name = "attachment"
+		}
+		outFiles = append(outFiles, &discordgo.File{
+			Name:        name,
+			ContentType: file.ContentType,
+			Reader:      bytes.NewReader(file.Data),
+		})
+		attachments = append(attachments, webhookAttachmentMeta{
+			ID:          fmt.Sprintf("%d", i),
+			Filename:    name,
+			Description: file.Description,
+		})
+	}
+	return outFiles, attachments, nil
 }
 
 func sanitizeWebhookAvatarURL(avatarURL string) string {
@@ -258,17 +351,28 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
-func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (string, string, error) {
+func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
-		if strings.TrimSpace(initialMessage) == "" && len(embeds) == 0 {
+		if strings.TrimSpace(initialMessage) == "" && len(embeds) == 0 && len(files) == 0 {
 			initialMessage = name
 		}
-		message := &discordgo.MessageSend{Content: initialMessage, Embeds: embeds}
-		t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
-			Name:                name,
-			AutoArchiveDuration: 1440,
-			AppliedTags:         appliedTags,
-		}, message)
+		if len(files) == 0 {
+			message := &discordgo.MessageSend{Content: initialMessage, Embeds: embeds}
+			t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
+				Name:                name,
+				AutoArchiveDuration: 1440,
+				AppliedTags:         appliedTags,
+			}, message)
+			if err != nil {
+				return "", "", err
+			}
+			messageID := t.ID
+			if t.LastMessageID != "" {
+				messageID = t.LastMessageID
+			}
+			return t.ID, messageID, nil
+		}
+		t, err := d.startForumThreadWithFiles(channelID, name, initialMessage, embeds, appliedTags, files)
 		if err != nil {
 			return "", "", err
 		}
@@ -287,6 +391,50 @@ func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, init
 
 func isThreadOnlyChannelType(channelType int) bool {
 	return channelType == int(discordgo.ChannelTypeGuildForum) || channelType == int(discordgo.ChannelTypeGuildMedia)
+}
+
+type forumThreadStartPayload struct {
+	Name                string              `json:"name"`
+	AutoArchiveDuration int                 `json:"auto_archive_duration"`
+	AppliedTags         []string            `json:"applied_tags,omitempty"`
+	Message             forumThreadMessage  `json:"message"`
+}
+
+type forumThreadMessage struct {
+	Content     string                    `json:"content,omitempty"`
+	Embeds      []*discordgo.MessageEmbed `json:"embeds,omitempty"`
+	Attachments []webhookAttachmentMeta   `json:"attachments,omitempty"`
+}
+
+func (d DiscordGoAPI) startForumThreadWithFiles(channelID, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (*discordgo.Channel, error) {
+	discordFiles, attachments, err := discordFilesAndMeta(files)
+	if err != nil {
+		return nil, err
+	}
+	payload := forumThreadStartPayload{
+		Name:                name,
+		AutoArchiveDuration: 1440,
+		AppliedTags:         appliedTags,
+		Message: forumThreadMessage{
+			Content:     initialMessage,
+			Embeds:      embeds,
+			Attachments: attachments,
+		},
+	}
+	contentType, body, err := discordgo.MultipartBodyWithJSON(payload, discordFiles)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := discordgo.EndpointChannelThreads(channelID)
+	response, err := d.session.RequestRaw("POST", endpoint, contentType, body, endpoint, 0)
+	if err != nil {
+		return nil, err
+	}
+	var channel discordgo.Channel
+	if err := discordgo.Unmarshal(response, &channel); err != nil {
+		return nil, err
+	}
+	return &channel, nil
 }
 
 func (d DiscordGoAPI) CreateThreadFromMessage(channelID, messageID, name string) (string, error) {

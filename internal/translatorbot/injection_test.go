@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+func TestNeedsTranslationIncludesImageAttachments(t *testing.T) {
+	image := []DiscordAttachment{{Filename: "shot.png", ContentType: "image/png"}}
+	if needsTranslation("", nil) || needsTranslation("https://example.com", nil) {
+		t.Fatal("text-only non-translatable content should not need translation")
+	}
+	if !needsTranslation("hello", nil) || !needsTranslation("", image) || !needsTranslation("https://example.com", image) {
+		t.Fatal("plain text or image attachments should need translation")
+	}
+}
+
 func TestHasTranslatableText(t *testing.T) {
 	tests := []struct {
 		name string
@@ -61,6 +71,9 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 		"https://example.com/b": "Second page",
 		"https://other.com/c":   "Other page",
 	})
+	p.SetSiteImages(map[string]string{
+		"https://example.com/a": "https://example.com/a.jpg",
+	})
 	in := "see https://example.com/a and https://example.com/b and https://other.com/c"
 	protected := p.Protect(in)
 	want := "see [SITE:1] and [SITE:2] and [SITE:3]"
@@ -71,7 +84,7 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 	if len(sites) != 3 {
 		t.Fatalf("sites = %+v", sites)
 	}
-	if sites[0] != (SiteContextEntry{ID: "1", Title: "Example Article", Description: "First page"}) {
+	if sites[0] != (SiteContextEntry{ID: "1", Title: "Example Article", Description: "First page", ImageURL: "https://example.com/a.jpg"}) {
 		t.Fatalf("sites[0] = %+v", sites[0])
 	}
 	if sites[1] != (SiteContextEntry{ID: "2", Title: "Example Article", Description: "Second page"}) {

@@ -1,13 +1,37 @@
 package translatorbot
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
 )
+
+var png1x1 = []byte{
+	0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+	0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
+	0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
+	0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
+	0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+}
+
+func stubImageHTTP(service *Service) {
+	service.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"image/png"}},
+			Body:       io.NopCloser(bytes.NewReader(png1x1)),
+			Request:    req,
+		}, nil
+	})}
+}
 
 type fakeDiscordAPI struct {
 	sent              []WebhookSend
@@ -48,6 +72,7 @@ type threadCall struct {
 	content     string
 	embeds      []*discordgo.MessageEmbed
 	appliedTags []string
+	files       []WebhookFile
 }
 type threadEditCall struct {
 	threadID    string
@@ -138,13 +163,13 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
 	f.pinCalls = append(f.pinCalls, pinCall{channelID: channelID, messageID: messageID, pinned: false})
 	return nil
 }
-func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string) (threadID, initialMessageID string, err error) {
+func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (threadID, initialMessageID string, err error) {
 	f.nextID++
 	threadID = fmt.Sprintf("thread-%d", f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
-	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds, appliedTags: append([]string(nil), appliedTags...)})
+	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds, appliedTags: append([]string(nil), appliedTags...), files: append([]WebhookFile(nil), files...)})
 	return threadID, initialMessageID, nil
 }
 func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
@@ -182,10 +207,25 @@ type echoTranslator struct {
 func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
 	e.contexts = append(e.contexts, prepared.translationContext)
 	out := make(map[string]string, len(prepared.targetLanguages))
+	alts := make(map[string][]string, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
-		out[lang] = "[" + lang + "] " + prepared.content
+		text := prepared.content
+		if hasTranslatableText(text) || strings.TrimSpace(text) != "" {
+			out[lang] = "[" + lang + "] " + text
+		} else {
+			out[lang] = text
+		}
+		if prepared.attachmentCount > 0 {
+			descriptions := make([]string, prepared.attachmentCount)
+			for i, attachment := range prepared.translationContext.Attachments {
+				if strings.TrimSpace(attachment.Description) != "" {
+					descriptions[i] = "[" + lang + "] " + attachment.Description
+				}
+			}
+			alts[lang] = descriptions
+		}
 	}
-	return MultiTranslationResult{Translations: out}, nil
+	return MultiTranslationResult{Translations: out, AttachmentDescriptions: alts}, nil
 }
 func (e *echoTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
 	e.pollContexts = append(e.pollContexts, prepared.translationContext)

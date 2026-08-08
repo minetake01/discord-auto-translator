@@ -22,6 +22,7 @@ internal/translatorbot/
 ├── service_thread.go       # スレッド作成・更新・削除・スレッド内メッセージ同期
 ├── service_sync.go         # リアクション・ピン留め同期
 ├── content.go              # 本文加工の純粋関数（添付URL化・疑似リプライ解析・切り詰め等）
+├── image.go                # 画像添付判定・ダウンロード・ビジョン用縮小・再アップロード用バイト保持
 ├── ui_strings.go           # 全ユーザー向け文言の多言語カタログ（13言語 + 英語フォールバック）
 ├── commands.go             # スラッシュコマンド定義・ギルド登録
 ├── command_handlers.go     # CommandHandler と各コマンド処理
@@ -55,6 +56,8 @@ internal/translatorbot/
 `discordgo v0.29.0` を使用しています。このバージョンは Discord の一部新しい API に未対応の場合があります。
 
 **スレッドの webhook 操作** (`EditWebhook` / `DeleteWebhook` でのスレッド内メッセージ操作) は discordgo の公式メソッドが `thread_id` に対応していないため、`discord_client.go` 内で `session.RequestWithBucketID` を直接呼び出す実装になっています（`webhookMessageURL` 関数）。discordgo をアップデートする場合はこの部分の互換性を確認してください。
+
+**添付の代替テキスト** discordgo v0.29.0 の `MessageAttachment` に `description` が無いため、Gateway の `Event.RawData` から読み、webhook / forum 初回投稿では `payload_json.attachments[].description` を自前の multipart で送ります。
 
 ### SQLite: CGO 不要
 
@@ -126,7 +129,7 @@ jq -c 'select(.error) | {time, guild_id, message_id, http_status, duration_ms, e
 - **best-effort fan-out**: 複数ターゲットへの転送中に一部が失敗しても残りは続行し、エラーは `errors.Join` で集約して返します。
 - **ピン留め同期**: `MESSAGE_UPDATE` で `pin_states` テーブルに保存済みの状態と `Pinned` を比較し、変化時のみ `SyncPin` を実行します。Webhook ミラー側のピン留めも双方向に同期し、bot 自身のピン操作によるエコーは状態比較で抑止します。
 - **内容不変の編集スキップ**: ピン留めなど本文が変わらない `MESSAGE_UPDATE` では `source_content_snapshot` と比較して再翻訳をスキップします。
-- **転送snapshotの再利用**: `FORWARD` は immutable な `message_snapshots[0]` から取り込みます。送信先に対応する既存ミラーがあれば翻訳済み本文を再利用し、対応がない外部本文だけを翻訳します。添付・ステッカーは既存のURL化処理を使い、保存snapshotには転送本文を記録します。
+- **転送snapshotの再利用**: `FORWARD` は immutable な `message_snapshots[0]` から取り込みます。送信先に対応する既存ミラーがあれば翻訳済み本文を再利用し、対応がない外部本文だけを翻訳します。画像添付は再アップロード、非画像・ステッカーは CDN URL 追記です。保存snapshotには転送本文を記録します。
 
 ---
 
@@ -208,6 +211,9 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
   <site_context>
     <site id="1" title="Example Article">Page description from OGP</site>
   </site_context>
+  <attachments>
+    <attachment index="1" filename="sign.png">既存の代替テキスト</attachment>
+  </attachments>
   <final_message author="Carol">How are you? [SITE:1]</final_message>
 </translation_request>
 ```
@@ -215,7 +221,8 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から最大3件の原文を収集します。
 - `<reply_context>` はリプライ先を最大3件遡った引用チェイン（古い順）です。`<recent_context>` より優先して解釈に使います。引用チェインに含まれるメッセージは `<recent_context>` から除外されます。
-- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。
+- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。`og:image` はビジョン入力の文脈画像として別途渡します。
+- `<attachments>` は画像添付の翻訳対象です。ビジョン入力の先頭画像と index 順で対応します。既存 alt は翻訳し、alt なしで文字が主内容のときだけ生成します。
 - 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。
@@ -330,7 +337,7 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 ### メッセージ内容がない場合
 
-`HandleMessageCreate` は本文が空でも、添付ファイルまたはステッカーがあればミラーリングします。アセットは再アップロードせず、署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
+`HandleMessageCreate` は本文が空でも、添付ファイルまたはステッカーがあればミラーリングします。画像添付は翻訳対象として再アップロードし、非画像添付とステッカーは署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
 
 ### ウェブフック由来メッセージの無視
 

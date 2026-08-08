@@ -102,9 +102,9 @@ BCP-47 形式 (`en`, `ja`, `zh-CN`, `pt-BR` など) を使用します。`langua
 4. 各対象チャンネルへ翻訳して投稿
 5. メッセージリンクを DB に保存
 
-投稿時は送信者の表示名とアバター画像をウェブフックのユーザー名・アバターに設定します。TTS フラグはミラー先にも引き継ぎます。添付ファイルとステッカーは再アップロードせず、署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
+投稿時は送信者の表示名とアバター画像をウェブフックのユーザー名・アバターに設定します。TTS フラグはミラー先にも引き継ぎます。画像添付は翻訳対象として扱い、縮小した画像を翻訳モデルへ渡し、翻訳または生成した代替テキスト（`attachment.description`、最大 1024 文字）を付けて再アップロードします。既存の代替テキストは各言語へ翻訳します。代替テキストがなく、画像内の文字が主内容である場合のみ、その文字を翻訳した代替テキストを付与します。装飾画像などは代替テキストなしで再アップロードします。非画像添付とステッカーは再アップロードせず、署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
 
-空白、HTTP(S) URL、Discord メンション、カスタム絵文字、コードブロック、インラインコードだけで構成される本文は、翻訳対象テキストがないものとして翻訳 API と翻訳用レート制限を使用せず、原文をミラーリングします。URL 代替版検索など翻訳 API 以外の処理は通常どおり実行します。
+空白、HTTP(S) URL、Discord メンション、カスタム絵文字、コードブロック、インラインコードだけで構成される本文でも、画像添付があれば翻訳対象として翻訳 API を呼び出します。画像もなく翻訳対象テキストもない場合は翻訳 API と翻訳用レート制限を使用せず、原文をミラーリングします。URL 代替版検索など翻訳 API 以外の処理は通常どおり実行します。
 
 翻訳に失敗した場合、またはギルド単位の翻訳トークンレート制限（`TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`、デフォルト `100000`）を超過した場合はミラーリングせず、投稿元メッセージへのリプライとして通知を投稿します（fail-closed）。通知文言は投稿元チャンネルに登録された言語で表示されます。
 
@@ -178,7 +178,7 @@ Discord の `message_reference.type=FORWARD` と作成時点で不変の `messag
 
 参照元が `message_links` に存在し、送信先チャンネルに対応するミラーを取得できる場合は、その翻訳済み本文とミラー先URLを再利用して翻訳 API を呼びません。取得した本文の先頭に Bot が生成した疑似返信または転送見出しがある場合は、その見出しだけを除去します。送信先に対応するミラーがない場合は snapshot 本文だけを翻訳し、参照元URLを表示します。翻訳対象文字がない本文では API を呼びません。
 
-snapshot の添付ファイルとステッカーは通常メッセージと同じURL化処理で保持します。embed と component は対象外です。保存する `source_content_snapshot` には転送イベント外側の空本文ではなく snapshot 本文を使用します。
+snapshot の画像添付は通常メッセージと同じく再アップロードし、非画像添付とステッカーは CDN URL を本文末尾へ追加します。embed と component は対象外です。保存する `source_content_snapshot` には転送イベント外側の空本文ではなく snapshot 本文を使用します。
 
 ### 3.5 ピン留め同期
 
@@ -222,9 +222,10 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | 直近の会話履歴（最大3件、24時間以内） | 翻訳グループ内の全チャンネル（または同期済みスレッド）の DB `source_content_snapshot` | 会話の流れを踏まえた翻訳。各メッセージは原文スナップショットと投稿者表示名（`author`）付き |
 | リプライ引用チェイン（最大3件、時間制限なし） | `message_links` による原文解決 + Discord API で参照を遡る | `<recent_context>` より優先して、返信先メッセージの原文を解釈に利用。各メッセージは `author` 付き |
 | 翻訳対象メッセージの投稿者 | 処理中 `DiscordMessage.AuthorDisplayName` | `<final_message author="...">` として翻訳対象の話者を明示 |
-| 共有 URL のページメタ（title / description） | 本文中の HTTP(S) URL を GET して OGP / Twitter / `<title>` 等から抽出 | `<site_context>` と `[SITE:N]` プレースホルダでリンク先の背景を翻訳に反映 |
+| 共有 URL のページメタ（title / description / image） | 本文中の HTTP(S) URL を GET して OGP / Twitter / `<title>` 等から抽出 | `<site_context>` と `[SITE:N]` プレースホルダでリンク先の背景を翻訳に反映。`og:image` / `twitter:image` は縮小してビジョン入力へ（文脈のみ、再投稿しない） |
+| 画像添付 | Discord CDN から取得し、最長辺 768px の JPEG に縮小 | 本文と並列の翻訳対象。既存 alt の翻訳、または文字主体画像の alt 生成。元バイトを代替テキスト付きで再アップロード |
 
-翻訳対象テキストがあるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの `[SITE:N]` と `<site id="N">` で対応付けます。
+翻訳対象テキストまたは画像添付があるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの `[SITE:N]` と `<site id="N">` で対応付けます。画像添付のダウンロードや縮小に失敗した場合は fail-closed でミラーせず、投稿元へ通知します。OGP 画像の取得失敗はサイトメタと同様にスキップします。
 
 ### 3.9 URL の代替版置換
 
@@ -280,15 +281,16 @@ snapshot の添付ファイルとステッカーは通常メッセージと同�
 | 一時障害リトライ | ちょうど 1 回（1 秒待機後）。対象はタイムアウト・通信エラー・HTTP 429/5xx。契約違反・4xx（429以外）は再試行しない |
 | temperature | 省略（Gemmaプロバイダー既定値 1.0） |
 | max_output_tokens | 4096（アプリケーション固定上限） |
-| 出力形式 | 固定JSON Schemaをsystem instructionへ含める。Gemma 4はBedrock Structured Outputs非対応のため、既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する |
+| 出力形式 | 固定JSON Schemaをsystem instructionへ含める。Gemma 4はBedrock Structured Outputs非対応のため、既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。画像添付がある場合は `attachment_descriptions` もソース順で厳密検証する |
+| 画像入力 | 縮小JPEGを base64 data URL として Responses API の `input_image` パートで渡し、テキスト（`input_text`）より前に置く。添付+OGP 合わせて最大 4 枚。リクエスト全体は 3.5MB 制約に収める |
 
 **環境変数（必須）:** `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION`、`AWS_BEDROCK_PROJECT_ID`。専用 IAM ユーザーには `arn:aws:bedrock-mantle:${AWS_BEDROCK_REGION}:<account-id>:project/${AWS_BEDROCK_PROJECT_ID}` に対する `bedrock-mantle:CreateInference` を許可します。AWS公式の基本ポリシーでは `GetProject`、`ListProjects`、`ListTagsForResources` も併記されます。任意: `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
 
 **呼び出し契約:**
 
-- 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない
+- 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない。画像は縮小JPEGの data URL を `input_image` としてテキストより前に置く
 - 試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行する。親コンテキストのキャンセル、HTTP 4xx（429以外）、不正JSON・incomplete等の契約違反は再試行しない
-- 用途別の固定schemaをsystem instructionへ含める（通常メッセージ・投票・スレッド作成）。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する
+- 用途別の固定schemaをsystem instructionへ含める（通常メッセージ・投票・スレッド作成）。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。画像添付がある通常メッセージでは `attachment_descriptions` もソース順で必須
 - スレッド作成時はタイトル（`name`）と初期本文（`message`）を1リクエストで翻訳する。ソースに本文がない場合だけ `message` 空を許容する
 - incomplete状態（`max_output_tokens`到達を含む）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Mantleはrequest metadata非対応なので送信しない。既定ではプロンプト・応答・認証情報・AWSエラーメッセージをアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する

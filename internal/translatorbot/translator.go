@@ -32,7 +32,9 @@ type TranslationContext struct {
 	MentionedRoles    map[string]string // roleID → role name
 	SiteTitles        map[string]string // rawURL → page title
 	SiteDescriptions  map[string]string // rawURL → page description
+	SiteImages        map[string]string // rawURL → og:image URL
 	Sites             []SiteContextEntry
+	Attachments       []TranslationAttachment
 }
 
 type GlossaryEntry struct {
@@ -43,9 +45,10 @@ type GlossaryEntry struct {
 }
 
 type MultiTranslationResult struct {
-	Translations map[string]string
-	InputTokens  int
-	OutputTokens int
+	Translations           map[string]string
+	AttachmentDescriptions map[string][]string
+	InputTokens            int
+	OutputTokens           int
 }
 
 type PollTranslation struct {
@@ -91,6 +94,8 @@ type preparedTranslation struct {
 	threadName         string
 	threadMessage      string
 	translationContext TranslationContext
+	visionImages       []visionImage
+	attachmentCount    int
 }
 
 func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -100,11 +105,28 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	}
 
 	protected := p.Protect(content)
+	attachments := make([]TranslationAttachment, len(translationContext.Attachments))
+	glossaryContent := content
+	for i, attachment := range translationContext.Attachments {
+		attachments[i] = attachment
+		if strings.TrimSpace(attachment.Description) != "" {
+			attachments[i].Description = p.Protect(attachment.Description)
+		}
+		glossaryContent += "\n" + attachment.Description
+	}
+	translationContext.Attachments = attachments
 	translationContext.Sites = p.SiteContext()
+	taskIntro := "Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n"
+	if len(attachments) > 0 {
+		taskIntro += fmt.Sprintf(
+			"Images supplied before the text prompt are the <attachments> in source order, then optional linked-page images used only as background. Return attachment_descriptions with exactly %d strings in that source order. Translate an existing description; if it is empty and the image is primarily readable text, return that text translated; otherwise return an empty string. translated_text may be empty when <final_message> is empty.\n",
+			len(attachments),
+		)
+	}
 	systemInstruction := buildTranslationSystemInstruction(
-		"Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n",
+		taskIntro,
 		"<final_message>",
-		content,
+		glossaryContent,
 		glossary,
 		len(translationContext.History) > 0,
 		len(translationContext.ReplyChain) > 0,
@@ -112,6 +134,23 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 		len(translationContext.Sites) > 0,
 	)
 	userPrompt := buildTranslationUserPrompt(normalized, translationContext, func(b *strings.Builder) {
+		if len(attachments) > 0 {
+			b.WriteString("<attachments>")
+			for _, attachment := range attachments {
+				b.WriteString(`<attachment index="`)
+				writeXMLAttributeValue(b, fmt.Sprintf("%d", attachment.Index))
+				b.WriteString(`"`)
+				if attachment.Filename != "" {
+					b.WriteString(` filename="`)
+					writeXMLAttributeValue(b, attachment.Filename)
+					b.WriteString(`"`)
+				}
+				b.WriteString(">")
+				writeXMLText(b, attachment.Description)
+				b.WriteString("</attachment>")
+			}
+			b.WriteString("</attachments>")
+		}
 		writeAttributedElement(b, "final_message", translationContext.Author, protected)
 	})
 	return preparedTranslation{
@@ -123,6 +162,7 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 		messageID:          translationContext.MessageID,
 		content:            content,
 		translationContext: translationContext,
+		attachmentCount:    len(attachments),
 	}, nil
 }
 
@@ -131,38 +171,61 @@ type translationResponse struct {
 }
 
 type translationResponseItem struct {
-	Language       string `json:"language"`
-	TranslatedText string `json:"translated_text"`
+	Language               string   `json:"language"`
+	TranslatedText         string   `json:"translated_text"`
+	AttachmentDescriptions []string `json:"attachment_descriptions"`
 }
 
-func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector) (map[string]string, error) {
+func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector, sourceContent string, attachmentCount int) (map[string]string, map[string][]string, error) {
 	var parsed translationResponse
 	decoder := json.NewDecoder(bytes.NewBufferString(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&parsed); err != nil {
-		return nil, fmt.Errorf("parse translation response: %w", err)
+		return nil, nil, fmt.Errorf("parse translation response: %w", err)
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("parse translation response: multiple JSON values")
+		return nil, nil, fmt.Errorf("parse translation response: multiple JSON values")
 	}
 	if len(parsed.Translations) != len(targetLanguages) {
-		return nil, fmt.Errorf("parse translation response: got %d translations, want %d", len(parsed.Translations), len(targetLanguages))
+		return nil, nil, fmt.Errorf("parse translation response: got %d translations, want %d", len(parsed.Translations), len(targetLanguages))
 	}
 
-	out := make(map[string]string, len(targetLanguages))
+	texts := make(map[string]string, len(targetLanguages))
+	descriptions := make(map[string][]string, len(targetLanguages))
 	for i, targetLanguage := range targetLanguages {
 		item := parsed.Translations[i]
 		if item.Language != targetLanguage {
-			return nil, fmt.Errorf("parse translation response: translation %d has language %q, want %q", i, item.Language, targetLanguage)
+			return nil, nil, fmt.Errorf("parse translation response: translation %d has language %q, want %q", i, item.Language, targetLanguage)
 		}
 		text := strings.TrimSpace(html.UnescapeString(item.TranslatedText))
 		if text == "" {
-			return nil, fmt.Errorf("parse translation response: empty translation for %q", targetLanguage)
+			if hasTranslatableText(sourceContent) {
+				return nil, nil, fmt.Errorf("parse translation response: empty translation for %q", targetLanguage)
+			}
+			texts[targetLanguage] = sourceContent
+		} else {
+			texts[targetLanguage] = protector.Restore(text)
 		}
-		out[targetLanguage] = protector.Restore(text)
+		if attachmentCount == 0 {
+			if len(item.AttachmentDescriptions) != 0 {
+				return nil, nil, fmt.Errorf("parse translation response: language %q has %d attachment descriptions, want 0", targetLanguage, len(item.AttachmentDescriptions))
+			}
+			continue
+		}
+		if len(item.AttachmentDescriptions) != attachmentCount {
+			return nil, nil, fmt.Errorf("parse translation response: language %q has %d attachment descriptions, want %d", targetLanguage, len(item.AttachmentDescriptions), attachmentCount)
+		}
+		alts := make([]string, attachmentCount)
+		for j, description := range item.AttachmentDescriptions {
+			alts[j] = protector.Restore(strings.TrimSpace(html.UnescapeString(description)))
+		}
+		descriptions[targetLanguage] = alts
 	}
-	return out, nil
+	if len(descriptions) == 0 {
+		return texts, nil, nil
+	}
+	return texts, descriptions, nil
 }
 
 func normalizeTargetLanguages(targetLanguages []string) ([]string, error) {
@@ -303,6 +366,7 @@ func beginPreparedTranslation(targetLanguages []string, translationContext *Tran
 		Sites:    translationContext.SiteTitles,
 	})
 	p.SetSiteDescriptions(translationContext.SiteDescriptions)
+	p.SetSiteImages(translationContext.SiteImages)
 	return normalized, p, nil
 }
 

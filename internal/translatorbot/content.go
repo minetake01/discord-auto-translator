@@ -30,11 +30,23 @@ func stickerAssetURL(sticker DiscordSticker) string {
 	}
 }
 
-// messageContentWithAssetURLs appends unsigned CDN URLs for attachments and
-// stickers to the message body, enforcing Discord's content length limit.
+// messageContentWithAssetURLs appends unsigned CDN URLs for non-image
+// attachments and stickers to the message body. Image attachments are
+// reuploaded separately with alt text.
 func messageContentWithAssetURLs(content string, attachments []DiscordAttachment, stickers []DiscordSticker) (string, error) {
+	return messageContentWithAssetURLsOption(content, attachments, stickers, false)
+}
+
+func messageContentWithAllAssetURLs(content string, attachments []DiscordAttachment, stickers []DiscordSticker) (string, error) {
+	return messageContentWithAssetURLsOption(content, attachments, stickers, true)
+}
+
+func messageContentWithAssetURLsOption(content string, attachments []DiscordAttachment, stickers []DiscordSticker, includeImages bool) (string, error) {
 	assetURLs := make([]string, 0, len(attachments)+len(stickers))
 	for _, attachment := range attachments {
+		if !includeImages && isImageAttachment(attachment) {
+			continue
+		}
 		unsignedURL, err := unsignedAssetURL(attachment.URL)
 		if err != nil {
 			return "", fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)

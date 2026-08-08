@@ -52,6 +52,7 @@ func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	discord := &fakeDiscordAPI{}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
 		ForwardedMessage: &DiscordForwardedMessage{
@@ -63,9 +64,12 @@ func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "-# Forwarded · https://discord.com/channels/outside-guild/outside-channel/100000000000000016\n[en] 外部本文\nhttps://cdn.discordapp.com/file.png\nhttps://cdn.discordapp.com/stickers/sticker.png"
+	want := "-# Forwarded · https://discord.com/channels/outside-guild/outside-channel/100000000000000016\n[en] 外部本文\nhttps://cdn.discordapp.com/stickers/sticker.png"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "file.png" {
+		t.Fatalf("unexpected files: %#v", discord.sent[0].Files)
 	}
 	if len(translator.contexts) != 1 {
 		t.Fatalf("external forward translation calls: %d", len(translator.contexts))

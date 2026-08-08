@@ -51,24 +51,30 @@ func TestExtractPageMeta(t *testing.T) {
 	<meta name="twitter:title" content="Twitter Title">
 	<title>HTML Title</title>
 	</head></html>`
-	title, description := extractPageMeta(html)
+	title, description, imageURL := extractPageMeta(html)
 	if title != "OG Title" || description != "OG Description" {
 		t.Fatalf("got title=%q description=%q", title, description)
+	}
+	if imageURL != "" {
+		t.Fatalf("imageURL = %q, want empty", imageURL)
 	}
 
 	fallback := `<html><head>
 	<meta name="twitter:title" content="Twitter Title">
 	<meta name="description" content="Meta Description">
 	</head></html>`
-	title, description = extractPageMeta(fallback)
+	title, description, imageURL = extractPageMeta(fallback)
 	if title != "Twitter Title" || description != "Meta Description" {
 		t.Fatalf("fallback got title=%q description=%q", title, description)
 	}
+	if imageURL != "" {
+		t.Fatalf("fallback imageURL = %q, want empty", imageURL)
+	}
 
 	titleOnly := `<html><head><title>Just Title</title></head></html>`
-	title, description = extractPageMeta(titleOnly)
-	if title != "Just Title" || description != "" {
-		t.Fatalf("title-only got title=%q description=%q", title, description)
+	title, description, imageURL = extractPageMeta(titleOnly)
+	if title != "Just Title" || description != "" || imageURL != "" {
+		t.Fatalf("title-only got title=%q description=%q imageURL=%q", title, description, imageURL)
 	}
 }
 
@@ -79,7 +85,7 @@ func TestExtractPageMetaTruncates(t *testing.T) {
 	<meta property="og:title" content="` + longTitle + `">
 	<meta property="og:description" content="` + longDesc + `">
 	</head></html>`
-	title, description := extractPageMeta(html)
+	title, description, _ := extractPageMeta(html)
 	titleRunes := len([]rune(title))
 	descRunes := len([]rune(description))
 	if titleRunes > urlPageTitleMaxRunes {
