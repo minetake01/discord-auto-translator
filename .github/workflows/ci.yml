@@ -12,9 +12,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Prepare instance-specific legal page placeholders
-        run: |
-          cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
-          cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
       - run: go vet ./...
       - run: go test -race ./...

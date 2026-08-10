@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"time"
 
-	"discord-auto-translator/internal/legalpages"
 	"discord-auto-translator/internal/translatorbot"
 	"github.com/bwmarrin/discordgo"
 )
@@ -75,7 +74,6 @@ func main() {
 	commands := translatorbot.NewCommandHandler(store, api)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRequestRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
-	legalpages.Register(httpMux)
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

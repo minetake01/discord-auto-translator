@@ -107,13 +107,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-`internal/legalpages/assets/` 配下のプライバシーポリシー・利用規約 HTML はインスタンス固有のため Git 管理外です。初回のビルドやテストの前に example をコピーし、自前のページに差し替えてください：
-
-```sh
-cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
-cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
-```
-
 ## 使い方
 
 ボットを起動するとスラッシュコマンドが各サーバーに登録されます。

@@ -107,13 +107,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-Các file HTML chính sách quyền riêng tư và điều khoản dịch vụ trong `internal/legalpages/assets/` là riêng cho từng instance và không được theo dõi trong git. Trước lần build hoặc kiểm thử đầu tiên, hãy sao chép các file example rồi thay bằng trang của bạn:
-
-```sh
-cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
-cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
-```
-
 ## Sử dụng
 
 Khi bot khởi động, các lệnh slash được đăng ký trong từng máy chủ.

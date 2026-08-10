@@ -103,13 +103,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-ไฟล์ HTML นโยบายความเป็นส่วนตัวและข้อกำหนดการใช้งานใน `internal/legalpages/assets/` เป็นของแต่ละอินสแตนซ์ และไม่ถูกติดตามใน git ก่อนบิลด์หรือทดสอบครั้งแรก ให้คัดลอกไฟล์ตัวอย่างแล้วแทนที่ด้วยหน้าของคุณเอง:
-
-```sh
-cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
-cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
-```
-
 ## การใช้งาน
 
 เมื่อบอทเริ่มต้น คำสั่ง slash จะถูกลงทะเบียนในแต่ละเซิร์ฟเวอร์

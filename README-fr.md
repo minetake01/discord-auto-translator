@@ -103,13 +103,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-Les fichiers HTML de politique de confidentialité et de conditions d’utilisation sous `internal/legalpages/assets/` sont propres à chaque instance et ne sont pas suivis par git. Avant le premier build ou test, copiez les exemples et remplacez-les par vos propres pages :
-
-```sh
-cp internal/legalpages/assets/privacy.html.example internal/legalpages/assets/privacy.html
-cp internal/legalpages/assets/terms.html.example internal/legalpages/assets/terms.html
-```
-
 ## Utilisation
 
 Une fois le bot démarré, les commandes slash sont enregistrées dans chaque serveur.
