@@ -173,22 +173,6 @@ Per impostazione predefinita, i comandi slash di amministrazione possono essere 
 go test ./...
 ```
 
-## Distribuzione su GCE
-
-Uno script di distribuzione per Google Compute Engine è incluso in `deploy/deploy-gce.ps1` (Windows PowerShell).
-
-Crea `deploy/deploy.json` dall'esempio per le impostazioni di connessione GCE. Configurazione app e segreti usano `.env` per impostazione predefinita; un file diverso può essere indicato tramite `envFile` in `deploy.json` o `-EnvFile`.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# Modificare deploy.json e .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Configurazione iniziale
-.\deploy\deploy-gce.ps1                          # Solo aggiornamenti codice
-.\deploy\deploy-gce.ps1 -UploadEnv               # Aggiornare i segreti
-```
-
 ## Licenza
 
 Consulta il file [LICENSE](LICENSE) per la licenza di questo progetto.

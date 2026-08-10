@@ -169,22 +169,6 @@ Por defecto, los comandos de barra diagonal de administración solo pueden ejecu
 go test ./...
 ```
 
-## Despliegue en GCE
-
-Se incluye un script de despliegue para Google Compute Engine en `deploy/deploy-gce.ps1` (Windows PowerShell).
-
-Cree `deploy/deploy.json` a partir del ejemplo para la configuración de conexión GCE. La configuración de la app y los secretos usan `.env` por defecto; otro archivo se puede indicar con `envFile` en `deploy.json` o `-EnvFile`.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# Editar deploy.json y .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Configuración inicial
-.\deploy\deploy-gce.ps1                          # Solo actualizaciones de código
-.\deploy\deploy-gce.ps1 -UploadEnv               # Actualizar secretos
-```
-
 ## Licencia
 
 Consulta el archivo [LICENSE](LICENSE) para conocer la licencia de este proyecto.

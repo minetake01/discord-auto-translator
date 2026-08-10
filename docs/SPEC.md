@@ -480,48 +480,10 @@ Discordゲートウェイ
 
 ---
 
-## 8. デプロイ
-
-### ローカル実行
+## 8. ローカル実行
 
 ```sh
 cp .env.example .env
 # .env を編集して DISCORD_TOKEN と AWS 認証情報を入力
 go run ./cmd/discord-auto-translator
 ```
-
-### GCE デプロイ (`deploy/deploy-gce.ps1`)
-
-Windows PowerShell から実行するスクリプトで、以下の処理を行います：
-
-1. `deploy/deploy.json` から GCE 接続先を読み込む
-2. `go test ./...` を実行（`-SkipTests` で省略可）
-3. `linux/amd64` バイナリをクロスコンパイル（CGO_ENABLED=0）
-4. `-Bootstrap` フラグ時: 指定 env の `PUBLIC_BASE_URL` / `HTTP_ADDR` で Caddy + systemd をセットアップ
-5. バイナリと適用予定 env で `--bedrock-prewarm` を実行（最大5分、失敗時は中断）
-6. prewarm 成功後にバイナリを配置
-7. `-UploadEnv` フラグ時: 指定 env をサーバー上の `.env` として配置
-8. `-UploadDb` フラグ時: `translator.db` も転送
-9. systemd サービスを再起動
-
-設定は2ファイルに分離します：
-
-| ファイル | 内容 |
-|---|---|
-| `deploy/deploy.json` | インスタンス名・ゾーン・SSH ユーザー等のインフラ設定 |
-| `.env`（デフォルト） | `DISCORD_TOKEN`・`AWS_ACCESS_KEY_ID`・`AWS_SECRET_ACCESS_KEY`・`AWS_BEDROCK_REGION`・`AWS_BEDROCK_PROJECT_ID`・`TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`・`PUBLIC_BASE_URL` 等 |
-
-env ファイルの解決順序: `-EnvFile` 引数 > `deploy.json` の `envFile` > `.env`
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# deploy.json と .env を編集
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 初回
-.\deploy\deploy-gce.ps1                          # コード更新のみ
-.\deploy\deploy-gce.ps1 -UploadEnv               # シークレット更新
-.\deploy\deploy-gce.ps1 -EnvFile .env.staging -UploadEnv  # 一時的な上書き
-```
-
-本番用に別 env を使う場合は `cp .env.example .env.production` のように作成し、`deploy.json` の `"envFile": ".env.production"` に設定します。`-UploadEnv` なしのデプロイではサーバー上の既存 `.env` がそのまま使われます。

@@ -169,22 +169,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 go test ./...
 ```
 
-## การปรับใช้บน GCE
-
-สคริปต์การปรับใช้สำหรับ Google Compute Engine รวมอยู่ใน `deploy/deploy-gce.ps1` (Windows PowerShell)
-
-สร้าง `deploy/deploy.json` จากตัวอย่างสำหรับการตั้งค่าการเชื่อมต่อ GCE การตั้งค่าแอปและความลับใช้ `.env` เป็นค่าเริ่มต้น สามารถระบุไฟล์อื่นผ่าน `envFile` ใน `deploy.json` หรือ `-EnvFile`
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# แก้ไข deploy.json และ .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # ตั้งค่าครั้งแรก
-.\deploy\deploy-gce.ps1                          # อัปเดตโค้ดเท่านั้น
-.\deploy\deploy-gce.ps1 -UploadEnv               # อัปเดตความลับ
-```
-
 ## ใบอนุญาต
 
 ดูไฟล์ [LICENSE](LICENSE) สำหรับใบอนุญาตของโปรเจกต์นี้

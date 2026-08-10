@@ -173,22 +173,6 @@ Theo mặc định, các lệnh slash quản trị chỉ có thể được ch�
 go test ./...
 ```
 
-## Triển khai lên GCE
-
-Script triển khai cho Google Compute Engine được bao gồm tại `deploy/deploy-gce.ps1` (Windows PowerShell).
-
-Tạo `deploy/deploy.json` từ file mẫu cho cài đặt kết nối GCE. Cấu hình app và secret mặc định dùng `.env`; file khác có thể chỉ định qua `envFile` trong `deploy.json` hoặc `-EnvFile`.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# Chỉnh sửa deploy.json và .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Thiết lập lần đầu
-.\deploy\deploy-gce.ps1                          # Chỉ cập nhật code
-.\deploy\deploy-gce.ps1 -UploadEnv               # Cập nhật secret
-```
-
 ## Giấy phép
 
 Xem tệp [LICENSE](LICENSE) để biết giấy phép của dự án này.

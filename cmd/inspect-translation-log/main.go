@@ -186,10 +186,7 @@ func missingLogHint(path, source string, err error) error {
 	}
 	return fmt.Errorf("%w\n"+
 		"  resolved path: %s (from %s)\n"+
-		"  No debug log file exists yet. Either:\n"+
-		"  - set TRANSLATION_DEBUG_LOG_PATH, restart the bot, and trigger a translation, or\n"+
-		"  - sync .env to GCE with .\\deploy\\deploy-gce.ps1 -UploadEnv, then pull with:\n"+
-		"    .\\deploy\\inspect-translation-log.ps1 -Remote",
+		"  No debug log file exists yet. Set TRANSLATION_DEBUG_LOG_PATH, restart the bot, and trigger a translation.",
 		err, path, source)
 }
 

@@ -169,22 +169,6 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 go test ./...
 ```
 
-## Deploy ke GCE
-
-Skrip deployment untuk Google Compute Engine disertakan di `deploy/deploy-gce.ps1` (Windows PowerShell).
-
-Buat `deploy/deploy.json` dari contoh untuk pengaturan koneksi GCE. Pengaturan aplikasi dan rahasia menggunakan `.env` secara default; file lain dapat ditentukan melalui `envFile` di `deploy.json` atau `-EnvFile`.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# Edit deploy.json dan .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Penyiapan awal
-.\deploy\deploy-gce.ps1                          # Hanya pembaruan kode
-.\deploy\deploy-gce.ps1 -UploadEnv               # Perbarui rahasia
-```
-
 ## Lisensi
 
 Lihat file [LICENSE](LICENSE) untuk lisensi proyek ini.

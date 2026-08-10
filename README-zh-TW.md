@@ -169,22 +169,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 go test ./...
 ```
 
-## 部署到 GCE
-
-`deploy/deploy-gce.ps1` 中包含用於 Google Compute Engine 的部署指令碼（Windows PowerShell）。
-
-從範例建立 `deploy/deploy.json` 以設定 GCE 連線。應用程式設定與密鑰預設使用 `.env`；可透過 `deploy.json` 的 `envFile` 或 `-EnvFile` 指定其他檔案。
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# 編輯 deploy.json 與 .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 首次設定
-.\deploy\deploy-gce.ps1                          # 僅更新程式碼
-.\deploy\deploy-gce.ps1 -UploadEnv               # 更新密鑰
-```
-
 ## 授權條款
 
 本專案的授權條款請參閱 [LICENSE](LICENSE) 檔案。

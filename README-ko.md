@@ -169,22 +169,6 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 go test ./...
 ```
 
-## GCE 배포
-
-Google Compute Engine용 배포 스크립트가 `deploy/deploy-gce.ps1`에 포함되어 있습니다(Windows PowerShell용).
-
-예제에서 `deploy/deploy.json`을 만들어 GCE 연결 설정을 합니다. 앱 설정과 시크릿은 기본적으로 `.env`를 사용하며, `deploy.json`의 `envFile` 또는 `-EnvFile`로 다른 파일을 지정할 수 있습니다.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# deploy.json과 .env 편집
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # 최초 설정
-.\deploy\deploy-gce.ps1                          # 코드 업데이트만
-.\deploy\deploy-gce.ps1 -UploadEnv               # 시크릿 업데이트
-```
-
 ## 라이선스
 
 이 프로젝트의 라이선스는 [LICENSE](LICENSE) 파일을 참조하세요.
