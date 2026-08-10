@@ -61,7 +61,7 @@ internal/translatorbot/
 
 ### SQLite: CGO 不要
 
-`modernc.org/sqlite` を使用しており CGO は不要です。`CGO_ENABLED=0` でクロスコンパイルできます。デプロイスクリプトもこれを前提にしています。
+`modernc.org/sqlite` を使用しており CGO は不要です。`CGO_ENABLED=0` でクロスコンパイルできます。
 
 ### Amazon Bedrock と Gemma 4 26B-A4B
 
@@ -102,14 +102,6 @@ Gemma 4 26B-A4BはBedrock Structured Outputs非対応です。固定JSON Schema�
 go run ./cmd/inspect-translation-log
 go run ./cmd/inspect-translation-log --errors --detail
 go run ./cmd/inspect-translation-log --message-id <id> --detail
-```
-
-GCE 上のログを取る場合は、ローカル `.env` に `TRANSLATION_DEBUG_LOG_PATH` を書き、`-UploadEnv` で同期する（inspect 側では設定をいじらない）:
-
-```powershell
-.\deploy\deploy-gce.ps1 -UploadEnv
-# 翻訳を1回発生させてから:
-.\deploy\inspect-translation-log.ps1 -Remote -Errors -Detail
 ```
 
 `jq` で失敗だけを絞り込む例:

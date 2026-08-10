@@ -169,22 +169,6 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 go test ./...
 ```
 
-## Implantação no GCE
-
-Um script de implantação para o Google Compute Engine está incluído em `deploy/deploy-gce.ps1` (Windows PowerShell).
-
-Crie `deploy/deploy.json` a partir do exemplo para as configurações de conexão GCE. Configurações do app e segredos usam `.env` por padrão; outro arquivo pode ser indicado via `envFile` em `deploy.json` ou `-EnvFile`.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# Editar deploy.json e .env
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Configuração inicial
-.\deploy\deploy-gce.ps1                          # Apenas atualizações de código
-.\deploy\deploy-gce.ps1 -UploadEnv               # Atualizar segredos
-```
-
 ## Licença
 
 Consulte o arquivo [LICENSE](LICENSE) para a licença deste projeto.

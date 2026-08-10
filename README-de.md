@@ -168,22 +168,6 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 go test ./...
 ```
 
-## Auf GCE deployen
-
-Ein Deployment-Skript für Google Compute Engine ist unter `deploy/deploy-gce.ps1` enthalten (Windows PowerShell).
-
-Erstellen Sie `deploy/deploy.json` aus der Beispieldatei für die GCE-Verbindungseinstellungen. App-Einstellungen und Secrets verwenden standardmäßig `.env`; ein anderes File kann über `envFile` in `deploy.json` oder `-EnvFile` angegeben werden.
-
-```powershell
-cp deploy/deploy.json.example deploy/deploy.json
-cp .env.example .env
-# deploy.json und .env bearbeiten
-
-.\deploy\deploy-gce.ps1 -Bootstrap -UploadEnv   # Ersteinrichtung
-.\deploy\deploy-gce.ps1                          # Nur Code-Updates
-.\deploy\deploy-gce.ps1 -UploadEnv               # Secrets aktualisieren
-```
-
 ## Lizenz
 
 Die Lizenz dieses Projekts findest du in der Datei [LICENSE](LICENSE).
