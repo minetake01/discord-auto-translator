@@ -110,28 +110,28 @@ type logEntry struct {
 }
 
 type requestPayload struct {
-	Input []struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	} `json:"input"`
+	Messages []chatMessage `json:"messages"`
+}
+
+type chatMessage struct {
+	Role             string          `json:"role"`
+	Content          json.RawMessage `json:"content"`
+	Reasoning        string          `json:"reasoning"`
+	ReasoningContent string          `json:"reasoning_content"`
 }
 
 type responsePayload struct {
-	Status string `json:"status"`
-	Usage  *struct {
-		InputTokens         int `json:"input_tokens"`
-		OutputTokens        int `json:"output_tokens"`
-		OutputTokensDetails *struct {
+	Choices []struct {
+		FinishReason string      `json:"finish_reason"`
+		Message      chatMessage `json:"message"`
+	} `json:"choices"`
+	Usage *struct {
+		PromptTokens            int `json:"prompt_tokens"`
+		CompletionTokens        int `json:"completion_tokens"`
+		CompletionTokensDetails *struct {
 			ReasoningTokens int `json:"reasoning_tokens"`
-		} `json:"output_tokens_details"`
+		} `json:"completion_tokens_details"`
 	} `json:"usage"`
-	Output []struct {
-		Type    string `json:"type"`
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	} `json:"output"`
 }
 
 type translationPayload struct {
@@ -334,15 +334,15 @@ func printDetail(entry logEntry) {
 		fmt.Printf("  source: %s\n", oneLine(source, 200))
 	}
 	resp := parseResponse(entry.Response)
-	if resp.Status != "" {
-		fmt.Printf("  response_status: %s\n", resp.Status)
+	if reason := firstFinishReason(resp); reason != "" {
+		fmt.Printf("  finish_reason: %s\n", reason)
 	}
 	if resp.Usage != nil {
-		if resp.Usage.OutputTokensDetails != nil {
+		if resp.Usage.CompletionTokensDetails != nil {
 			fmt.Printf("  tokens: in=%d out=%d reasoning=%d\n",
-				resp.Usage.InputTokens, resp.Usage.OutputTokens, resp.Usage.OutputTokensDetails.ReasoningTokens)
+				resp.Usage.PromptTokens, resp.Usage.CompletionTokens, resp.Usage.CompletionTokensDetails.ReasoningTokens)
 		} else {
-			fmt.Printf("  tokens: in=%d out=%d\n", resp.Usage.InputTokens, resp.Usage.OutputTokens)
+			fmt.Printf("  tokens: in=%d out=%d\n", resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 		}
 	}
 	if reasoning := extractReasoningText(resp); reasoning != "" {
@@ -365,6 +365,17 @@ func printDetail(entry logEntry) {
 }
 
 func extractFinalMessage(request json.RawMessage) string {
+	text := userPromptText(request)
+	if text == "" {
+		return ""
+	}
+	if match := finalMessageRE.FindStringSubmatch(text); len(match) == 2 {
+		return strings.TrimSpace(match[1])
+	}
+	return strings.TrimSpace(text)
+}
+
+func userPromptText(request json.RawMessage) string {
 	if len(request) == 0 {
 		return ""
 	}
@@ -372,16 +383,39 @@ func extractFinalMessage(request json.RawMessage) string {
 	if err := json.Unmarshal(request, &payload); err != nil {
 		return ""
 	}
-	for _, msg := range payload.Input {
+	var b strings.Builder
+	for _, msg := range payload.Messages {
 		if msg.Role != "user" {
 			continue
 		}
-		if match := finalMessageRE.FindStringSubmatch(msg.Content); len(match) == 2 {
-			return strings.TrimSpace(match[1])
-		}
-		return strings.TrimSpace(msg.Content)
+		b.WriteString(messageText(msg.Content))
 	}
-	return ""
+	return b.String()
+}
+
+func messageText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, part := range parts {
+		if part.Type != "" && part.Type != "text" {
+			continue
+		}
+		b.WriteString(part.Text)
+	}
+	return b.String()
 }
 
 func parseResponse(raw json.RawMessage) responsePayload {
@@ -393,17 +427,17 @@ func parseResponse(raw json.RawMessage) responsePayload {
 	return payload
 }
 
+func firstFinishReason(resp responsePayload) string {
+	if len(resp.Choices) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(resp.Choices[0].FinishReason)
+}
+
 func extractOutputText(resp responsePayload) string {
-	for _, item := range resp.Output {
-		if item.Type != "" && item.Type != "message" {
-			continue
-		}
-		for _, content := range item.Content {
-			if content.Type == "output_text" || content.Type == "text" {
-				if text := strings.TrimSpace(content.Text); text != "" {
-					return text
-				}
-			}
+	for _, choice := range resp.Choices {
+		if text := strings.TrimSpace(messageText(choice.Message.Content)); text != "" {
+			return text
 		}
 	}
 	return ""
@@ -411,17 +445,13 @@ func extractOutputText(resp responsePayload) string {
 
 func extractReasoningText(resp responsePayload) string {
 	var parts []string
-	for _, item := range resp.Output {
-		if item.Type != "reasoning" {
+	for _, choice := range resp.Choices {
+		if text := strings.TrimSpace(choice.Message.Reasoning); text != "" {
+			parts = append(parts, text)
 			continue
 		}
-		for _, content := range item.Content {
-			if content.Type != "" && content.Type != "reasoning_text" && content.Type != "text" {
-				continue
-			}
-			if text := strings.TrimSpace(content.Text); text != "" {
-				parts = append(parts, text)
-			}
+		if text := strings.TrimSpace(choice.Message.ReasoningContent); text != "" {
+			parts = append(parts, text)
 		}
 	}
 	return strings.Join(parts, "\n")
