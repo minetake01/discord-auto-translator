@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	translator, err := translatorbot.NewOpenAITranslator(context.Background(), cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel)
+	translator, err := translatorbot.NewOpenAITranslator(context.Background(), cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel, cfg.OpenAIReasoningEffort)
 	if err != nil {
 		log.Fatal(err)
 	}

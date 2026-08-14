@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
 | `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
 | `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
+| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
 | `DB_PATH` | 선택 | SQLite 파일 경로(기본값: `./translator.db`) |
 | `HTTP_ADDR` | 선택 | 아바타 배지 서버 주소(기본값: `:8080`) |
 | `PUBLIC_BASE_URL` | 선택 | 아바타 링 배지용 공개 기본 URL. 미설정 시 미러링된 메시지는 Discord 원본 아바타 URL을 사용하며 배지 서버는 사용되지 않습니다 |

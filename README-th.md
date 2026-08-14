@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
 | `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
 | `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
+| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
 | `DB_PATH` | ไม่ | เส้นทางไฟล์ SQLite (ค่าเริ่มต้น: `./translator.db`) |
 | `HTTP_ADDR` | ไม่ | ที่อยู่เซิร์ฟเวอร์แบดจ์อวาตาร์ (ค่าเริ่มต้น: `:8080`) |
 | `PUBLIC_BASE_URL` | ไม่ | URL พื้นฐานสาธารณะสำหรับแบดจ์วงแหวนอวาตาร์ หากไม่ตั้งค่า ข้อความที่สะท้อนจะใช้ URL อวาตาร์ Discord เดิม และเซิร์ฟเวอร์แบดจ์จะไม่ถูกใช้งาน |

@@ -27,6 +27,7 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 
 	t.Setenv("DISCORD_TOKEN", "existing-token")
+	t.Setenv("OPENAI_REASONING_EFFORT", "")
 	cfg, err := LoadConfig(envPath)
 	if err != nil {
 		t.Fatal(err)
@@ -51,6 +52,42 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	}
 	if cfg.AvatarRateLimitRequestsPerMin != 60 {
 		t.Fatalf("AvatarRateLimitRequestsPerMin = %d", cfg.AvatarRateLimitRequestsPerMin)
+	}
+}
+
+func TestLoadConfigReasoningEffort(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    string
+		wantErr string
+	}{
+		{name: "unset omits the field"},
+		{name: "blank omits the field", value: "   "},
+		{name: "none", value: " none ", want: "none"},
+		{name: "invalid", value: "off", wantErr: "OPENAI_REASONING_EFFORT must be none, minimal, low, medium, high, xhigh, or max"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DISCORD_TOKEN", "token")
+			setRequiredOpenAIConfig(t)
+			t.Setenv("OPENAI_REASONING_EFFORT", tt.value)
+
+			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want %s", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.OpenAIReasoningEffort != tt.want {
+				t.Fatalf("OpenAIReasoningEffort = %q, want %q", cfg.OpenAIReasoningEffort, tt.want)
+			}
+		})
 	}
 }
 
@@ -253,4 +290,5 @@ func setRequiredOpenAIConfig(t *testing.T) {
 	t.Setenv("OPENAI_BASE_URL", "https://api.example.test/v1")
 	t.Setenv("OPENAI_API_KEY", "api-key")
 	t.Setenv("OPENAI_MODEL", "test-model")
+	t.Setenv("OPENAI_REASONING_EFFORT", "")
 }

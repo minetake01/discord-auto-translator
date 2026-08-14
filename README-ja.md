@@ -51,7 +51,7 @@
 2. 選択したモデルで Chat Completions を呼べる API キーを作成します。
 3. `.env` に `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL` を設定します。
 
-タイムアウトと出力上限はコード固定です（試行ごと 60 秒、`max_tokens=4096`）。モデル ID は必須のローカル設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。
+タイムアウトと出力上限はコード固定です（試行ごと 60 秒、`max_tokens=4096`）。モデル ID は必須のローカル設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。ハイブリッド推論モデルでは `OPENAI_REASONING_EFFORT=none` で思考トークンを省略し、遅延を下げられます。
 
 ### 3. 環境変数の設定
 
@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | 必須 | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
 | `OPENAI_API_KEY` | 必須 | Chat Completions 用の Bearer API キー |
 | `OPENAI_MODEL` | 必須 | プロバイダ側のモデル ID |
+| `OPENAI_REASONING_EFFORT` | 任意 | Chat Completions の `reasoning_effort`。未設定ではフィールドを送らない。ハイブリッド推論モデルでは `none` で思考トークンを省略できる |
 | `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
 | `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |

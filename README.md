@@ -51,7 +51,7 @@ Link one channel per language into a **translation group**. Every message posted
 2. Create an API key with permission to call Chat Completions for your chosen model.
 3. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in `.env`.
 
-Timeout and output limits are fixed in code (`60s` per attempt, `max_tokens=4096`). The model ID is a required deployment-local setting. Optionally tune per-guild token throughput with `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`).
+Timeout and output limits are fixed in code (`60s` per attempt, `max_tokens=4096`). The model ID is a required deployment-local setting. Optionally tune per-guild token throughput with `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`). On hybrid reasoning models, set `OPENAI_REASONING_EFFORT=none` to skip thinking tokens and reduce latency.
 
 ### 3. Configure environment variables
 
@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
 | `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
 | `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
+| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
 | `DB_PATH` | No | Path to the SQLite file (default: `./translator.db`) |
 | `HTTP_ADDR` | No | Address of the avatar badge server (default: `:8080`) |
 | `PUBLIC_BASE_URL` | No | Public base URL for avatar ring badges. If unset, mirrored messages use the original Discord avatar URL and the badge server is not used |

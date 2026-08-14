@@ -281,11 +281,12 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 | 試行タイムアウト | 60 秒（試行ごと） |
 | 一時障害リトライ | ちょうど 1 回（1 秒待機後）。対象はタイムアウト・通信エラー・HTTP 429/5xx。契約違反・4xx（429以外）は再試行しない |
 | temperature | 省略（プロバイダー既定値） |
+| reasoning_effort | 未設定なら省略。`OPENAI_REASONING_EFFORT` を設定したときだけ送る |
 | max_tokens | 4096（アプリケーション固定上限） |
 | 出力形式 | 固定JSON Schemaをsystem instructionへ含める。既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。画像添付がある場合は `attachment_descriptions` もソース順で厳密検証する |
 | 画像入力 | 縮小JPEGを base64 data URL として Chat Completions の `image_url` パートで渡し、テキスト（`text`）より前に置く。添付+OGP 合わせて最大 4 枚。リクエスト全体は 3.5MB 制約に収める |
 
-**環境変数（必須）:** `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`。任意: `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
+**環境変数（必須）:** `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`。任意: `OPENAI_REASONING_EFFORT`（未設定で省略。`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`）、`TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
 
 **呼び出し契約:**
 
