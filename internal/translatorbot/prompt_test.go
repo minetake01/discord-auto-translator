@@ -208,6 +208,9 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "attachment_descriptions") {
 		t.Fatal("system instruction should always describe attachment_descriptions")
 	}
+	if strings.Contains(got, "Omit attachment_descriptions") {
+		t.Fatal("system instruction must not allow omitting attachment_descriptions:\n" + got)
+	}
 }
 
 func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {

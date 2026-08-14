@@ -219,7 +219,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は凍結ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
-- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を任意フィールドとして含めます。`language` はリクエストの target languages の BCP-47 enum です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
+- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同数・同順です。`language` はリクエストの target languages の BCP-47 enum です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
 - Chat Completions リクエストは `prompt_cache_key` を付け、凍結テキストパートに `prompt_cache_breakpoint` を置きます。そのキーを未保持のときだけ `prompt_cache_options.ttl=1h` を送り、期限内の再利用では ttl を付けません。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
