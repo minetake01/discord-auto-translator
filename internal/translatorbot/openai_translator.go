@@ -31,9 +31,15 @@ const (
 	openaiHTTPKeepAlive       = 30 * time.Second
 	openaiHTTPIdleConnTimeout = 45 * time.Second
 
-	openaiTranslationJSONSchema             = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Omit or use an empty array when <attachments> is absent."}}}}}}`
-	openaiPollTranslationJSONSchema         = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`
-	openaiThreadCreateTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`
+	openaiMessageTranslationSchemaName      = "message_translations"
+	openaiPollTranslationSchemaName         = "poll_translations"
+	openaiThreadCreateTranslationSchemaName = "thread_create_translations"
+)
+
+var (
+	openaiTranslationJSONSchema             = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text","attachment_descriptions"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Use an empty array when <attachments> is absent."}}}}}}`)
+	openaiPollTranslationJSONSchema         = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`)
+	openaiThreadCreateTranslationJSONSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`)
 )
 
 type openaiHTTPClient interface {
@@ -46,6 +52,7 @@ type OpenAITranslator struct {
 	model             string
 	completionsURL    string
 	reasoningEffort   string
+	requireParameters bool
 	now               func() time.Time
 	debugLog          *DebugLog
 	promptCacheMu     sync.Mutex
@@ -70,12 +77,29 @@ type openaiDebugEntry struct {
 }
 
 type openaiChatCompletionRequest struct {
-	Model              string                    `json:"model"`
-	Messages           []openaiChatMessage       `json:"messages"`
-	MaxTokens          int                       `json:"max_tokens"`
-	ReasoningEffort    string                    `json:"reasoning_effort,omitempty"`
-	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
-	PromptCacheOptions *openaiPromptCacheOptions `json:"prompt_cache_options,omitempty"`
+	Model              string                     `json:"model"`
+	Messages           []openaiChatMessage        `json:"messages"`
+	MaxTokens          int                        `json:"max_tokens"`
+	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
+	PromptCacheKey     string                     `json:"prompt_cache_key,omitempty"`
+	PromptCacheOptions *openaiPromptCacheOptions  `json:"prompt_cache_options,omitempty"`
+	ResponseFormat     openaiResponseFormat       `json:"response_format"`
+	Provider           *openaiProviderPreferences `json:"provider,omitempty"`
+}
+
+type openaiResponseFormat struct {
+	Type       string           `json:"type"`
+	JSONSchema openaiJSONSchema `json:"json_schema"`
+}
+
+type openaiJSONSchema struct {
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+type openaiProviderPreferences struct {
+	RequireParameters bool `json:"require_parameters"`
 }
 
 type openaiChatMessage struct {
@@ -224,13 +248,23 @@ func newOpenAIHTTPClient() *http.Client {
 
 func newOpenAITranslator(client openaiHTTPClient, apiKey, model, completionsURL, reasoningEffort string) *OpenAITranslator {
 	return &OpenAITranslator{
-		client:          client,
-		apiKey:          apiKey,
-		model:           model,
-		completionsURL:  completionsURL,
-		reasoningEffort: reasoningEffort,
-		now:             time.Now,
+		client:            client,
+		apiKey:            apiKey,
+		model:             model,
+		completionsURL:    completionsURL,
+		reasoningEffort:   reasoningEffort,
+		requireParameters: openaiHostRequiresParameters(completionsURL),
+		now:               time.Now,
 	}
+}
+
+func openaiHostRequiresParameters(completionsURL string) bool {
+	u, err := url.Parse(completionsURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
 // SetDebugLog enables verbose diagnosis of translation failures by recording
@@ -243,7 +277,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiTranslationJSONSchema)
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -258,7 +292,7 @@ func (t *OpenAITranslator) TranslatePollMulti(ctx context.Context, prepared prep
 	if len(prepared.targetLanguages) == 0 {
 		return PollMultiTranslationResult{Translations: map[string]PollTranslation{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiPollTranslationJSONSchema)
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiPollTranslationSchemaName, openaiPollTranslationJSONSchema)
 	if err != nil {
 		return PollMultiTranslationResult{}, err
 	}
@@ -273,7 +307,7 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 	if len(prepared.targetLanguages) == 0 {
 		return ThreadCreateMultiTranslationResult{Translations: map[string]ThreadCreateTranslation{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiThreadCreateTranslationJSONSchema)
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiThreadCreateTranslationSchemaName, openaiThreadCreateTranslationJSONSchema)
 	if err != nil {
 		return ThreadCreateMultiTranslationResult{}, err
 	}
@@ -293,18 +327,17 @@ func (t *OpenAITranslator) WarmUp(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	_, _, _, err = t.invokePreparedWithRetry(ctx, prepared, openaiTranslationJSONSchema)
-	if err != nil {
+	if _, err := t.TranslateMulti(ctx, prepared); err != nil {
 		return fmt.Errorf("prewarm OpenAI-compatible model: %w", err)
 	}
 	return nil
 }
 
-func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared preparedTranslation, jsonSchema string) (text string, inputTokens, outputTokens int, err error) {
+func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage) (text string, inputTokens, outputTokens int, err error) {
 	var lastErr error
 	for attempt := 0; attempt < openaiRetryAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(ctx, openaiRequestTimeout)
-		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, jsonSchema)
+		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, schemaName, jsonSchema)
 		cancel()
 		if err == nil {
 			return text, inputTokens, outputTokens, nil
@@ -370,17 +403,27 @@ func openaiUserContent(images []visionImage, frozen, variable string) json.RawMe
 	return encoded
 }
 
-func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, jsonSchema string) (text string, inputTokens, outputTokens int, err error) {
-	systemInstruction := prepared.systemInstruction + "\nReturn only JSON matching this exact schema, without markdown fences: " + jsonSchema
+func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage) (text string, inputTokens, outputTokens int, err error) {
 	payload := openaiChatCompletionRequest{
 		Model: t.model,
 		Messages: []openaiChatMessage{
-			{Role: "system", Content: openaiTextContent(systemInstruction)},
+			{Role: "system", Content: openaiTextContent(prepared.systemInstruction)},
 			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPromptFrozen, prepared.userPromptVariable)},
 		},
 		MaxTokens:       openaiMaxTokens,
 		ReasoningEffort: t.reasoningEffort,
 		PromptCacheKey:  prepared.promptCacheKey,
+		ResponseFormat: openaiResponseFormat{
+			Type: "json_schema",
+			JSONSchema: openaiJSONSchema{
+				Name:   schemaName,
+				Strict: true,
+				Schema: jsonSchema,
+			},
+		},
+	}
+	if t.requireParameters {
+		payload.Provider = &openaiProviderPreferences{RequireParameters: true}
 	}
 	wroteTTL := false
 	if t.promptCacheNeedsTTL(prepared.promptCacheKey) {

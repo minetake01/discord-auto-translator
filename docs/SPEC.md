@@ -227,7 +227,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 翻訳対象テキストまたは画像添付があるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの `[SITE:N]` と `<site id="N">` で対応付けます。画像添付のダウンロードや縮小に失敗した場合は fail-closed でミラーせず、投稿元へ通知します。OGP 画像の取得失敗はサイトメタと同様にスキップします。
 
-直近履歴は追加テーブルを持たず、各翻訳リクエストで `message_links` から再計算します。隣接投稿の間隔が 15 分を超えたらそれより古い枠は使いません。同一バースト内では束ね後枠を append-only に積み、件数が 16 を超える・時間幅が 30 分を超える・推定トークンが 800 を超えるのいずれかで世代を切り、残す枠は 8 件以下かつ幅 15 分以下かつ 400 トークン以下になるまで古い側をまとめて捨てます（1 枠だけが上限を超える場合はその 1 枠を残して翻訳を続けます）。同一作者の短文マージ（5 分・最大 4 件）は末尾枠にだけ適用し、凍結済み枠の本文は世代内で変わりません。ユーザープロンプトは凍結パートと可変パートに分かれ、凍結テキストの末尾にキャッシュ breakpoint を置きます。メッセージ・投票・スレッド作成それぞれのシステムプロンプト（JSON Schema を含む）はリクエスト間で固定します。`always_include` の glossary は凍結ユーザーパート、本文マッチ glossary と画像は breakpoint より後ろです。`prompt_cache_key` は会話ロケーションと世代先頭メッセージで決まり、キャッシュ TTL 1 時間の write は未保持時だけ送ります。投票・スレッド作成は別 system / 別 schema / 別キャッシュキーです。履歴取得に失敗しても翻訳自体は履歴なしで継続します。
+直近履歴は追加テーブルを持たず、各翻訳リクエストで `message_links` から再計算します。隣接投稿の間隔が 15 分を超えたらそれより古い枠は使いません。同一バースト内では束ね後枠を append-only に積み、件数が 16 を超える・時間幅が 30 分を超える・推定トークンが 800 を超えるのいずれかで世代を切り、残す枠は 8 件以下かつ幅 15 分以下かつ 400 トークン以下になるまで古い側をまとめて捨てます（1 枠だけが上限を超える場合はその 1 枠を残して翻訳を続けます）。同一作者の短文マージ（5 分・最大 4 件）は末尾枠にだけ適用し、凍結済み枠の本文は世代内で変わりません。ユーザープロンプトは凍結パートと可変パートに分かれ、凍結テキストの末尾にキャッシュ breakpoint を置きます。メッセージ・投票・スレッド作成それぞれのシステムプロンプトと用途別 JSON Schema（`response_format`）はリクエスト間で固定します。`always_include` の glossary は凍結ユーザーパート、本文マッチ glossary と画像は breakpoint より後ろです。`prompt_cache_key` は会話ロケーションと世代先頭メッセージで決まり、キャッシュ TTL 1 時間の write は未保持時だけ送ります。投票・スレッド作成は別 system / 別 schema / 別キャッシュキーです。履歴取得に失敗しても翻訳自体は履歴なしで継続します。
 
 ### 3.9 URL の代替版置換
 
@@ -274,7 +274,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 ### 3.13 翻訳 API（OpenAI 互換 Chat Completions）
 
-翻訳は `OPENAI_BASE_URL` の OpenAI 互換 Chat Completions API（`POST {OPENAI_BASE_URL}/chat/completions`）を呼び出します。モデル ID は `OPENAI_MODEL` で必須設定します。認証は `Authorization: Bearer {OPENAI_API_KEY}` です。Structured Outputs（`response_format`）は互換性のため使わず、固定 JSON Schema を system instruction へ含めます。
+翻訳は `OPENAI_BASE_URL` の OpenAI 互換 Chat Completions API（`POST {OPENAI_BASE_URL}/chat/completions`）を呼び出します。モデル ID は `OPENAI_MODEL` で必須設定します。認証は `Authorization: Bearer {OPENAI_API_KEY}` です。Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の固定 JSON Schema で制約付きデコードします。system instruction へ schema を複製しません。OpenRouter では `provider.require_parameters=true` を付け、Structured Outputs 非対応エンドポイントへは送りません。
 
 | 項目 | 値 |
 |---|---|
@@ -284,7 +284,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 | temperature | 省略（プロバイダー既定値） |
 | reasoning_effort | 未設定なら省略。`OPENAI_REASONING_EFFORT` を設定したときだけ送る |
 | max_tokens | 4096（アプリケーション固定上限） |
-| 出力形式 | 用途別の固定JSON Schemaをsystem instructionへ含める。既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は任意。画像添付がある場合はパーサーがソース順で必須検証する |
+| 出力形式 | 用途別の固定JSON Schemaを `response_format.json_schema`（`strict: true`）で指定し、制約付きデコードする。既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は必須（画像が無いときは空配列）。画像添付がある場合はパーサーがソース順で件数を検証する |
 | 画像入力 | 縮小JPEGを base64 data URL として Chat Completions の `image_url` パートで渡し、テキスト（`text`）より前に置く。添付+OGP 合わせて最大 4 枚。リクエスト全体は 3.5MB 制約に収める |
 
 **環境変数（必須）:** `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`。任意: `OPENAI_REASONING_EFFORT`（未設定で省略。`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`）、`TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
@@ -293,7 +293,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 - 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない。画像は縮小JPEGの data URL を `image_url` としてテキストより前に置く（テキストのみなら user `content` は文字列）
 - 試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行する。親コンテキストのキャンセル、HTTP 4xx（429以外）、不正JSON・`finish_reason=length` 等の契約違反は再試行しない
-- 用途別の固定schemaをsystem instructionへ含める（通常メッセージ・投票・スレッド作成）。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、画像添付がある場合だけパーサーが `attachment_descriptions` をソース順で必須とする
+- 用途別の固定schemaを `response_format.json_schema`（`strict: true`）で送り、制約付きデコードする（通常メッセージ・投票・スレッド作成）。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は必須（画像が無いときは空配列）。画像添付がある場合はパーサーがソース順で件数を検証する
 - スレッド作成時はタイトル（`name`）と初期本文（`message`）を1リクエストで翻訳する。ソースに本文がない場合だけ `message` 空を許容する
 - `finish_reason=length`（`max_tokens`到達）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Discord ID などの request metadata は送信しない。既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する

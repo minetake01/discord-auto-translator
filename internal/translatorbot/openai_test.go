@@ -87,6 +87,35 @@ func testTranslator(client openaiHTTPClient) *OpenAITranslator {
 	return translator
 }
 
+func requireJSONSchemaResponseFormat(t *testing.T, input openaiChatCompletionRequest, name string, schema json.RawMessage) {
+	t.Helper()
+	if input.ResponseFormat.Type != "json_schema" {
+		t.Fatalf("response_format.type = %q", input.ResponseFormat.Type)
+	}
+	got := input.ResponseFormat.JSONSchema
+	if got.Name != name || !got.Strict {
+		t.Fatalf("json_schema name=%q strict=%t, want name=%q strict=true", got.Name, got.Strict, name)
+	}
+	var gotSchema, wantSchema any
+	if err := json.Unmarshal(got.Schema, &gotSchema); err != nil {
+		t.Fatalf("decode sent schema: %v", err)
+	}
+	if err := json.Unmarshal(schema, &wantSchema); err != nil {
+		t.Fatalf("decode expected schema: %v", err)
+	}
+	gotJSON, err := json.Marshal(gotSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantJSON, err := json.Marshal(wantSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("json_schema.schema = %s, want %s", got.Schema, schema)
+	}
+}
+
 func TestNewOpenAITranslatorRejectsInvalidConfig(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -177,11 +206,12 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<attachments>") {
 			t.Fatalf("text parts = %s", input.Messages[1].Content)
 		}
-		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), `"attachment_descriptions"`) {
-			t.Fatalf("schema missing attachment_descriptions: %s", input.Messages[0].Content)
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
+		if strings.Contains(string(input.ResponseFormat.JSONSchema.Schema), "Exactly 1") {
+			t.Fatalf("schema must not encode attachment count: %s", input.ResponseFormat.JSONSchema.Schema)
 		}
-		if strings.Contains(openaiContentText(t, input.Messages[0].Content), "Exactly 1") {
-			t.Fatalf("system schema must not encode attachment count: %s", input.Messages[0].Content)
+		if strings.Contains(openaiContentText(t, input.Messages[0].Content), string(openaiTranslationJSONSchema)) {
+			t.Fatalf("schema must not be copied into the system instruction: %s", input.Messages[0].Content)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 2)))}, nil
 	})
@@ -222,7 +252,11 @@ func TestOpenAITranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if len(input.Messages) != 2 || input.Messages[0].Role != "system" || input.Messages[1].Role != "user" {
 			t.Fatalf("prompt shape = %#v", input.Messages)
 		}
-		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), openaiTranslationJSONSchema) || !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<target_languages>en</target_languages>") {
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
+		if strings.Contains(openaiContentText(t, input.Messages[0].Content), string(openaiTranslationJSONSchema)) {
+			t.Fatalf("schema must not be copied into the system instruction: %s", input.Messages[0].Content)
+		}
+		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<target_languages>en</target_languages>") {
 			t.Fatalf("prompt contract = %#v", input.Messages)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello [USER:Alice]"}]}`, 1, 2)))}, nil
@@ -313,13 +347,97 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"response_format"`) || strings.Contains(string(body), `"reasoning_effort"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
+		if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"reasoning_effort"`) || strings.Contains(string(body), `"provider"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
 			t.Fatalf("request contains unsupported fields: %s", body)
+		}
+		if !strings.Contains(string(body), `"response_format"`) || !strings.Contains(string(body), `"json_schema"`) {
+			t.Fatalf("request missing structured outputs: %s", body)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
 	})
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
+	schemas := []json.RawMessage{
+		openaiTranslationJSONSchema,
+		openaiPollTranslationJSONSchema,
+		openaiThreadCreateTranslationJSONSchema,
+	}
+	for _, schema := range schemas {
+		assertStrictJSONSchema(t, schema, "root")
+	}
+}
+
+func assertStrictJSONSchema(t *testing.T, raw json.RawMessage, path string) {
+	t.Helper()
+	var node map[string]any
+	if err := json.Unmarshal(raw, &node); err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	switch typ, _ := node["type"].(string); typ {
+	case "array":
+		items, err := json.Marshal(node["items"])
+		if err != nil {
+			t.Fatalf("%s.items: %v", path, err)
+		}
+		assertStrictJSONSchema(t, items, path+"[]")
+		return
+	case "object":
+	default:
+		if node["properties"] == nil {
+			return
+		}
+	}
+	if node["additionalProperties"] != false {
+		t.Fatalf("%s: additionalProperties must be false, got %#v", path, node["additionalProperties"])
+	}
+	props, _ := node["properties"].(map[string]any)
+	required, _ := node["required"].([]any)
+	req := make(map[string]bool, len(required))
+	for _, name := range required {
+		s, ok := name.(string)
+		if !ok {
+			t.Fatalf("%s: required contains %#v", path, name)
+		}
+		req[s] = true
+	}
+	if len(props) == 0 {
+		t.Fatalf("%s: object schema has no properties", path)
+	}
+	if len(req) != len(props) {
+		t.Fatalf("%s: required=%d properties=%d", path, len(req), len(props))
+	}
+	for name, prop := range props {
+		if !req[name] {
+			t.Fatalf("%s: property %q must be required", path, name)
+		}
+		propJSON, err := json.Marshal(prop)
+		if err != nil {
+			t.Fatalf("%s.%s: %v", path, name, err)
+		}
+		assertStrictJSONSchema(t, propJSON, path+"."+name)
+	}
+}
+
+func TestOpenAITranslatorOpenRouterRequiresStructuredOutputParameters(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
+		if input.Provider == nil || !input.Provider.RequireParameters {
+			t.Fatalf("provider = %#v, want require_parameters=true", input.Provider)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL("https://openrouter.ai/api/v1"), "")
+	translator.now = func() time.Time { return time.Unix(123, 0) }
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -482,8 +600,12 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 	if err := json.Unmarshal(entry.Request, &request); err != nil {
 		t.Fatal(err)
 	}
-	if len(request.Messages) != 2 || !strings.Contains(openaiContentText(t, request.Messages[0].Content), openaiTranslationJSONSchema) {
-		t.Fatalf("logged system instruction = %#v", request.Messages)
+	if len(request.Messages) != 2 {
+		t.Fatalf("logged prompt shape = %#v", request.Messages)
+	}
+	requireJSONSchemaResponseFormat(t, request, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
+	if strings.Contains(openaiContentText(t, request.Messages[0].Content), string(openaiTranslationJSONSchema)) {
+		t.Fatalf("logged system instruction still contains schema: %s", request.Messages[0].Content)
 	}
 	if !strings.Contains(openaiContentText(t, request.Messages[1].Content), "<final_message>こんにちは [USER:Alice]</final_message>") {
 		t.Fatalf("logged user prompt = %q", openaiContentText(t, request.Messages[1].Content))
@@ -706,7 +828,11 @@ func TestOpenAITranslatorTranslatePollMulti(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), openaiPollTranslationJSONSchema) || !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<poll>") {
+		requireJSONSchemaResponseFormat(t, input, openaiPollTranslationSchemaName, openaiPollTranslationJSONSchema)
+		if strings.Contains(openaiContentText(t, input.Messages[0].Content), string(openaiPollTranslationJSONSchema)) {
+			t.Fatalf("poll schema must not be copied into the system instruction: %s", input.Messages[0].Content)
+		}
+		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<poll>") {
 			t.Fatalf("unexpected request: %#v", input.Messages)
 		}
 		body := successfulOpenAIResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`, 3, 4)
@@ -742,7 +868,11 @@ func TestOpenAITranslatorTranslateThreadCreateMulti(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), openaiThreadCreateTranslationJSONSchema) || !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<thread_create>") {
+		requireJSONSchemaResponseFormat(t, input, openaiThreadCreateTranslationSchemaName, openaiThreadCreateTranslationJSONSchema)
+		if strings.Contains(openaiContentText(t, input.Messages[0].Content), string(openaiThreadCreateTranslationJSONSchema)) {
+			t.Fatalf("thread-create schema must not be copied into the system instruction: %s", input.Messages[0].Content)
+		}
+		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<thread_create>") {
 			t.Fatalf("unexpected request: %#v", input.Messages)
 		}
 		userPrompt := openaiContentText(t, input.Messages[1].Content)
