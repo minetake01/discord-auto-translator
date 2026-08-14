@@ -4,7 +4,7 @@
 
 Bot Discord giúp những người nói các ngôn ngữ khác nhau có thể trò chuyện cùng nhau trong cùng một máy chủ.
 
-Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**. Mỗi tin nhắn được đăng trên một kênh sẽ được `google.gemma-4-26b-a4b` qua Amazon Bedrock dịch ngay lập tức và phản chiếu đến tất cả các kênh khác trong nhóm — giữ nguyên tên và ảnh đại diện của người gửi gốc — để mỗi kênh đọc như một cuộc trò chuyện tự nhiên bằng ngôn ngữ của mình.
+Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**. Mỗi tin nhắn được đăng trên một kênh sẽ được mô hình Chat Completions tương thích OpenAI dịch ngay lập tức và phản chiếu đến tất cả các kênh khác trong nhóm — giữ nguyên tên và ảnh đại diện của người gửi gốc — để mỗi kênh đọc như một cuộc trò chuyện tự nhiên bằng ngôn ngữ của mình.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-vi (Tiếng Việt)
@@ -14,7 +14,7 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 
 - **Mọi thứ được đồng bộ hóa** — không chỉ tin nhắn mới: chỉnh sửa, xóa, trả lời, tin nhắn được chuyển tiếp, phản ứng, ghim, chủ đề (kênh văn bản / diễn đàn / phương tiện), thẻ diễn đàn đã ánh xạ và tin nhắn chỉ có tệp đính kèm đều được phản chiếu trên toàn nhóm.
 - **Tin nhắn trông như được gửi bởi chính người gửi** — các tin nhắn phản chiếu được gửi qua webhook với tên và ảnh đại diện của tác giả gốc.
-- **Dịch thuật tự nhiên** — Gemma 4 26B-A4B sử dụng tên kênh, chủ đề và lịch sử cuộc trò chuyện gần đây làm ngữ cảnh; bảng thuật ngữ theo từng máy chủ cho phép cố định các bản dịch ưa thích cho tên riêng và thuật ngữ chuyên ngành.
+- **Dịch thuật tự nhiên** — Mô hình dịch sử dụng tên kênh, chủ đề và lịch sử cuộc trò chuyện gần đây làm ngữ cảnh; bảng thuật ngữ theo từng máy chủ cho phép cố định các bản dịch ưa thích cho tên riêng và thuật ngữ chuyên ngành.
 - **Xử lý liên kết thông minh** — các liên kết và lượt đề cập trỏ đến kênh hoặc tin nhắn được quản lý sẽ được viết lại thành các tương đương trong mỗi ngôn ngữ, và các URL có lựa chọn thay thế `hreflang` sẽ được thay bằng phiên bản ngôn ngữ đích.
 - **Hiệu quả và an toàn** — các tin nhắn không có văn bản cần dịch (URL, đề cập, emoji tùy chỉnh, mã) được phản chiếu mà không gọi API dịch; giới hạn tỷ lệ token theo từng máy chủ được áp dụng; URL, đề cập và khối mã được bảo vệ khỏi việc tiêm prompt. Khi dịch thất bại: fail-closed (không phản chiếu, thông báo bản địa hóa ở kênh nguồn).
 - **Giao diện được bản địa hóa** — phản hồi lệnh tuân theo ngôn ngữ ứng dụng Discord của người dùng, và thông báo kênh sử dụng ngôn ngữ được cấu hình cho kênh đó (13 ngôn ngữ, tiếng Anh là dự phòng).
@@ -23,8 +23,7 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
 
 - Go 1.24 trở lên
 - Tài khoản bot Discord với intent đặc quyền `MESSAGE CONTENT` được bật
-- Tài khoản AWS có quyền dùng Amazon Bedrock và khóa IAM được phép tạo suy luận trong Mantle Project `your-aws-bedrock-project-id` tại `your-aws-bedrock-region`.
-- ID Amazon Bedrock
+- Endpoint Chat Completions tương thích OpenAI (base URL, API key và model ID)
 
 ## Cài đặt
 
@@ -46,13 +45,13 @@ Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**.
    - Số nguyên permissions cho những điều trên là `2252126768139328`
    - Để cũng đồng bộ hóa phản ứng emoji tùy chỉnh từ các máy chủ khác, hãy cấp thêm `Use External Emojis`; số nguyên permissions sẽ là `2252126768401472`
 
-### 2. Cấu hình Amazon Bedrock
+### 2. Cấu hình API tương thích OpenAI
 
-1. Bật `google.gemma-4-26b-a4b` trong Amazon Bedrock tại `your-aws-bedrock-region`.
-2. Tạo người dùng IAM riêng và chỉ cho phép `bedrock-mantle:CreateInference` trên `arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id`.
-3. Tạo access key rồi đặt `AWS_ACCESS_KEY_ID` và `AWS_SECRET_ACCESS_KEY` trong `.env`.
+1. Chọn nhà cung cấp Chat Completions tương thích OpenAI và ghi lại base URL (bao gồm `/v1` nếu nhà cung cấp dùng tiền tố đó).
+2. Tạo API key được phép gọi Chat Completions cho mô hình đã chọn.
+3. Đặt `OPENAI_BASE_URL`, `OPENAI_API_KEY` và `OPENAI_MODEL` trong `.env`.
 
-Model, timeout và giới hạn đầu ra được cố định trong mã. Region và Project ID là cấu hình deployment cục bộ bắt buộc qua `AWS_BEDROCK_REGION` và `AWS_BEDROCK_PROJECT_ID`. `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`) có thể điều chỉnh giới hạn token theo máy chủ.
+Timeout và giới hạn đầu ra được cố định trong mã (60s mỗi lần thử, `max_tokens=4096`). Model ID là cấu hình deployment cục bộ bắt buộc. Có thể tùy chỉnh thông lượng token theo máy chủ bằng `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`).
 
 ### 3. Cấu hình biến môi trường
 
@@ -64,10 +63,9 @@ Chỉnh sửa `.env` và đặt các giá trị sau:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -81,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Biến | Bắt buộc | Mô tả |
 |---|---|---|
 | `DISCORD_TOKEN` | Có | Token bot Discord |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | Không | Đường dẫn đến tệp SQLite (mặc định: `./translator.db`) |
 | `HTTP_ADDR` | Không | Địa chỉ máy chủ badge ảnh đại diện (mặc định: `:8080`) |
 | `PUBLIC_BASE_URL` | Không | URL cơ sở công khai cho badge vòng ảnh đại diện. Nếu không đặt, tin nhắn phản chiếu dùng URL ảnh đại diện Discord gốc và máy chủ badge không được sử dụng |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token Gemma 4 26B-A4B mỗi máy chủ mỗi phút (mặc định: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token dịch mỗi máy chủ mỗi phút (mặc định: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | Giới hạn yêu cầu mỗi IP mỗi phút cho endpoint badge `/avatar` (mặc định: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Không | Số ngày giữ `message_links` trong SQLite trước khi dọn tự động. `0` (mặc định) tắt dọn; ví dụ `60` xóa liên kết cũ hơn 60 ngày khi khởi động và mỗi 24 giờ |
 | `GUILD_DATA_RETENTION_DAYS` | Không | Số ngày giữ dữ liệu SQLite của máy chủ sau khi bot bị gỡ. `0` (mặc định) tắt dọn; ví dụ `30` xóa dữ liệu của máy chủ đã gỡ bot quá 30 ngày khi khởi động và mỗi 24 giờ. Tham gia lại trước hạn sẽ hủy lịch xóa |
@@ -161,7 +158,7 @@ Theo mặc định, các lệnh slash quản trị chỉ có thể được ch�
 
 - `language` sử dụng mã BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, v.v.)
 - Tối đa 50 mục thuật ngữ mỗi máy chủ
-- `attribute` gợi ý "tên người", "tên địa điểm", "tiếng lóng", "từ viết tắt" và "thuật ngữ kỹ thuật", nhưng có thể nhập bất kỳ giá trị nào tùy ý. Thuộc tính được sử dụng làm ngữ cảnh để Gemma 4 26B-A4B hiểu ý nghĩa của thuật ngữ
+- `attribute` gợi ý "tên người", "tên địa điểm", "tiếng lóng", "từ viết tắt" và "thuật ngữ kỹ thuật", nhưng có thể nhập bất kỳ giá trị nào tùy ý. Thuộc tính được sử dụng làm ngữ cảnh để mô hình dịch hiểu ý nghĩa của thuật ngữ
 - Các thuật ngữ thông thường chỉ được thêm vào hướng dẫn hệ thống khi nội dung tin nhắn cần dịch có chứa `term` (không phân biệt chữ hoa/thường). Các thuật ngữ có `always_include:true` luôn được thêm vào
 - Nếu tùy chọn `channel` bị bỏ qua, lệnh sẽ áp dụng cho kênh nơi lệnh được chạy
 - Các loại kênh được hỗ trợ: văn bản, tin tức, diễn đàn và phương tiện. Tất cả kênh trong một nhóm phải cùng loại.

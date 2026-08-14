@@ -9,10 +9,9 @@ import (
 
 func TestLoadConfigRequiresTokens(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "")
-	t.Setenv("AWS_ACCESS_KEY_ID", "")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
-	t.Setenv("AWS_BEDROCK_REGION", "")
-	t.Setenv("AWS_BEDROCK_PROJECT_ID", "")
+	t.Setenv("OPENAI_BASE_URL", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("OPENAI_MODEL", "")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 	if err == nil || !strings.Contains(err.Error(), "DISCORD_TOKEN") {
@@ -23,7 +22,7 @@ func TestLoadConfigRequiresTokens(t *testing.T) {
 func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	dir := t.TempDir()
 	envPath := filepath.Join(dir, ".env")
-	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nAWS_ACCESS_KEY_ID=access-key-id\nAWS_SECRET_ACCESS_KEY=secret-access-key\nAWS_BEDROCK_REGION=test-region-1\nAWS_BEDROCK_PROJECT_ID=proj_testproject123\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nTRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
+	if err := os.WriteFile(envPath, []byte("DISCORD_TOKEN=from-file\nOPENAI_BASE_URL=https://api.example.test/v1\nOPENAI_API_KEY=api-key\nOPENAI_MODEL=test-model\nDB_PATH=./from-file.db\nHTTP_ADDR=:9090\nPUBLIC_BASE_URL=https://example.test\nTRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=12345\nAVATAR_RATE_LIMIT_REQUESTS_PER_MIN=60\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,11 +34,8 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 	if cfg.DiscordToken != "existing-token" {
 		t.Fatalf("DiscordToken = %q, want existing-token", cfg.DiscordToken)
 	}
-	if cfg.AWSAccessKeyID != "access-key-id" || cfg.AWSSecretAccessKey != "secret-access-key" {
-		t.Fatalf("unexpected AWS config: access=%q secret=%q", cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey)
-	}
-	if cfg.AWSBedrockRegion != "test-region-1" || cfg.AWSBedrockProjectID != "proj_testproject123" {
-		t.Fatalf("unexpected Bedrock config: region=%q project=%q", cfg.AWSBedrockRegion, cfg.AWSBedrockProjectID)
+	if cfg.OpenAIBaseURL != "https://api.example.test/v1" || cfg.OpenAIAPIKey != "api-key" || cfg.OpenAIModel != "test-model" {
+		t.Fatalf("unexpected OpenAI config: base=%q key=%q model=%q", cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel)
 	}
 	if cfg.DBPath != "./from-file.db" {
 		t.Fatalf("DBPath = %q", cfg.DBPath)
@@ -60,7 +56,7 @@ func TestLoadConfigReadsDotEnvWithoutOverridingExistingEnv(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredAWSConfig(t)
+	setRequiredOpenAIConfig(t)
 	t.Setenv("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -71,7 +67,7 @@ func TestLoadConfigRejectsInvalidRateLimit(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidAvatarRateLimit(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredAWSConfig(t)
+	setRequiredOpenAIConfig(t)
 	t.Setenv("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN", "not-a-number")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -94,7 +90,7 @@ func TestLoadConfigTranslationDebugLogPath(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			setRequiredAWSConfig(t)
+			setRequiredOpenAIConfig(t)
 			t.Setenv("TRANSLATION_DEBUG_LOG_PATH", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -127,7 +123,7 @@ func TestLoadConfigGuildDataRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			setRequiredAWSConfig(t)
+			setRequiredOpenAIConfig(t)
 			t.Setenv("GUILD_DATA_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -166,7 +162,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "token")
-			setRequiredAWSConfig(t)
+			setRequiredOpenAIConfig(t)
 			t.Setenv("MESSAGE_LINK_RETENTION_DAYS", tt.value)
 
 			cfg, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -188,7 +184,7 @@ func TestLoadConfigMessageLinkRetentionDays(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredAWSConfig(t)
+	setRequiredOpenAIConfig(t)
 	t.Setenv("HTTP_ADDR", "not-a-listen-addr")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -199,7 +195,7 @@ func TestLoadConfigRejectsInvalidHTTPAddr(t *testing.T) {
 
 func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "token")
-	setRequiredAWSConfig(t)
+	setRequiredOpenAIConfig(t)
 	t.Setenv("PUBLIC_BASE_URL", "ftp://example.com")
 
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
@@ -208,20 +204,19 @@ func TestLoadConfigRejectsInvalidPublicBaseURL(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRequiresEveryAWSValue(t *testing.T) {
+func TestLoadConfigRequiresEveryOpenAIValue(t *testing.T) {
 	tests := []struct {
 		name    string
 		missing string
 	}{
-		{name: "access key", missing: "AWS_ACCESS_KEY_ID"},
-		{name: "secret key", missing: "AWS_SECRET_ACCESS_KEY"},
-		{name: "region", missing: "AWS_BEDROCK_REGION"},
-		{name: "project ID", missing: "AWS_BEDROCK_PROJECT_ID"},
+		{name: "base URL", missing: "OPENAI_BASE_URL"},
+		{name: "api key", missing: "OPENAI_API_KEY"},
+		{name: "model", missing: "OPENAI_MODEL"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "discord-token")
-			setRequiredAWSConfig(t)
+			setRequiredOpenAIConfig(t)
 			t.Setenv(tt.missing, "")
 			_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 			if err == nil || !strings.Contains(err.Error(), tt.missing) {
@@ -231,21 +226,20 @@ func TestLoadConfigRequiresEveryAWSValue(t *testing.T) {
 	}
 }
 
-func TestLoadConfigRejectsInvalidBedrockLocation(t *testing.T) {
+func TestLoadConfigRejectsInvalidOpenAIBaseURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		key     string
 		value   string
 		wantErr string
 	}{
-		{name: "region", key: "AWS_BEDROCK_REGION", value: "https://test-region-1", wantErr: "AWS_BEDROCK_REGION is invalid"},
-		{name: "project ID", key: "AWS_BEDROCK_PROJECT_ID", value: "project-name", wantErr: "AWS_BEDROCK_PROJECT_ID is invalid"},
+		{name: "scheme", value: "ftp://api.example.test/v1", wantErr: "OPENAI_BASE_URL must use http or https"},
+		{name: "missing host", value: "https:///v1", wantErr: "OPENAI_BASE_URL must include a host"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("DISCORD_TOKEN", "discord-token")
-			setRequiredAWSConfig(t)
-			t.Setenv(tt.key, tt.value)
+			setRequiredOpenAIConfig(t)
+			t.Setenv("OPENAI_BASE_URL", tt.value)
 			_, err := LoadConfig(filepath.Join(t.TempDir(), "missing.env"))
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("error = %v, want %s", err, tt.wantErr)
@@ -254,10 +248,9 @@ func TestLoadConfigRejectsInvalidBedrockLocation(t *testing.T) {
 	}
 }
 
-func setRequiredAWSConfig(t *testing.T) {
+func setRequiredOpenAIConfig(t *testing.T) {
 	t.Helper()
-	t.Setenv("AWS_ACCESS_KEY_ID", "access-key-id")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-access-key")
-	t.Setenv("AWS_BEDROCK_REGION", "test-region-1")
-	t.Setenv("AWS_BEDROCK_PROJECT_ID", "proj_testproject123")
+	t.Setenv("OPENAI_BASE_URL", "https://api.example.test/v1")
+	t.Setenv("OPENAI_API_KEY", "api-key")
+	t.Setenv("OPENAI_MODEL", "test-model")
 }

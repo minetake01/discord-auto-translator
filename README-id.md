@@ -4,7 +4,7 @@
 
 Bot Discord yang memungkinkan orang-orang yang berbicara dalam bahasa berbeda untuk mengobrol bersama di server yang sama.
 
-Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pesan yang diposting di satu saluran langsung diterjemahkan oleh `google.gemma-4-26b-a4b` melalui Amazon Bedrock dan dicerminkan ke semua saluran lain dalam grup — dengan nama dan avatar pengirim asli — sehingga setiap saluran terbaca seperti percakapan alami dalam bahasanya sendiri.
+Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pesan yang diposting di satu saluran langsung diterjemahkan oleh model Chat Completions yang kompatibel dengan OpenAI dan dicerminkan ke semua saluran lain dalam grup — dengan nama dan avatar pengirim asli — sehingga setiap saluran terbaca seperti percakapan alami dalam bahasanya sendiri.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-id (Indonesia)
@@ -14,7 +14,7 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
 
 - **Semuanya tetap tersinkronisasi** — bukan hanya pesan baru: pengeditan, penghapusan, balasan, pesan yang diteruskan, reaksi, pin, utas (saluran teks / forum / media), tag forum yang dipetakan, dan pesan yang hanya berisi lampiran semuanya dicerminkan ke seluruh grup.
 - **Pesan terlihat seperti dikirim langsung oleh pengirimnya** — pesan yang dicerminkan dikirim melalui webhook dengan nama dan avatar penulis asli.
-- **Terjemahan yang natural** — Gemma 4 26B-A4B menggunakan nama saluran, topik, dan riwayat percakapan terkini sebagai konteks; glosarium per server memungkinkan Anda menetapkan terjemahan pilihan untuk nama dan istilah khusus.
+- **Terjemahan yang natural** — the translation model menggunakan nama saluran, topik, dan riwayat percakapan terkini sebagai konteks; glosarium per server memungkinkan Anda menetapkan terjemahan pilihan untuk nama dan istilah khusus.
 - **Penanganan tautan yang cerdas** — tautan dan mention yang mengarah ke saluran atau pesan yang dikelola ditulis ulang ke padanannya di setiap bahasa, dan URL dengan alternatif `hreflang` diganti dengan versi dalam bahasa target.
 - **Efisien dan aman** — pesan tanpa teks yang perlu diterjemahkan (URL, mention, emoji kustom, kode) dicerminkan tanpa memanggil API terjemahan; batas laju token per server berlaku; URL, mention, dan blok kode dilindungi dari injeksi prompt. Saat terjemahan gagal: fail-closed (tidak dicerminkan, notifikasi terlokalisasi di saluran sumber).
 - **Antarmuka yang dilokalisasi** — respons perintah mengikuti bahasa klien Discord pengguna, dan notifikasi saluran menggunakan bahasa yang dikonfigurasi untuk saluran tersebut (13 bahasa, bahasa Inggris sebagai cadangan).
@@ -23,8 +23,7 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
 
 - Go 1.24 atau lebih baru
 - Akun bot Discord dengan intent istimewa `MESSAGE CONTENT` diaktifkan
-- Akun AWS dengan akses Amazon Bedrock dan kunci IAM yang dapat membuat inferensi pada Project Mantle `your-aws-bedrock-project-id` di `your-aws-bedrock-region`.
-- ID Amazon Bedrock
+- Endpoint Chat Completions yang kompatibel dengan OpenAI (base URL, API key, dan model ID)
 
 ## Pengaturan
 
@@ -46,9 +45,13 @@ Hubungkan satu saluran per bahasa menjadi sebuah **grup terjemahan**. Setiap pes
    - Bilangan bulat permissions untuk di atas adalah `2252126768139328`
    - Untuk juga menyinkronkan reaksi emoji kustom dari server lain, berikan tambahan `Use External Emojis`; bilangan bulat permissions menjadi `2252126768401472`
 
-### 2. Konfigurasi Amazon Bedrock
+### 2. Konfigurasi API yang kompatibel dengan OpenAI
 
-Aktifkan `google.gemma-4-26b-a4b` di Amazon Bedrock wilayah `your-aws-bedrock-region`. Buat pengguna IAM dengan hanya `bedrock-mantle:CreateInference` untuk model tersebut, lalu atur `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION`, dan `AWS_BEDROCK_PROJECT_ID` di `.env`. Model, timeout, dan batas keluaran ditetapkan di kode; region dan Project ID adalah konfigurasi deployment lokal yang wajib.
+1. Pilih penyedia Chat Completions yang kompatibel dengan OpenAI dan catat base URL-nya (sertakan `/v1` jika penyedia memakai awalan itu).
+2. Buat API key yang diizinkan memanggil Chat Completions untuk model yang dipilih.
+3. Atur `OPENAI_BASE_URL`, `OPENAI_API_KEY`, dan `OPENAI_MODEL` di `.env`.
+
+Timeout dan batas keluaran ditetapkan di kode (60s per percobaan, `max_tokens=4096`). Model ID adalah konfigurasi deployment lokal yang wajib. Secara opsional, sesuaikan throughput token per server dengan `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`).
 
 ### 3. Konfigurasi variabel lingkungan
 
@@ -60,10 +63,9 @@ Edit `.env` dan atur nilai berikut:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -77,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variabel | Wajib | Deskripsi |
 |---|---|---|
 | `DISCORD_TOKEN` | Ya | Token bot Discord |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | Tidak | Jalur ke file SQLite (default: `./translator.db`) |
 | `HTTP_ADDR` | Tidak | Alamat server badge avatar (default: `:8080`) |
 | `PUBLIC_BASE_URL` | Tidak | URL dasar publik untuk badge cincin avatar. Jika tidak diatur, pesan yang dicerminkan menggunakan URL avatar Discord asli dan server badge tidak digunakan |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | Batas token Gemma 4 26B-A4B per server per menit (default: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | Batas token translation per server per menit (default: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | Batas permintaan per IP per menit untuk endpoint badge `/avatar` (default: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Tidak | Hari retensi `message_links` di SQLite sebelum pembersihan otomatis. `0` (default) menonaktifkan pembersihan; mis. `60` menghapus tautan lebih dari 60 hari saat startup dan setiap 24 jam |
 | `GUILD_DATA_RETENTION_DAYS` | Tidak | Hari penyimpanan data SQLite server setelah bot dikeluarkan. `0` (default) menonaktifkan pembersihan; mis. `30` menghapus data server yang sudah lebih dari 30 hari ditinggalkan saat startup dan setiap 24 jam. Bergabung kembali sebelum tenggat membatalkan penghapusan terjadwal |
@@ -157,7 +158,7 @@ Secara default, perintah slash admin hanya dapat dijalankan oleh **administrator
 
 - `language` menggunakan kode BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, dll.)
 - Maksimal 50 entri glosarium per server
-- `attribute` menyarankan "nama orang", "nama tempat", "slang", "singkatan", dan "istilah teknis", tetapi nilai apa pun dapat dimasukkan secara bebas. Atribut digunakan sebagai konteks agar Gemma 4 26B-A4B memahami arti istilah tersebut
+- `attribute` menyarankan "nama orang", "nama tempat", "slang", "singkatan", dan "istilah teknis", tetapi nilai apa pun dapat dimasukkan secara bebas. Atribut digunakan sebagai konteks agar the translation model memahami arti istilah tersebut
 - Istilah biasa hanya ditambahkan ke instruksi sistem jika teks pesan yang akan diterjemahkan mengandung `term` (tidak peka huruf besar/kecil). Istilah dengan `always_include:true` selalu ditambahkan
 - Jika opsi `channel` dihilangkan, perintah berlaku untuk saluran tempat perintah dijalankan
 - Jenis saluran yang didukung: teks, berita, forum, dan media. Semua channel dalam satu grup harus berjenis sama.

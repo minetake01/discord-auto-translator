@@ -4,7 +4,7 @@
 
 一个让说不同语言的用户能在同一个 Discord 服务器中一起聊天的机器人。
 
-为每种语言准备一个频道，并将它们关联为一个**翻译组**。当某个频道有新消息时，`google.gemma-4-26b-a4b`（经 Amazon Bedrock）会立即翻译并将其镜像到组内所有其他频道 — 保留原发送者的名字和头像 — 让每个频道读起来都像是用本语言进行的自然对话。
+为每种语言准备一个频道，并将它们关联为一个**翻译组**。当某个频道有新消息时，兼容 OpenAI 的 Chat Completions 模型会立即翻译并将其镜像到组内所有其他频道 — 保留原发送者的名字和头像 — 让每个频道读起来都像是用本语言进行的自然对话。
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
@@ -14,7 +14,7 @@
 
 - **全面同步** — 不仅是新消息：编辑、删除、回复、转发消息、表情回应、置顶、子区（文字 / 论坛 / 媒体频道）、已映射的论坛标签以及仅含附件的消息，都会在整个组内镜像同步。
 - **消息如同本人发送** — 镜像消息通过 Webhook 发送，显示原作者的名字和头像。
-- **自然的翻译** — Gemma 4 26B-A4B 会参考频道名称、主题和最近的对话历史作为上下文；每个服务器还可配置术语表，为人名和专业术语指定固定译法。
+- **自然的翻译** — 翻译模型会参考频道名称、主题和最近的对话历史作为上下文；每个服务器还可配置术语表，为人名和专业术语指定固定译法。
 - **智能链接处理** — 指向受管理频道或消息的链接和提及会被改写为各语言频道的对应目标；带有 `hreflang` 备选版本的 URL 会替换为目标语言版本。
 - **高效且安全** — 没有可翻译文本的消息（仅含 URL、提及、自定义表情、代码）会直接镜像而不调用翻译 API；每个服务器有令牌速率限制；URL、提及和代码块受到提示词注入防护。翻译失败时采用 fail-closed（不镜像，在源频道发送本地化通知）。
 - **本地化界面** — 命令响应跟随用户的 Discord 客户端语言，频道通知使用频道配置的语言（支持 13 种语言，未支持语言回退到英语）。
@@ -23,8 +23,7 @@
 
 - Go 1.24 或更高版本
 - 已启用 `MESSAGE CONTENT` 特权 Intent 的 Discord 机器人账号
-- 可使用 Amazon Bedrock 的 AWS 账户，以及允许在 `your-aws-bedrock-region` 的 Mantle Project `your-aws-bedrock-project-id` 中创建推理的 IAM 访问密钥
-- Amazon Bedrock ID
+- 兼容 OpenAI 的 Chat Completions 端点（基础 URL、API 密钥和模型 ID）
 
 ## 安装配置
 
@@ -46,9 +45,13 @@
    - 上述权限的整数值为 `2252126768139328`
    - 若还需同步来自其他服务器的自定义表情回应，请额外授予 `Use External Emojis`，此时权限整数值为 `2252126768401472`
 
-### 2. 配置 Amazon Bedrock
+### 2. 配置兼容 OpenAI 的 API
 
-在 `your-aws-bedrock-region` 的 Amazon Bedrock 中启用 `google.gemma-4-26b-a4b`。创建仅对该模型拥有 `bedrock-mantle:CreateInference` 权限的 IAM 用户，并在 `.env` 中设置 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION` 和 `AWS_BEDROCK_PROJECT_ID`。模型、超时与输出上限固定在代码中；区域和 Project ID 是必需的本地部署设置。
+1. 选择任意兼容 OpenAI 的 Chat Completions 提供方，并确认其基础 URL（若提供方使用 `/v1` 前缀则一并包含）。
+2. 创建可调用所选模型 Chat Completions 的 API 密钥。
+3. 在 `.env` 中设置 `OPENAI_BASE_URL`、`OPENAI_API_KEY` 和 `OPENAI_MODEL`。
+
+超时与输出上限固定在代码中（每次尝试 60 秒，`max_tokens=4096`）。模型 ID 是必需的本地部署设置。可选地使用 `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（默认 `100000`）调整每个服务器的令牌吞吐。
 
 ### 3. 配置环境变量
 
@@ -60,10 +63,9 @@ cp .env.example .env
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -77,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | 变量 | 必需 | 说明 |
 |---|---|---|
 | `DISCORD_TOKEN` | 是 | Discord 机器人令牌 |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | 否 | SQLite 文件路径（默认: `./translator.db`） |
 | `HTTP_ADDR` | 否 | 头像徽章服务器地址（默认: `:8080`） |
 | `PUBLIC_BASE_URL` | 否 | 头像环徽章的公开基础 URL。未设置时，镜像消息使用 Discord 原始头像 URL，不会使用徽章服务器 |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 否 | 每个服务器每分钟的 Gemma 4 26B-A4B 令牌上限（默认: `100000`） |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 否 | 每个服务器每分钟的翻译令牌上限（默认: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 否 | `/avatar` 徽章端点的每 IP 每分钟请求上限（默认: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 否 | SQLite 中 `message_links` 的自动清理前保留天数。`0`（默认）禁用清理；例如 `60` 会在启动时及每 24 小时删除超过 60 天的链接 |
 | `GUILD_DATA_RETENTION_DAYS` | 否 | 机器人从服务器移除后，该服务器 SQLite 数据的保留天数。`0`（默认）禁用清理；例如 `30` 会在启动时及每 24 小时删除已移除超过 30 天的服务器数据。到期前重新加入会取消计划删除 |
@@ -157,7 +158,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 - `language` 使用 BCP-47 格式（如 `en`、`ja`、`zh-CN`、`pt-BR`、`ko`、`fr`）
 - 每个服务器最多可注册 50 条术语
-- `attribute` 会提示「人名」「地名」「俚语」「缩写」「专业术语」等候选，也可自由输入任意属性。指定的属性将作为 Gemma 4 26B-A4B 判断术语含义的上下文
+- `attribute` 会提示「人名」「地名」「俚语」「缩写」「专业术语」等候选，也可自由输入任意属性。指定的属性将作为翻译模型判断术语含义的上下文
 - 普通术语仅当待翻译正文中包含 `term`（不区分大小写）时才会加入系统指令；`always_include:true` 的术语则始终加入
 - 省略 `channel` 选项时，命令作用于执行命令的频道
 - 支持的频道类型：文字、公告、论坛、媒体。同一组内的所有频道必须是相同类型。

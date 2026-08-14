@@ -4,7 +4,7 @@
 
 Ein Discord-Bot, der es Personen, die verschiedene Sprachen sprechen, ermöglicht, zusammen im selben Server zu chatten.
 
-Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede Nachricht, die in einem Channel gepostet wird, wird sofort von `google.gemma-4-26b-a4b` über Amazon Bedrock übersetzt und in alle anderen Channels der Gruppe gespiegelt — mit dem Namen und Avatar des Originalsenders — sodass sich jeder Channel wie eine natürliche Unterhaltung in der jeweiligen Sprache liest.
+Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede Nachricht, die in einem Channel gepostet wird, wird sofort von ein OpenAI-kompatibles Chat-Completions-Modell übersetzt und in alle anderen Channels der Gruppe gespiegelt — mit dem Namen und Avatar des Originalsenders — sodass sich jeder Channel wie eine natürliche Unterhaltung in der jeweiligen Sprache liest.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-de (Deutsch)
@@ -14,7 +14,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 - **Alles bleibt synchronisiert** — nicht nur neue Nachrichten: Bearbeitungen, Löschungen, Antworten, weitergeleitete Nachrichten, Reaktionen, Pins, Threads (Text- / Forum- / Medien-Channel), gemappte Forum-Tags und Nachrichten, die nur Anhänge enthalten, werden alle in der Gruppe gespiegelt.
 - **Nachrichten sehen aus, als kämen sie vom Absender** — gespiegelte Nachrichten werden über Webhooks mit dem Namen und Avatar des ursprünglichen Autors gesendet.
-- **Natürliche Übersetzungen** — Gemma 4 26B-A4B verwendet Channel-Name, Thema und den jüngsten Gesprächsverlauf als Kontext; ein serverseitiges Glossar erlaubt es, bevorzugte Übersetzungen für Namen und Fachbegriffe festzulegen.
+- **Natürliche Übersetzungen** — the translation model verwendet Channel-Name, Thema und den jüngsten Gesprächsverlauf als Kontext; ein serverseitiges Glossar erlaubt es, bevorzugte Übersetzungen für Namen und Fachbegriffe festzulegen.
 - **Intelligente Link-Behandlung** — Links und Erwähnungen, die auf verwaltete Channel oder Nachrichten zeigen, werden in die jeweiligen Entsprechungen jeder Sprache umgeschrieben; URLs mit `hreflang`-Alternativen werden durch die Zielsprachversion ersetzt.
 - **Effizient und sicher** — Nachrichten ohne übersetzbaren Text (URLs, Erwähnungen, benutzerdefinierte Emojis, Code) werden gespiegelt, ohne die Übersetzungs-API aufzurufen; pro Server gelten Token-Ratenlimits; URLs, Erwähnungen und Code-Blöcke sind gegen Prompt-Injection geschützt. Bei Übersetzungsfehlern fail-closed (kein Spiegeln, lokalisierte Benachrichtigung im Quell-Channel).
 - **Lokalisierte Benutzeroberfläche** — Befehlsantworten richten sich nach der Discord-Client-Sprache des Nutzers, Channel-Benachrichtigungen verwenden die für den Channel konfigurierte Sprache (13 Sprachen, Englisch als Fallback).
@@ -23,7 +23,7 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
 
 - Go 1.24 oder neuer
 - Ein Discord-Bot-Konto mit aktiviertem privilegierten Intent `MESSAGE CONTENT`
-- Ein AWS-Konto mit Zugriff auf Amazon Bedrock und ein IAM-Zugriffsschlüssel, der Inferenz im Mantle-Standardprojekt in `your-aws-bedrock-region` erstellen darf.
+- Ein OpenAI-kompatibler Chat-Completions-Endpunkt (Basis-URL, API-Schlüssel und Modell-ID)
 
 ## Einrichtung
 
@@ -45,9 +45,13 @@ Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede N
    - Der Berechtigungsganzzahlwert für das Obige ist `2252126768139328`
    - Um auch benutzerdefinierte Emoji-Reaktionen von anderen Servern zu synchronisieren, erteile zusätzlich `Use External Emojis`; der Berechtigungsganzzahlwert wird dann `2252126768401472`
 
-### 2. Amazon Bedrock einrichten
+### 2. OpenAI-kompatible API einrichten
 
-Aktiviere `google.gemma-4-26b-a4b` in Amazon Bedrock in `your-aws-bedrock-region`. Erstelle einen IAM-Benutzer mit ausschließlich `bedrock-mantle:CreateInference` für das Modell und setze `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` und `AWS_BEDROCK_PROJECT_ID` in `.env`. Modell, Timeout und Ausgabelimit sind im Code festgelegt; Region und Project ID sind erforderliche lokale Deployment-Einstellungen.
+1. Wähle einen OpenAI-kompatiblen Chat-Completions-Anbieter und notiere die Basis-URL (inkl. `/v1`, falls der Anbieter dieses Präfix verwendet).
+2. Erstelle einen API-Schlüssel mit Berechtigung für Chat Completions und dein gewähltes Modell.
+3. Setze `OPENAI_BASE_URL`, `OPENAI_API_KEY` und `OPENAI_MODEL` in `.env`.
+
+Timeout und Ausgabelimit sind im Code festgelegt (60s pro Versuch, `max_tokens=4096`). Die Modell-ID ist eine erforderliche lokale Deployment-Einstellung. Optional kannst du den Token-Durchsatz pro Server mit `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (Standard `100000`) anpassen.
 
 ### 3. Umgebungsvariablen konfigurieren
 
@@ -59,10 +63,9 @@ Bearbeite `.env` und setze folgende Werte:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -76,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variable | Erforderlich | Beschreibung |
 |---|---|---|
 | `DISCORD_TOKEN` | Ja | Discord-Bot-Token |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | Nein | Pfad zur SQLite-Datei (Standard: `./translator.db`) |
 | `HTTP_ADDR` | Nein | Adresse des Avatar-Badge-Servers (Standard: `:8080`) |
 | `PUBLIC_BASE_URL` | Nein | Öffentliche Basis-URL für Avatar-Ring-Badges. Wenn nicht gesetzt, verwenden gespiegelte Nachrichten die ursprüngliche Discord-Avatar-URL und der Badge-Server wird nicht genutzt |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Nein | Gemma 4 26B-A4B-Token-Limit pro Server und Minute (Standard: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Nein | Übersetzungs-Token-Limit pro Server und Minute (Standard: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | Anfrage-Limit pro IP und Minute für den `/avatar`-Badge-Endpunkt (Standard: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Nein | Aufbewahrungsdauer von `message_links` in SQLite in Tagen vor automatischer Bereinigung. `0` (Standard) deaktiviert die Bereinigung; z. B. `60` löscht Links älter als 60 Tage beim Start und alle 24 Stunden |
 | `GUILD_DATA_RETENTION_DAYS` | Nein | Tage, die SQLite-Daten eines Servers nach Entfernung des Bots aufbewahrt werden. `0` (Standard) deaktiviert die Bereinigung; z. B. `30` löscht Daten von seit mehr als 30 Tagen entfernten Servern beim Start und alle 24 Stunden. Ein erneuter Beitritt vor Ablauf hebt die geplante Löschung auf |
@@ -156,7 +158,7 @@ Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren
 
 - `language` verwendet BCP-47-Codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` usw.)
 - Maximal 50 Glossareinträge pro Server
-- `attribute` schlägt „Personenname", „Ortsname", „Slang", „Abkürzung" und „Fachbegriff" vor, aber jeder Wert kann frei eingegeben werden. Das Attribut wird als Kontext genutzt, damit Gemma 4 26B-A4B die Bedeutung des Begriffs versteht
+- `attribute` schlägt „Personenname", „Ortsname", „Slang", „Abkürzung" und „Fachbegriff" vor, aber jeder Wert kann frei eingegeben werden. Das Attribut wird als Kontext genutzt, damit the translation model die Bedeutung des Begriffs versteht
 - Normale Begriffe werden den Systemanweisungen nur hinzugefügt, wenn die zu übersetzende Nachricht `term` enthält (Groß-/Kleinschreibung ignoriert). Begriffe mit `always_include:true` werden immer hinzugefügt
 - Wird die Option `channel` weggelassen, gilt der Befehl für den Channel, in dem er ausgeführt wurde
 - Unterstützte Channel-Typen: Text, Ankündigungen, Forum und Medien. Alle Kanäle in einer Gruppe müssen denselben Typ haben.

@@ -4,7 +4,7 @@
 
 Um bot para Discord que permite que pessoas que falam idiomas diferentes conversem juntas no mesmo servidor.
 
-Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem postada em um canal é traduzida instantaneamente por `google.gemma-4-26b-a4b` via Amazon Bedrock e espelhada em todos os outros canais do grupo — mantendo o nome e o avatar do autor original — para que cada canal pareça uma conversa natural no seu próprio idioma.
+Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem postada em um canal é traduzida instantaneamente por an OpenAI-compatible Chat Completions model e espelhada em todos os outros canais do grupo — mantendo o nome e o avatar do autor original — para que cada canal pareça uma conversa natural no seu próprio idioma.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-pt (Português)
@@ -14,7 +14,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 - **Tudo fica sincronizado** — não só novas mensagens: edições, exclusões, respostas, mensagens encaminhadas, reações, fixações, tópicos (canais de texto / fórum / mídia), tags de fórum mapeadas e mensagens com apenas anexos são todos espelhados pelo grupo.
 - **As mensagens parecem enviadas pelo remetente** — as mensagens espelhadas são entregues via webhooks com o nome e avatar do autor original.
-- **Traduções naturais** — o Gemma 4 26B-A4B usa o nome do canal, o tópico e o histórico recente de conversa como contexto; um glossário por servidor permite fixar traduções preferidas para nomes e jargões.
+- **Traduções naturais** — o the translation model usa o nome do canal, o tópico e o histórico recente de conversa como contexto; um glossário por servidor permite fixar traduções preferidas para nomes e jargões.
 - **Tratamento inteligente de links** — links e menções apontando para canais ou mensagens gerenciados são reescritos para seus equivalentes em cada idioma, e URLs com alternativas `hreflang` são substituídas pela versão no idioma de destino.
 - **Eficiente e seguro** — mensagens sem texto para traduzir (URLs, menções, emojis personalizados, código) são espelhadas sem chamar a API de tradução; limites de taxa de tokens por servidor se aplicam; URLs, menções e blocos de código são protegidos contra injeção de prompt. Em falhas de tradução: fail-closed (sem espelhamento, notificação localizada no canal de origem).
 - **Interface localizada** — as respostas dos comandos seguem o idioma do cliente Discord do usuário, e as notificações de canal usam o idioma configurado para o canal (13 idiomas, inglês como fallback).
@@ -23,8 +23,7 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
 
 - Go 1.24 ou superior
 - Uma conta de bot do Discord com o intent privilegiado `MESSAGE CONTENT` habilitado
-- Uma conta AWS com acesso ao Amazon Bedrock e uma chave IAM autorizada a criar inferência no Project Mantle `your-aws-bedrock-project-id` em `your-aws-bedrock-region`.
-- Um ID de Amazon Bedrock
+- Um endpoint de Chat Completions compatível com OpenAI (URL base, chave de API e ID do modelo)
 
 ## Configuração
 
@@ -46,9 +45,13 @@ Vincule um canal por idioma formando um **grupo de tradução**. Cada mensagem p
    - O inteiro de permissões para o acima é `2252126768139328`
    - Para sincronizar também reações de emojis personalizados de outros servidores, conceda adicionalmente `Use External Emojis`; o inteiro de permissões passa a ser `2252126768401472`
 
-### 2. Configurar Amazon Bedrock
+### 2. Configurar a API compatível com OpenAI
 
-Habilite `google.gemma-4-26b-a4b` no Amazon Bedrock em `your-aws-bedrock-region`. Crie um usuário IAM somente com `bedrock-mantle:CreateInference` para o modelo e defina `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` e `AWS_BEDROCK_PROJECT_ID` no `.env`. Modelo, timeout e limite de saída são fixos no código; região e Project ID são configurações locais obrigatórias do deploy.
+1. Escolha um provedor de Chat Completions compatível com OpenAI e anote a URL base (inclua `/v1` se o provedor usar esse prefixo).
+2. Crie uma chave de API com permissão para chamar Chat Completions no modelo escolhido.
+3. Defina `OPENAI_BASE_URL`, `OPENAI_API_KEY` e `OPENAI_MODEL` no `.env`.
+
+Timeout e limite de saída são fixos no código (60s por tentativa, `max_tokens=4096`). O ID do modelo é uma configuração local obrigatória. Opcionalmente ajuste o throughput de tokens por servidor com `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (padrão `100000`).
 
 ### 3. Configurar variáveis de ambiente
 
@@ -60,10 +63,9 @@ Edite o `.env` e defina o seguinte:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -77,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variável | Obrigatório | Descrição |
 |---|---|---|
 | `DISCORD_TOKEN` | Sim | Token do bot do Discord |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | Não | Caminho para o arquivo SQLite (padrão: `./translator.db`) |
 | `HTTP_ADDR` | Não | Endereço do servidor de badge de avatar (padrão: `:8080`) |
 | `PUBLIC_BASE_URL` | Não | URL base pública para badges de anel em avatares. Se não definida, mensagens espelhadas usam a URL de avatar original do Discord e o servidor de badge não é utilizado |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Não | Limite de tokens do Gemma 4 26B-A4B por servidor por minuto (padrão: `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Não | Limite de tokens do translation por servidor por minuto (padrão: `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Não | Limite de requisições por IP por minuto para o endpoint de badge `/avatar` (padrão: `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Não | Dias de retenção de `message_links` no SQLite antes da limpeza automática. `0` (padrão) desativa a limpeza; ex.: `60` remove links com mais de 60 dias na inicialização e a cada 24 horas |
 | `GUILD_DATA_RETENTION_DAYS` | Não | Dias de retenção no SQLite dos dados de um servidor após a remoção do bot. `0` (padrão) desativa a limpeza; ex.: `30` remove na inicialização e a cada 24 horas os dados de servidores removidos há mais de 30 dias. Reingressar antes do prazo cancela a remoção agendada |
@@ -157,7 +158,7 @@ Por padrão, os comandos de barra de administração só podem ser executados po
 
 - `language` usa códigos BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Máximo de 50 entradas de glossário por servidor
-- `attribute` sugere "nome de pessoa", "nome de lugar", "gíria", "abreviação" e "termo técnico", mas qualquer valor pode ser inserido livremente. O atributo é usado como contexto para o Gemma 4 26B-A4B entender o significado do termo
+- `attribute` sugere "nome de pessoa", "nome de lugar", "gíria", "abreviação" e "termo técnico", mas qualquer valor pode ser inserido livremente. O atributo é usado como contexto para o the translation model entender o significado do termo
 - Termos normais são adicionados às instruções do sistema apenas quando o corpo da mensagem a traduzir contém `term` (sem distinção de maiúsculas). Termos com `always_include:true` são sempre adicionados
 - Se a opção `channel` for omitida, o comando se aplica ao canal em que foi executado
 - Tipos de canal suportados: texto, notícias, fórum e mídia. Todos os canais de um grupo devem ser do mesmo tipo.
