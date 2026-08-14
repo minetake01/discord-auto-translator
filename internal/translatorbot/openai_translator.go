@@ -36,12 +36,6 @@ const (
 	openaiThreadCreateTranslationSchemaName = "thread_create_translations"
 )
 
-var (
-	openaiTranslationJSONSchema             = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text","attachment_descriptions"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Use an empty array when <attachments> is absent."}}}}}}`)
-	openaiPollTranslationJSONSchema         = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`)
-	openaiThreadCreateTranslationJSONSchema = json.RawMessage(`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`)
-)
-
 type openaiHTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -273,11 +267,116 @@ func (t *OpenAITranslator) SetDebugLog(debugLog *DebugLog) {
 	t.debugLog = debugLog
 }
 
+func openaiLanguageSchema(targetLanguages []string) map[string]any {
+	langs := make([]string, len(targetLanguages))
+	copy(langs, targetLanguages)
+	return map[string]any{
+		"type":        "string",
+		"enum":        langs,
+		"description": "BCP-47 language tag from <target_languages>, copied character-for-character.",
+	}
+}
+
+func openaiObjectSchema(required []string, properties map[string]any) map[string]any {
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": false,
+		"required":             required,
+		"properties":           properties,
+	}
+}
+
+func requireSchemaLanguages(targetLanguages []string) error {
+	if len(targetLanguages) == 0 {
+		return errors.New("translation JSON schema requires target languages")
+	}
+	for _, lang := range targetLanguages {
+		if lang == "" {
+			return errors.New("translation JSON schema has an empty language")
+		}
+	}
+	return nil
+}
+
+func marshalOpenAIJSONSchema(schema map[string]any) (json.RawMessage, error) {
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return nil, errors.New("encode translation JSON schema")
+	}
+	return encoded, nil
+}
+
+func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+	if err := requireSchemaLanguages(targetLanguages); err != nil {
+		return nil, err
+	}
+	item := openaiObjectSchema([]string{"language", "translated_text"}, map[string]any{
+		"language": openaiLanguageSchema(targetLanguages),
+		"translated_text": map[string]any{
+			"type":        "string",
+			"description": "The <final_message> translated into this item's language. Empty when <final_message> is empty.",
+		},
+		"attachment_descriptions": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Omit when <attachments> is absent.",
+		},
+	})
+	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
+		"translations": map[string]any{"type": "array", "items": item},
+	}))
+}
+
+func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+	if err := requireSchemaLanguages(targetLanguages); err != nil {
+		return nil, err
+	}
+	item := openaiObjectSchema([]string{"language", "question", "answers"}, map[string]any{
+		"language": openaiLanguageSchema(targetLanguages),
+		"question": map[string]any{
+			"type":        "string",
+			"description": "The poll question translated into this item's language.",
+		},
+		"answers": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "The poll answers translated into this item's language, in source order.",
+		},
+	})
+	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
+		"translations": map[string]any{"type": "array", "items": item},
+	}))
+}
+
+func openaiThreadCreateTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+	if err := requireSchemaLanguages(targetLanguages); err != nil {
+		return nil, err
+	}
+	item := openaiObjectSchema([]string{"language", "name", "message"}, map[string]any{
+		"language": openaiLanguageSchema(targetLanguages),
+		"name": map[string]any{
+			"type":        "string",
+			"description": "The thread <name> translated into this item's language.",
+		},
+		"message": map[string]any{
+			"type":        "string",
+			"description": "The initial thread <message> translated into this item's language. Empty when <message> was omitted.",
+		},
+	})
+	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
+		"translations": map[string]any{"type": "array", "items": item},
+	}))
+}
+
 func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiMessageTranslationSchemaName, openaiTranslationJSONSchema)
+	schema, err := openaiMessageTranslationSchema(prepared.targetLanguages)
+	if err != nil {
+		return MultiTranslationResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiMessageTranslationSchemaName, schema)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -292,7 +391,11 @@ func (t *OpenAITranslator) TranslatePollMulti(ctx context.Context, prepared prep
 	if len(prepared.targetLanguages) == 0 {
 		return PollMultiTranslationResult{Translations: map[string]PollTranslation{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiPollTranslationSchemaName, openaiPollTranslationJSONSchema)
+	schema, err := openaiPollTranslationSchema(prepared.targetLanguages)
+	if err != nil {
+		return PollMultiTranslationResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiPollTranslationSchemaName, schema)
 	if err != nil {
 		return PollMultiTranslationResult{}, err
 	}
@@ -307,7 +410,11 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 	if len(prepared.targetLanguages) == 0 {
 		return ThreadCreateMultiTranslationResult{Translations: map[string]ThreadCreateTranslation{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiThreadCreateTranslationSchemaName, openaiThreadCreateTranslationJSONSchema)
+	schema, err := openaiThreadCreateTranslationSchema(prepared.targetLanguages)
+	if err != nil {
+		return ThreadCreateMultiTranslationResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiThreadCreateTranslationSchemaName, schema)
 	if err != nil {
 		return ThreadCreateMultiTranslationResult{}, err
 	}

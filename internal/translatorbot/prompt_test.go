@@ -487,6 +487,7 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 	}
 
 	for _, raw := range []string{
+		`{"translations":[{"language":"English","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`,
 		`{"translations":[{"language":"en-US","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`,
 		`{"translations":[{"language":"ja","translated_text":"こんにちは"},{"language":"en","translated_text":"Hello"}]}`,
 		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
