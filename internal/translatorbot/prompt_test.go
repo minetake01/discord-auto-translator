@@ -6,17 +6,12 @@ import (
 	"testing"
 )
 
-func testTranslationTaskIntro() string {
-	return "Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n"
-}
-
-func testTranslationSystem(glossary []GlossaryEntry, content string, hasStyle bool) string {
-	always, _ := splitGlossaryEntries(content, glossary)
-	return buildTranslationSystemInstruction(testTranslationTaskIntro(), "<final_message>", always, hasStyle)
+func testTranslationSystem() string {
+	return buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>")
 }
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := testTranslationSystem(nil, "こんにちは", false)
+	systemInstruction := testTranslationSystem()
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -32,8 +27,11 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 	if !strings.Contains(systemInstruction, "recent_context") {
 		t.Fatal("system instruction should mention recent_context")
 	}
-	if strings.Contains(systemInstruction, "style_instructions") {
-		t.Fatal(systemInstruction)
+	if !strings.Contains(systemInstruction, "style_instructions") {
+		t.Fatal("system instruction should always mention style_instructions")
+	}
+	if strings.Contains(prompt, "<style_instructions>") {
+		t.Fatal("user prompt should omit <style_instructions> when none are set")
 	}
 	if strings.Contains(prompt, "Everything inside <translation_request>") {
 		t.Fatal("untrusted-content rule belongs in system instruction, not user prompt")
@@ -97,7 +95,7 @@ func TestBuildTranslationPromptIncludesThreadName(t *testing.T) {
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := testTranslationSystem(nil, "reply body", false)
+	systemInstruction := testTranslationSystem()
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		Author: "carol",
 		ReplyChain: []ChatContextMessage{
@@ -132,22 +130,22 @@ func TestBuildTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := testTranslationSystem(glossary, "An npc appeared", false)
-	if strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
-		t.Fatal("matched glossary must not be in the system instruction:\n" + systemInstruction)
+	systemInstruction := testTranslationSystem()
+	if strings.Contains(systemInstruction, "<source_term>") || strings.Contains(systemInstruction, "<entry>") {
+		t.Fatal("glossary entries must not be in the system instruction:\n" + systemInstruction)
 	}
-	if !strings.Contains(systemInstruction, "<source_term>raid</source_term>") {
-		t.Fatal(systemInstruction)
-	}
-	if strings.Contains(systemInstruction, "<source_term>guild</source_term>") {
-		t.Fatal(systemInstruction)
+	if !strings.Contains(systemInstruction, "preferred_translation") {
+		t.Fatal("system instruction should always describe how to apply glossary entries")
 	}
 
-	_, matched := splitGlossaryEntries("An npc appeared", glossary)
-	frozen, variable := buildTranslationUserPromptParts([]string{"en", "ja"}, TranslationContext{}, matched, func(b *strings.Builder) {
+	always, matched := splitGlossaryEntries("An npc appeared", glossary)
+	frozen, variable := buildTranslationUserPromptParts([]string{"en", "ja"}, TranslationContext{}, always, matched, func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "", "An npc appeared")
 	})
-	if strings.Contains(frozen, "<glossary>") || strings.Contains(frozen, "NPC") {
+	if !strings.Contains(frozen, "<source_term>raid</source_term>") {
+		t.Fatalf("always_include glossary missing from frozen prompt:\n%s", frozen)
+	}
+	if strings.Contains(frozen, "<source_term>NPC</source_term>") || strings.Contains(frozen, "<source_term>guild</source_term>") {
 		t.Fatalf("matched glossary leaked into frozen prompt:\n%s", frozen)
 	}
 	if !strings.Contains(variable, "<source_term>NPC</source_term>") || !strings.Contains(variable, "<attribute>略語</attribute>") {
@@ -188,7 +186,7 @@ func TestBuildTranslationUserPromptIncludesStyleInstructions(t *testing.T) {
 }
 
 func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *testing.T) {
-	got := testTranslationSystem(nil, "hello", false)
+	got := testTranslationSystem()
 	if !strings.Contains(got, "recent_context") {
 		t.Fatal("system instruction should always describe recent_context")
 	}
@@ -204,22 +202,16 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "site_context") || !strings.Contains(got, "[SITE:N]") {
 		t.Fatal("system instruction should always describe site_context")
 	}
-}
-
-func TestBuildTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
-	withStyle := testTranslationSystem(nil, "hello", true)
-	if !strings.Contains(withStyle, "style_instructions") {
-		t.Fatal("style flag should surface style_instructions in system instruction")
+	if !strings.Contains(got, "style_instructions") {
+		t.Fatal("system instruction should always describe style_instructions")
 	}
-
-	withoutStyle := testTranslationSystem(nil, "hello", false)
-	if strings.Contains(withoutStyle, "style_instructions") {
-		t.Fatal("without style flag, system instruction should not mention style_instructions")
+	if !strings.Contains(got, "attachment_descriptions") {
+		t.Fatal("system instruction should always describe attachment_descriptions")
 	}
 }
 
 func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
-	systemInstruction := testTranslationSystem(nil, "see link", false)
+	systemInstruction := testTranslationSystem()
 	if !strings.Contains(systemInstruction, "site_context") {
 		t.Fatal("system instruction should mention site_context")
 	}
@@ -349,9 +341,10 @@ func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
 		},
 		Sites: []SiteContextEntry{{ID: "1", Title: "Doc", Description: "page"}},
 	}
-	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, nil, writeFinal)
-	frozen2, variable2 := buildTranslationUserPromptParts([]string{"en"}, two, nil, writeFinal)
-	frozen3, _ := buildTranslationUserPromptParts([]string{"en"}, three, nil, writeFinal)
+	always := []GlossaryEntry{{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true}}
+	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, always, nil, writeFinal)
+	frozen2, variable2 := buildTranslationUserPromptParts([]string{"en"}, two, always, nil, writeFinal)
+	frozen3, _ := buildTranslationUserPromptParts([]string{"en"}, three, always, nil, writeFinal)
 	if !strings.HasPrefix(frozen2, frozen1) {
 		t.Fatalf("second frozen prompt is not an append-only extension:\n%s\n---\n%s", frozen1, frozen2)
 	}
@@ -418,6 +411,68 @@ func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
 	}
 	if prepared.attachmentCount != 2 {
 		t.Fatalf("attachmentCount = %d", prepared.attachmentCount)
+	}
+}
+
+func TestPrepareTranslationSystemInstructionIsStableAcrossRequestFeatures(t *testing.T) {
+	glossary := []GlossaryEntry{
+		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
+		{SourceTerm: "npc", PreferredTranslation: "NPC"},
+	}
+	varying := TranslationContext{
+		StyleInstructions: "Use formal language.",
+		Attachments:       []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
+		History:           []ChatContextMessage{{Author: "alice", Content: "earlier"}},
+		ReplyChain:        []ChatContextMessage{{Author: "bob", Content: "reply target"}},
+		Sites:             []SiteContextEntry{{ID: "1", Title: "Doc", Description: "page"}},
+	}
+
+	base, err := prepareMultiTranslation([]string{"en"}, "hello npc", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withFeatures, err := prepareMultiTranslation([]string{"en"}, "hello npc", varying, glossary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if base.systemInstruction != withFeatures.systemInstruction {
+		t.Fatalf("message system instruction must be identical across request features:\n%s\n---\n%s", base.systemInstruction, withFeatures.systemInstruction)
+	}
+	if strings.Contains(base.systemInstruction, "<source_term>") || strings.Contains(base.systemInstruction, "<entry>") {
+		t.Fatal("glossary entries must not be in the system instruction")
+	}
+	if !strings.Contains(withFeatures.userPromptFrozen, "<source_term>raid</source_term>") {
+		t.Fatal("always_include glossary belongs in the frozen user prompt")
+	}
+	if strings.Contains(withFeatures.userPromptFrozen, "<source_term>npc</source_term>") {
+		t.Fatal("matched glossary must not be in the frozen user prompt")
+	}
+	if !strings.Contains(withFeatures.userPromptVariable, "<source_term>npc</source_term>") {
+		t.Fatal("matched glossary belongs in the variable user prompt")
+	}
+
+	pollOne, err := preparePollTranslation([]string{"en"}, "Q", []string{"A"}, TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pollMany, err := preparePollTranslation([]string{"en"}, "Favorite npc?", []string{"Red", "Blue", "Green"}, varying, glossary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pollOne.systemInstruction != pollMany.systemInstruction {
+		t.Fatalf("poll system instruction must be identical across answer counts and glossary:\n%s\n---\n%s", pollOne.systemInstruction, pollMany.systemInstruction)
+	}
+
+	threadEmpty, err := prepareThreadCreateTranslation([]string{"en"}, "topic", "", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadFull, err := prepareThreadCreateTranslation([]string{"en"}, "npc raid", "hello npc", varying, glossary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if threadEmpty.systemInstruction != threadFull.systemInstruction {
+		t.Fatalf("thread-create system instruction must be identical across payload and glossary:\n%s\n---\n%s", threadEmpty.systemInstruction, threadFull.systemInstruction)
 	}
 }
 
