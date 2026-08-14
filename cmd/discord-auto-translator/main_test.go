@@ -9,11 +9,11 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-type fakeBedrockWarmer struct {
+type fakeModelWarmer struct {
 	warmUp func(context.Context) error
 }
 
-func (f fakeBedrockWarmer) WarmUp(ctx context.Context) error {
+func (f fakeModelWarmer) WarmUp(ctx context.Context) error {
 	return f.warmUp(ctx)
 }
 
@@ -73,11 +73,11 @@ func TestAuthorDisplayNameUsesMemberDisplayNameFallbacks(t *testing.T) {
 }
 
 func TestParseStartupOptions(t *testing.T) {
-	got, err := parseStartupOptions([]string{"--env-file", "/tmp/bedrock.env", "--bedrock-prewarm"})
+	got, err := parseStartupOptions([]string{"--env-file", "/tmp/model.env", "--model-prewarm"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.envFile != "/tmp/bedrock.env" || !got.bedrockPrewarm {
+	if got.envFile != "/tmp/model.env" || !got.modelPrewarm {
 		t.Fatalf("options = %#v", got)
 	}
 
@@ -85,7 +85,7 @@ func TestParseStartupOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if defaults.envFile != ".env" || defaults.bedrockPrewarm {
+	if defaults.envFile != ".env" || defaults.modelPrewarm {
 		t.Fatalf("defaults = %#v", defaults)
 	}
 
@@ -96,9 +96,9 @@ func TestParseStartupOptions(t *testing.T) {
 	}
 }
 
-func TestPrewarmBedrockUsesFiveMinuteDeadlineAndReturnsErrors(t *testing.T) {
+func TestPrewarmModelUsesFiveMinuteDeadlineAndReturnsErrors(t *testing.T) {
 	started := time.Now()
-	if err := prewarmBedrock(context.Background(), fakeBedrockWarmer{warmUp: func(ctx context.Context) error {
+	if err := prewarmModel(context.Background(), fakeModelWarmer{warmUp: func(ctx context.Context) error {
 		deadline, ok := ctx.Deadline()
 		if !ok {
 			t.Fatal("prewarm context has no deadline")
@@ -112,14 +112,14 @@ func TestPrewarmBedrockUsesFiveMinuteDeadlineAndReturnsErrors(t *testing.T) {
 	}
 
 	want := errors.New("access denied")
-	err := prewarmBedrock(context.Background(), fakeBedrockWarmer{warmUp: func(context.Context) error { return want }})
+	err := prewarmModel(context.Background(), fakeModelWarmer{warmUp: func(context.Context) error { return want }})
 	if !errors.Is(err, want) {
 		t.Fatalf("error = %v, want %v", err, want)
 	}
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = prewarmBedrock(canceled, fakeBedrockWarmer{warmUp: func(ctx context.Context) error { return ctx.Err() }})
+	err = prewarmModel(canceled, fakeModelWarmer{warmUp: func(ctx context.Context) error { return ctx.Err() }})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context canceled", err)
 	}

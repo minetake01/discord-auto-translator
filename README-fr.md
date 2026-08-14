@@ -4,7 +4,7 @@
 
 Un bot Discord qui permet à des personnes parlant des langues différentes de discuter ensemble dans le même serveur.
 
-Associez un salon par langue en formant un **groupe de traduction**. Chaque message posté dans un salon est immédiatement traduit par `google.gemma-4-26b-a4b` via Amazon Bedrock et dupliqué dans tous les autres salons du groupe — avec le nom et l'avatar de l'auteur d'origine — de sorte que chaque salon ressemble à une conversation naturelle dans sa propre langue.
+Associez un salon par langue en formant un **groupe de traduction**. Chaque message posté dans un salon est immédiatement traduit par an OpenAI-compatible Chat Completions model et dupliqué dans tous les autres salons du groupe — avec le nom et l'avatar de l'auteur d'origine — de sorte que chaque salon ressemble à une conversation naturelle dans sa propre langue.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-fr (Français)
@@ -14,7 +14,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 - **Tout reste synchronisé** — pas seulement les nouveaux messages : les modifications, suppressions, réponses, messages transférés, réactions, épingles, fils (salons texte / forum / média), tags de forum mappés et messages ne contenant que des pièces jointes sont tous dupliqués dans le groupe.
 - **Les messages semblent envoyés par leur auteur** — les messages dupliqués sont envoyés via webhooks avec le nom et l'avatar de l'auteur original.
-- **Traductions naturelles** — Gemma 4 26B-A4B utilise le nom du salon, le sujet et l'historique récent de la conversation comme contexte ; un glossaire par serveur permet de fixer les traductions préférées pour les noms et le jargon.
+- **Traductions naturelles** — the translation model utilise le nom du salon, le sujet et l'historique récent de la conversation comme contexte ; un glossaire par serveur permet de fixer les traductions préférées pour les noms et le jargon.
 - **Gestion intelligente des liens** — les liens et mentions pointant vers des salons ou messages gérés sont réécrits vers leurs équivalents dans chaque langue, et les URL disposant d'alternatives `hreflang` sont remplacées par la version dans la langue cible.
 - **Efficace et sécurisé** — les messages sans texte à traduire (URL, mentions, emojis personnalisés, code) sont dupliqués sans appeler l'API de traduction ; des limites de taux de jetons par serveur s'appliquent ; les URL, mentions et blocs de code sont protégés contre les injections de prompt. En cas d'échec de traduction : fail-closed (pas de duplication, notification localisée dans le salon source).
 - **Interface localisée** — les réponses aux commandes suivent la langue du client Discord de l'utilisateur, et les notifications de salon utilisent la langue configurée pour ce salon (13 langues, anglais par défaut).
@@ -23,8 +23,7 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
 
 - Go 1.24 ou version ultérieure
 - Un compte bot Discord avec l'intent privilégié `MESSAGE CONTENT` activé
-- Un compte AWS avec accès à Amazon Bedrock et une clé IAM autorisée à créer des inférences dans le Project Mantle `your-aws-bedrock-project-id` de `your-aws-bedrock-region`.
-- Un ID Amazon Bedrock
+- Un endpoint Chat Completions compatible OpenAI (URL de base, clé API et ID de modèle)
 
 ## Installation
 
@@ -46,9 +45,13 @@ Associez un salon par langue en formant un **groupe de traduction**. Chaque mess
    - L'entier de permissions correspondant est `2252126768139328`
    - Pour synchroniser également les réactions d'emojis personnalisés provenant d'autres serveurs, autorisez en plus `Use External Emojis` ; l'entier de permissions devient alors `2252126768401472`
 
-### 2. Configurer Amazon Bedrock
+### 2. Configurer l’API compatible OpenAI
 
-Activez `google.gemma-4-26b-a4b` dans Amazon Bedrock en région `your-aws-bedrock-region`. Créez un utilisateur IAM avec uniquement `bedrock-mantle:CreateInference` pour ce modèle et définissez `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_BEDROCK_REGION` et `AWS_BEDROCK_PROJECT_ID` dans `.env`. Le modèle, le délai et la limite de sortie sont fixés dans le code ; la région et le Project ID sont des paramètres locaux obligatoires du déploiement.
+1. Choisissez un fournisseur Chat Completions compatible OpenAI et notez son URL de base (incluez `/v1` si le fournisseur utilise ce préfixe).
+2. Créez une clé API autorisée à appeler Chat Completions pour le modèle choisi.
+3. Définissez `OPENAI_BASE_URL`, `OPENAI_API_KEY` et `OPENAI_MODEL` dans `.env`.
+
+Le délai et la limite de sortie sont fixés dans le code (60s par tentative, `max_tokens=4096`). L’ID du modèle est un paramètre local obligatoire. Vous pouvez éventuellement ajuster le débit de jetons par serveur avec `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (défaut `100000`).
 
 ### 3. Configurer les variables d'environnement
 
@@ -60,10 +63,9 @@ Modifiez `.env` et définissez les valeurs suivantes :
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -77,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | Variable | Obligatoire | Description |
 |---|---|---|
 | `DISCORD_TOKEN` | Oui | Token du bot Discord |
-| `AWS_ACCESS_KEY_ID` | Yes | Access key ID for the dedicated Bedrock IAM user |
-| `AWS_SECRET_ACCESS_KEY` | Yes | Secret access key for the dedicated Bedrock IAM user |
-| `AWS_BEDROCK_REGION` | Yes | Bedrock Mantle region, such as `your-aws-bedrock-region` |
-| `AWS_BEDROCK_PROJECT_ID` | Yes | Bedrock Mantle Project ID, such as `your-aws-bedrock-project-id` |
+| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
+| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
 | `DB_PATH` | Non | Chemin vers le fichier SQLite (défaut : `./translator.db`) |
 | `HTTP_ADDR` | Non | Adresse du serveur de badge d'avatar (défaut : `:8080`) |
 | `PUBLIC_BASE_URL` | Non | URL de base publique pour les badges d'anneau d'avatar. Si non définie, les messages reflétés utilisent l'URL d'avatar Discord d'origine et le serveur de badge n'est pas utilisé |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Non | Limite de jetons Gemma 4 26B-A4B par serveur et par minute (défaut : `100000`) |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Non | Limite de jetons translation par serveur et par minute (défaut : `100000`) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Non | Limite de requêtes par IP et par minute pour le point de terminaison de badge `/avatar` (défaut : `120`) |
 | `MESSAGE_LINK_RETENTION_DAYS` | Non | Nombre de jours de conservation des `message_links` dans SQLite avant purge automatique. `0` (défaut) désactive la purge ; p. ex. `60` supprime les liens de plus de 60 jours au démarrage et toutes les 24 heures |
 | `GUILD_DATA_RETENTION_DAYS` | Non | Nombre de jours de conservation dans SQLite des données d'un serveur après le retrait du bot. `0` (défaut) désactive la purge ; p. ex. `30` purge au démarrage et toutes les 24 heures les données des serveurs retirés depuis plus de 30 jours. Un retour avant l'échéance annule la purge prévue |
@@ -157,7 +158,7 @@ Par défaut, les commandes slash d'administration ne peuvent être exécutées q
 
 - `language` utilise des codes BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
 - Maximum 50 entrées de glossaire par serveur
-- `attribute` propose "nom de personne", "nom de lieu", "argot", "abréviation" et "terme technique", mais toute valeur peut être saisie librement. L'attribut est utilisé comme contexte pour que Gemma 4 26B-A4B comprenne la signification du terme
+- `attribute` propose "nom de personne", "nom de lieu", "argot", "abréviation" et "terme technique", mais toute valeur peut être saisie librement. L'attribut est utilisé comme contexte pour que the translation model comprenne la signification du terme
 - Les termes ordinaires ne sont ajoutés aux instructions système que si le message à traduire contient `term` (insensible à la casse). Les termes avec `always_include:true` sont toujours ajoutés
 - Si l'option `channel` est omise, la commande s'applique au salon dans lequel elle est exécutée
 - Types de salons pris en charge : texte, annonces, forum et média. Tous les salons d'un groupe doivent être du même type.

@@ -4,7 +4,7 @@
 
 異なる言語を話すユーザーが、同じ Discord サーバー内で一緒に会話できるようにするボットです。
 
-言語ごとに 1 チャンネルを用意して**翻訳グループ**として連携させると、あるチャンネルに投稿されたメッセージが Amazon Bedrock の `google.gemma-4-26b-a4b` で翻訳され、グループ内の他のすべてのチャンネルへ、投稿者本人の名前とアバターのままミラーリングされます。各チャンネルは、それぞれの言語での自然な会話として読めます。
+言語ごとに 1 チャンネルを用意して**翻訳グループ**として連携させると、あるチャンネルに投稿されたメッセージが OpenAI 互換 Chat Completions モデルで翻訳され、グループ内の他のすべてのチャンネルへ、投稿者本人の名前とアバターのままミラーリングされます。各チャンネルは、それぞれの言語での自然な会話として読めます。
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
@@ -14,7 +14,7 @@
 
 - **すべてが同期される** — 新規メッセージだけでなく、編集・削除・リプライ・転送メッセージ・リアクション・ピン留め・スレッド（テキスト / フォーラム / メディア）・対応付けたフォーラムタグ・添付ファイルのみのメッセージも、グループ全体にミラーリングされます。
 - **本人が投稿したように見える** — ミラーメッセージはウェブフック経由で、元の投稿者の名前とアバターで送信されます。
-- **自然な翻訳** — Gemma 4 26B-A4B はチャンネル名・トピック・直近の会話履歴を文脈として参照します。サーバー単位の用語集で、人名や専門用語の訳語を固定することもできます。
+- **自然な翻訳** — 翻訳モデルはチャンネル名・トピック・直近の会話履歴を文脈として参照します。サーバー単位の用語集で、人名や専門用語の訳語を固定することもできます。
 - **リンクの賢い扱い** — 管理対象のチャンネルやメッセージへのリンク・メンションは各言語の対応先に書き換えられ、`hreflang` 代替版のある URL は対象言語版に差し替えられます。
 - **効率的で安全** — 翻訳すべきテキストがない本文（URL・メンション・カスタム絵文字・コードのみ）は翻訳 API を使わずにミラーリングされ、サーバーごとのトークンレート制限が適用されます。URL・メンション・コードブロックはプロンプトインジェクションから保護されます。翻訳失敗時は fail-closed（ミラーリングせず、投稿元チャンネルへローカライズ通知）。
 - **多言語 UI** — コマンド応答は実行者の Discord クライアント言語、チャンネル通知はチャンネルの登録言語で表示されます（13 言語対応・未対応言語は英語）。
@@ -23,8 +23,7 @@
 
 - Go 1.24 以上
 - Discord ボットアカウント（`MESSAGE CONTENT` 特権インテントを有効化済み）
-- Amazon Bedrock を利用できる AWS アカウント
-- `your-aws-bedrock-region` のBedrock Mantle Project `your-aws-bedrock-project-id` で推論作成を許可した IAM アクセスキー
+- OpenAI 互換の Chat Completions エンドポイント（ベース URL・API キー・モデル ID）
 
 ## セットアップ
 
@@ -46,13 +45,13 @@
    - 上記の permissions 整数は `2252126768139328` です
    - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768401472` です
 
-### 2. Amazon Bedrock の設定
+### 2. OpenAI 互換 API の設定
 
-1. AWSコンソールを `your-aws-bedrock-region` に切り替え、管理者権限で Amazon Bedrock のModel catalogから `google.gemma-4-26b-a4b` を開き、Playgroundで一度実行します。現在のBedrockは対応モデルを既定で利用可能にし、第三者モデルで必要なMarketplace契約を初回呼び出し時に自動処理するため、独立した「有効化」ボタンがない場合があります。契約処理には最大15分ほどかかることがあります。
-2. Bot専用 IAM ユーザーを作成し、AWS管理ポリシー `AmazonBedrockMantleInferenceAccess` を付与します。動作確認後、`arn:aws:bedrock-mantle:your-aws-bedrock-region:<account-id>:project/your-aws-bedrock-project-id` に限定したカスタムポリシーへ絞り込みます。
-3. そのユーザーのアクセスキーを作成し、`.env` に `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_BEDROCK_REGION`、`AWS_BEDROCK_PROJECT_ID` を設定します。rootユーザーのアクセスキーは使用しません。
+1. OpenAI 互換の Chat Completions プロバイダを選び、ベース URL（プロバイダが `/v1` を使う場合はそれも含める）を確認します。
+2. 選択したモデルで Chat Completions を呼べる API キーを作成します。
+3. `.env` に `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL` を設定します。
 
-モデル・タイムアウト・出力上限はコード固定です。リージョンとProject IDはデプロイ先ごとの必須設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。
+タイムアウトと出力上限はコード固定です（試行ごと 60 秒、`max_tokens=4096`）。モデル ID は必須のローカル設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。
 
 ### 3. 環境変数の設定
 
@@ -64,10 +63,9 @@ cp .env.example .env
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
-AWS_ACCESS_KEY_ID=your-aws-access-key-id
-AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
-AWS_BEDROCK_REGION=your-aws-bedrock-region
-AWS_BEDROCK_PROJECT_ID=your-aws-bedrock-project-id
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=your-model-id
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -81,14 +79,13 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | 変数 | 必須 | 説明 |
 |---|---|---|
 | `DISCORD_TOKEN` | 必須 | Discord ボットトークン |
-| `AWS_ACCESS_KEY_ID` | 必須 | Bedrock 専用 IAM ユーザーのアクセスキー ID |
-| `AWS_SECRET_ACCESS_KEY` | 必須 | Bedrock 専用 IAM ユーザーのシークレットアクセスキー |
-| `AWS_BEDROCK_REGION` | 必須 | Bedrock Mantleリージョン（例: `your-aws-bedrock-region`） |
-| `AWS_BEDROCK_PROJECT_ID` | 必須 | Bedrock Mantle Project ID（例: `your-aws-bedrock-project-id`） |
+| `OPENAI_BASE_URL` | 必須 | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
+| `OPENAI_API_KEY` | 必須 | Chat Completions 用の Bearer API キー |
+| `OPENAI_MODEL` | 必須 | プロバイダ側のモデル ID |
 | `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
 | `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
 | `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの Gemma 4 26B-A4B トークン上限/分（デフォルト: `100000`） |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの翻訳トークン上限/分（デフォルト: `100000`） |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `/avatar` バッジエンドポイントの IP ごとのリクエスト上限/分（デフォルト: `120`） |
 | `MESSAGE_LINK_RETENTION_DAYS` | 任意 | SQLite の `message_links` を保持する日数。`0`（デフォルト）で自動削除を無効。例: `60` で 60 日より古いリンクを起動時および 24 時間ごとに削除 |
 | `GUILD_DATA_RETENTION_DAYS` | 任意 | Bot がギルドから削除された後、そのギルドの SQLite データを保持する日数。`0`（デフォルト）で自動削除を無効。例: `30` で削除から 30 日を超えたギルドのデータを起動時および 24 時間ごとに削除。期限前に再参加すると削除予定を取り消す |
@@ -161,7 +158,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 - `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
 - 用語集はサーバーごとに最大 50 件まで登録できます
-- `attribute` には「人名」「地名」「スラング」「略語」「専門用語」が候補表示され、任意の属性も自由入力できます。指定した属性は Gemma 4 26B-A4B が用語の意味を判断する文脈として使われます
+- `attribute` には「人名」「地名」「スラング」「略語」「専門用語」が候補表示され、任意の属性も自由入力できます。指定した属性は翻訳モデルが用語の意味を判断する文脈として使われます
 - 通常の用語は翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけシステム指示に追加されます。`always_include:true` の用語は常に追加されます
 - `channel` オプションを省略すると、コマンドを実行したチャンネルが対象になります
 - 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア。グループ内のチャンネルはすべて同じチャンネルタイプである必要があります。

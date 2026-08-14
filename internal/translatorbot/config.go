@@ -16,10 +16,9 @@ const MaxRetentionDays = int((1<<63 - 1) / (24 * time.Hour))
 
 type Config struct {
 	DiscordToken                     string
-	AWSAccessKeyID                   string
-	AWSSecretAccessKey               string
-	AWSBedrockRegion                 string
-	AWSBedrockProjectID              string
+	OpenAIBaseURL                    string
+	OpenAIAPIKey                     string
+	OpenAIModel                      string
 	DBPath                           string
 	HTTPAddr                         string
 	PublicBaseURL                    string
@@ -34,10 +33,9 @@ func LoadConfig(path string) (Config, error) {
 	_ = loadDotEnv(path)
 	cfg := Config{
 		DiscordToken:            os.Getenv("DISCORD_TOKEN"),
-		AWSAccessKeyID:          os.Getenv("AWS_ACCESS_KEY_ID"),
-		AWSSecretAccessKey:      os.Getenv("AWS_SECRET_ACCESS_KEY"),
-		AWSBedrockRegion:        strings.TrimSpace(os.Getenv("AWS_BEDROCK_REGION")),
-		AWSBedrockProjectID:     strings.TrimSpace(os.Getenv("AWS_BEDROCK_PROJECT_ID")),
+		OpenAIBaseURL:           strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
+		OpenAIAPIKey:            strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
+		OpenAIModel:             strings.TrimSpace(os.Getenv("OPENAI_MODEL")),
 		DBPath:                  os.Getenv("DB_PATH"),
 		HTTPAddr:                os.Getenv("HTTP_ADDR"),
 		PublicBaseURL:           strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
@@ -96,23 +94,14 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.DiscordToken == "" {
 		return cfg, errors.New("DISCORD_TOKEN is required")
 	}
-	if cfg.AWSAccessKeyID == "" {
-		return cfg, errors.New("AWS_ACCESS_KEY_ID is required")
+	if _, err := normalizeOpenAIBaseURL(cfg.OpenAIBaseURL); err != nil {
+		return cfg, err
 	}
-	if cfg.AWSSecretAccessKey == "" {
-		return cfg, errors.New("AWS_SECRET_ACCESS_KEY is required")
+	if cfg.OpenAIAPIKey == "" {
+		return cfg, errors.New("OPENAI_API_KEY is required")
 	}
-	if cfg.AWSBedrockRegion == "" {
-		return cfg, errors.New("AWS_BEDROCK_REGION is required")
-	}
-	if !validBedrockRegion.MatchString(cfg.AWSBedrockRegion) {
-		return cfg, errors.New("AWS_BEDROCK_REGION is invalid")
-	}
-	if cfg.AWSBedrockProjectID == "" {
-		return cfg, errors.New("AWS_BEDROCK_PROJECT_ID is required")
-	}
-	if !validBedrockProjectID.MatchString(cfg.AWSBedrockProjectID) {
-		return cfg, errors.New("AWS_BEDROCK_PROJECT_ID is invalid")
+	if cfg.OpenAIModel == "" {
+		return cfg, errors.New("OPENAI_MODEL is required")
 	}
 	if err := validateHTTPAddr(cfg.HTTPAddr); err != nil {
 		return cfg, err

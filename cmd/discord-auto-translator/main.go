@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	translator, err := translatorbot.NewBedrockTranslator(context.Background(), cfg.AWSAccessKeyID, cfg.AWSSecretAccessKey, cfg.AWSBedrockRegion, cfg.AWSBedrockProjectID)
+	translator, err := translatorbot.NewOpenAITranslator(context.Background(), cfg.OpenAIBaseURL, cfg.OpenAIAPIKey, cfg.OpenAIModel)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -45,11 +45,11 @@ func main() {
 		}()
 		translator.SetDebugLog(debugLog)
 	}
-	if startup.bedrockPrewarm {
-		if err := prewarmBedrock(context.Background(), translator); err != nil {
+	if startup.modelPrewarm {
+		if err := prewarmModel(context.Background(), translator); err != nil {
 			log.Fatal(err)
 		}
-		log.Println("Amazon Bedrock Gemma model access and response contract are ready")
+		log.Println("OpenAI-compatible model access and response contract are ready")
 		return
 	}
 	dg, err := discordgo.New("Bot " + cfg.DiscordToken)
@@ -204,15 +204,15 @@ func main() {
 }
 
 type startupOptions struct {
-	envFile        string
-	bedrockPrewarm bool
+	envFile      string
+	modelPrewarm bool
 }
 
-type bedrockWarmer interface {
+type modelWarmer interface {
 	WarmUp(context.Context) error
 }
 
-func prewarmBedrock(ctx context.Context, warmer bedrockWarmer) error {
+func prewarmModel(ctx context.Context, warmer modelWarmer) error {
 	prewarmCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	return warmer.WarmUp(prewarmCtx)
@@ -223,7 +223,7 @@ func parseStartupOptions(args []string) (startupOptions, error) {
 	fs.SetOutput(io.Discard)
 	var options startupOptions
 	fs.StringVar(&options.envFile, "env-file", ".env", "path to the environment file")
-	fs.BoolVar(&options.bedrockPrewarm, "bedrock-prewarm", false, "validate Bedrock model access and the response contract, then exit")
+	fs.BoolVar(&options.modelPrewarm, "model-prewarm", false, "validate OpenAI-compatible model access and the response contract, then exit")
 	if err := fs.Parse(args); err != nil {
 		return startupOptions{}, err
 	}

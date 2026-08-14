@@ -13,7 +13,7 @@ internal/translatorbot/
 ├── store_guild.go          # ギルドライフサイクル・保持期限パージ
 ├── store_glossary.go       # 用語集 CRUD
 ├── translator.go           # provider-neutral なプロンプト構築・応答パース
-├── bedrock_translator.go   # Amazon Bedrock Mantle Responses API の翻訳クライアント
+├── openai_translator.go    # OpenAI 互換 Chat Completions の翻訳クライアント
 ├── debug_log.go            # 翻訳往復のデバッグログ（JSON Lines・任意有効化）
 ├── placeholders.go         # 翻訳前後のプレースホルダー保護・復元
 ├── service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・通知
@@ -63,40 +63,39 @@ internal/translatorbot/
 
 `modernc.org/sqlite` を使用しており CGO は不要です。`CGO_ENABLED=0` でクロスコンパイルできます。
 
-### Amazon Bedrock と Gemma 4 26B-A4B
+### OpenAI 互換 Chat Completions
 
-`bedrock_translator.go` でモデルとリクエストパラメータが定義されています。リージョンとProject IDは `config.go` が環境変数から必須設定として読み込みます：
+`openai_translator.go` でリクエストパラメータが定義されています。ベース URL・API キー・モデルは `config.go` が環境変数から必須設定として読み込みます：
 
 ```go
-const bedrockModel = "google.gemma-4-26b-a4b"
 // per-attempt timeout: 60s
 // transient retry: exactly once after 1s (timeout / transport / HTTP 429+5xx)
-// temperature: omitted (Gemma provider default 1.0), max_output_tokens: 4096
-// service_tier: priority (on-demand Priority; premium vs Standard)
+// temperature: omitted (provider default), max_tokens: 4096
+// endpoint: POST {OPENAI_BASE_URL}/chat/completions
 ```
 
-Gemma 4は `bedrock-runtime`、Invoke、Converseに対応しないため、`AWS_BEDROCK_REGION` から組み立てた非ストリーミングMantle Responses APIへHTTPリクエストを送り、`OpenAI-Project` に `AWS_BEDROCK_PROJECT_ID` を設定してから、AWS SDK for Go v2のSigV4 signerでサービス名 `bedrock-mantle` として署名します。静的 credentials provider に `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` を明示し、SDK credential chainへフォールバックしません。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。`store=false` 固定です。Mantleはrequest metadata非対応なのでDiscord IDは送らず、既定ではプロンプト・応答・認証情報・AWSエラーメッセージをログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
+`OPENAI_BASE_URL`（例: `https://api.openai.com/v1`）に対して非ストリーミング Chat Completions へ HTTP リクエストを送り、`Authorization: Bearer {OPENAI_API_KEY}` で認証します。モデルは `OPENAI_MODEL` をそのまま送ります。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。Discord ID は送らず、既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
-Gemma 4 26B-A4BはBedrock Structured Outputs非対応です。固定JSON Schemaはsystem instructionへ含め、レスポンスはcompleted状態、単一のassistant `output_text`、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。Responses APIが返すreasoning itemは最終textとして扱いません。
+Structured Outputs（`response_format`）は互換性のため使いません。固定JSON Schemaはsystem instructionへ含め、レスポンスは単一 choice、非空の assistant content、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。
 
-全対象言語を1リクエストで生成します。全リクエストで同一のBedrock対応schemaを使い、件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常stop reasonはfail-closedです。分割や別providerへのfallbackはありません。
+全対象言語を1リクエストで生成します。全リクエストで同一のschemaを使い、件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常finish reasonはfail-closedです。分割や別providerへのfallbackはありません。
 
-`--bedrock-prewarm` はDiscord・SQLite・HTTPサーバーを起動せず、認証情報・モデルアクセス・レスポンス契約を最大5分で検証して終了します。デプロイスクリプトはprewarm成功後だけ稼働バイナリを置換します。
+`--model-prewarm` はDiscord・SQLite・HTTPサーバーを起動せず、認証情報・モデルアクセス・レスポンス契約を最大5分で検証して終了します。デプロイスクリプトはprewarm成功後だけ稼働バイナリを置換します。
 
 ### 翻訳デバッグログ（`debug_log.go`）
 
-翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します（一時障害リトライ時は最大2行）。パーサーが捨てる情報（reasoning itemのテキスト、`usage` の内訳、未知フィールド、非2xx時のAWSエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
+翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します（一時障害リトライ時は最大2行）。パーサーが捨てる情報（`usage` の内訳、未知フィールド、非2xx時のエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
 
 ```json
 {"time":"...","guild_id":"...","message_id":"...","target_languages":["en"],"duration_ms":812,"request":{...},"http_status":200,"response":{...},"error":"..."}
 ```
 
-- `error` は encode・署名・transport（タイムアウト含む）・HTTP・レスポンス契約・JSONパースの全経路を `translatePrepared` の `defer` で拾います。レスポンスがJSONとして不正な場合だけ `response` の代わりに `response_text` へ生文字列を入れます。
-- `guild_id` / `message_id` はDiscord側と突き合わせるためのローカル記録で、Mantleへは従来どおり送りません。
-- `main.go` が起動時にファイルを開き、開けなければ `log.Fatal` で停止します（`--bedrock-prewarm` でも有効）。書き込み失敗は翻訳を止めず stderr へ出します。
+- `error` は encode・transport（タイムアウト含む）・HTTP・レスポンス契約・JSONパースの全経路を `translatePrepared` の `defer` で拾います。レスポンスがJSONとして不正な場合だけ `response` の代わりに `response_text` へ生文字列を入れます。
+- `guild_id` / `message_id` はDiscord側と突き合わせるためのローカル記録で、プロバイダーへは送りません。
+- `main.go` が起動時にファイルを開き、開けなければ `log.Fatal` で停止します（`--model-prewarm` でも有効）。書き込み失敗は翻訳を止めず stderr へ出します。
 - 本文全量を書くためディスクを圧迫します。`0600` で作成し、64 MiB を超えると `<path>.1` へ1世代だけローテートします。**プライバシーポリシーのメッセージ関連データ60日以内削除に合わせ、調査が終わったらログを削除してください。**
 
-確認用 CLI（直近50件の要約。`.1` ローテートも自動読込。パス未指定時は `TRANSLATION_DEBUG_LOG_PATH` → `.env` → `./translation-debug.log`）。`--detail` はソース抜粋・翻訳・usage（`reasoning_tokens` 含む）・reasoning 本文・エラーを出す:
+確認用 CLI（直近50件の要約。`.1` ローテートも自動読込。パス未指定時は `TRANSLATION_DEBUG_LOG_PATH` → `.env` → `./translation-debug.log`）。`--detail` はソース抜粋・翻訳・usage・エラーを出す:
 
 ```sh
 go run ./cmd/inspect-translation-log
@@ -218,7 +217,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。
-- Gemma 4 26B-A4B のtemperatureはリクエストから省略し、モデル推奨かつBedrock既定の `1.0` を使用します。`max_output_tokens` はアプリケーション上限として `4096` 固定です。
+- temperatureはリクエストから省略し、プロバイダー既定値を使用します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
 ---
 
@@ -245,11 +244,11 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 | 翻訳エンジン | `harness_test.go` の `echoTranslator` |
 | Store | `harness_test.go` の `newTestStore`（インメモリ SQLite） |
 | コマンド応答 | `commands_test.go` の `captureResponses`（`CommandHandler.respond` を差し替え） |
-| HTTP クライアント | `sitemeta_test.go` / `avatar_test.go` / `bedrock_test.go` のインライン `httptest` 等 |
+| HTTP クライアント | `sitemeta_test.go` / `avatar_test.go` / `openai_test.go` のインライン `httptest` 等 |
 
 ### テストで確認されていないこと
 
-- 実際の Amazon Bedrock / Gemma 4 26B-A4B レスポンス
+- 実際の OpenAI 互換プロバイダーレスポンス
 - 実際の Discord API との通信
 
 ---
@@ -271,11 +270,10 @@ Discord の規約により、ウェブフック名に "discord" を含めるこ�
 | 環境変数 | 必須 | デフォルト | 説明 |
 |---|---|---|---|
 | `DISCORD_TOKEN` | 必須 | — | ボットのトークン |
-| `AWS_ACCESS_KEY_ID` | 必須 | — | Bedrock専用 IAM ユーザーのアクセスキー ID |
-| `AWS_SECRET_ACCESS_KEY` | 必須 | — | Bedrock専用 IAM ユーザーのシークレットアクセスキー |
-| `AWS_BEDROCK_REGION` | 必須 | — | Bedrock Mantleリージョン |
-| `AWS_BEDROCK_PROJECT_ID` | 必須 | — | Bedrock Mantle Project ID |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | `100000` | ギルドごとの Gemma 4 26B-A4B トークン上限/分 |
+| `OPENAI_BASE_URL` | 必須 | — | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
+| `OPENAI_API_KEY` | 必須 | — | Bearer 認証用 API キー |
+| `OPENAI_MODEL` | 必須 | — | プロバイダー側モデル ID |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | `100000` | ギルドごとの翻訳トークン上限/分 |
 | `TRANSLATION_DEBUG_LOG_PATH` | 任意 | `""` | 翻訳往復のデバッグログの出力先。未設定でログを生成しない |
 | `DB_PATH` | 任意 | `./translator.db` | SQLite ファイルのパス |
 | `HTTP_ADDR` | 任意 | `:8080` | アバターバッジ HTTP サーバーのアドレス |
