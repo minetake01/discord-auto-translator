@@ -180,6 +180,9 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), `"attachment_descriptions"`) {
 			t.Fatalf("schema missing attachment_descriptions: %s", input.Messages[0].Content)
 		}
+		if strings.Contains(openaiContentText(t, input.Messages[0].Content), "Exactly 1") {
+			t.Fatalf("system schema must not encode attachment count: %s", input.Messages[0].Content)
+		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
@@ -341,6 +344,42 @@ func TestOpenAITranslatorSendsConfiguredReasoningEffort(t *testing.T) {
 func TestNewOpenAITranslatorRejectsInvalidReasoningEffort(t *testing.T) {
 	if _, err := NewOpenAITranslator(context.Background(), testOpenAIBaseURL, testOpenAIAPIKey, testOpenAIModel, "off"); err == nil || !strings.Contains(err.Error(), "OPENAI_REASONING_EFFORT") {
 		t.Fatalf("error = %v, want OPENAI_REASONING_EFFORT", err)
+	}
+}
+
+func TestOpenAITranslatorMessageSystemInstructionIgnoresAttachments(t *testing.T) {
+	var systems []string
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		systems = append(systems, openaiContentText(t, input.Messages[0].Content))
+		body := successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)
+		if len(systems) == 2 {
+			body = successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 1)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	translator := testTranslator(client)
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
+		Attachments: []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	if _, err := translator.TranslateMulti(context.Background(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	if len(systems) != 2 {
+		t.Fatalf("calls = %d, want 2", len(systems))
+	}
+	if systems[0] != systems[1] {
+		t.Fatalf("system instruction changed when attachments were present:\n%s\n---\n%s", systems[0], systems[1])
 	}
 }
 

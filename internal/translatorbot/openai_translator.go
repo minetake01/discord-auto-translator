@@ -31,7 +31,7 @@ const (
 	openaiHTTPKeepAlive       = 30 * time.Second
 	openaiHTTPIdleConnTimeout = 45 * time.Second
 
-	openaiTranslationJSONSchema             = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language."}}}}}}`
+	openaiTranslationJSONSchema             = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Omit or use an empty array when <attachments> is absent."}}}}}}`
 	openaiPollTranslationJSONSchema         = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","question","answers"],"properties":{"language":{"type":"string"},"question":{"type":"string","description":"The poll question translated into this item's language."},"answers":{"type":"array","items":{"type":"string"},"description":"The poll answers translated into this item's language, in source order."}}}}}}`
 	openaiThreadCreateTranslationJSONSchema = `{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","name","message"],"properties":{"language":{"type":"string"},"name":{"type":"string","description":"The thread <name> translated into this item's language."},"message":{"type":"string","description":"The initial thread <message> translated into this item's language. Empty when <message> was omitted."}}}}}}`
 )
@@ -243,7 +243,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, translationJSONSchema(prepared.attachmentCount))
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiTranslationJSONSchema)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -337,16 +337,6 @@ func isOpenAIRetryable(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
-}
-
-func translationJSONSchema(attachmentCount int) string {
-	if attachmentCount <= 0 {
-		return openaiTranslationJSONSchema
-	}
-	return fmt.Sprintf(
-		`{"type":"object","additionalProperties":false,"required":["translations"],"properties":{"translations":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["language","translated_text","attachment_descriptions"],"properties":{"language":{"type":"string"},"translated_text":{"type":"string","description":"The <final_message> translated into this item's language. Empty when <final_message> is empty."},"attachment_descriptions":{"type":"array","items":{"type":"string"},"description":"Exactly %d attachment descriptions in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string."}}}}}}`,
-		attachmentCount,
-	)
 }
 
 func openaiTextContent(text string) json.RawMessage {

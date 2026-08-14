@@ -212,13 +212,14 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から、同一バーストの原文を束ね後枠として積み上げます。隣接間隔が 15 分を超えると古い側を切り、件数・時間幅・トークンのハイウォーターで世代を切り替えます。履歴 0 件のときはセクション自体を出しません。
-- ユーザープロンプトは凍結パート（`<recent_context>` の途中まで）と可変パート（末尾枠・閉じタグ・reply/site/attachments/final）に分かれます。凍結パートは世代内で追記だけします。
+- ユーザープロンプトは凍結パート（`always_include` glossary と `<recent_context>` の途中まで）と可変パート（末尾枠・閉じタグ・本文マッチ glossary・reply/site/attachments/final）に分かれます。凍結パートは世代内で追記だけします。
 - `<reply_context>` はリプライ先を最大 3 件遡った引用チェイン（古い順、時間制限なし）です。`<recent_context>` より優先して解釈に使います。凍結済み履歴枠はリプライ先と重複しても残し、可変末尾だけ同一投稿なら除外します。
 - `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。`og:image` はビジョン入力の文脈画像として別途渡します。
 - `<attachments>` は画像添付の翻訳対象です。ビジョン入力はテキスト（breakpoint の後）の後ろに置き、index 順で対応します。既存 alt は翻訳し、alt なしで文字が主内容のときだけ生成します。
 - 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
-- システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。メッセージ翻訳では history / reply / site の説明を常に入れ、always_include glossary だけを system に置き、本文マッチ glossary は可変ユーザーパートへ出します。
+- システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は凍結ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
+- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を任意フィールドとして含めます。投票の回答数や添付枚数などリクエスト固有の件数は system に書きません。
 - Chat Completions リクエストは `prompt_cache_key` を付け、凍結テキストパートに `prompt_cache_breakpoint` を置きます。そのキーを未保持のときだけ `prompt_cache_options.ttl=1h` を送り、期限内の再利用では ttl を付けません。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
