@@ -31,7 +31,9 @@ type Config struct {
 }
 
 func LoadConfig(path string) (Config, error) {
-	_ = loadDotEnv(path)
+	if err := loadDotEnv(path); err != nil && !os.IsNotExist(err) {
+		return Config{}, fmt.Errorf("load env file %s: %w", path, err)
+	}
 	cfg := Config{
 		DiscordToken:            os.Getenv("DISCORD_TOKEN"),
 		OpenAIBaseURL:           strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
