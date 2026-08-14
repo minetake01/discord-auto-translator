@@ -10,8 +10,14 @@ import (
 	"time"
 )
 
-const translationHistoryLimit = 3
-const translationHistoryMaxAge = 24 * time.Hour
+const historyIdleGap = 15 * time.Minute
+const historyCountHigh = 16
+const historyCountLow = 8
+const historySpanHigh = 30 * time.Minute
+const historySpanLow = 15 * time.Minute
+const historyTokenHigh = 800
+const historyTokenLow = 400
+const historyFetchLimit = 512
 const translationReplyChainLimit = 3
 
 const mergeShortMessageMaxRunes = 60
@@ -265,7 +271,7 @@ func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared pre
 	if s.rateLimiter == nil || len(prepared.targetLanguages) == 0 {
 		return nil
 	}
-	estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPrompt, "") + 200*len(prepared.targetLanguages) + visionTokenOverheadPerImage*len(prepared.visionImages)
+	estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptFrozen+prepared.userPromptVariable, "") + 200*len(prepared.targetLanguages) + visionTokenOverheadPerImage*len(prepared.visionImages)
 	if !s.rateLimiter.Allow(guildID, estimate) {
 		return errTranslationRateLimited
 	}
@@ -281,13 +287,14 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 // groupTranslationContext gathers server/channel context, recent history, reply
 // chain, and the group's style instructions for a translation request.
 func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author, threadName string) TranslationContext {
-	channelIDs := s.conversationLocations(ctx, guildID, groupID, historyChannelID, sourceLanguage)
+	channelIDs, locationKey := s.conversationScope(ctx, guildID, groupID, historyChannelID)
 	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID)
 	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, excludeMessageID, replyKeys)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
 	translationContext.Author = strings.TrimSpace(author)
 	translationContext.ThreadName = strings.TrimSpace(threadName)
+	translationContext.PromptCacheLocation = locationKey
 	return translationContext
 }
 
@@ -309,24 +316,30 @@ func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID s
 }
 
 func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, historyChannelID, sourceLanguage string) []string {
+	channelIDs, _ := s.conversationScope(ctx, guildID, groupID, historyChannelID)
+	return channelIDs
+}
+
+func (s *Service) conversationScope(ctx context.Context, guildID, groupID, historyChannelID string) (channelIDs []string, locationKey string) {
+	groupLocation := guildID + ":" + groupID + ":group"
 	channels, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
 	if err != nil {
-		return nil
+		return nil, groupLocation
 	}
 	if findChannel(channels, historyChannelID) != nil {
 		channelIDs := make([]string, len(channels))
 		for i, ch := range channels {
 			channelIDs[i] = ch.ChannelID
 		}
-		return channelIDs
+		return channelIDs, groupLocation
 	}
 	if historyChannelID == "" {
-		return nil
+		return nil, groupLocation
 	}
-	channelIDs := []string{historyChannelID}
+	channelIDs = []string{historyChannelID}
 	threads, err := s.store.ThreadTargets(ctx, historyChannelID)
 	if err != nil {
-		return channelIDs
+		return channelIDs, guildID + ":" + groupID + ":thread:" + historyChannelID
 	}
 	seen := map[string]bool{historyChannelID: true}
 	for _, thread := range threads {
@@ -339,7 +352,27 @@ func (s *Service) conversationLocations(ctx context.Context, guildID, groupID, h
 			channelIDs = append(channelIDs, thread.TargetThreadID)
 		}
 	}
-	return channelIDs
+	return channelIDs, guildID + ":" + groupID + ":thread:" + minStableID(channelIDs)
+}
+
+func minStableID(ids []string) string {
+	min := ""
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if min == "" || snowflakeIDLess(id, min) {
+			min = id
+		}
+	}
+	return min
+}
+
+func snowflakeIDLess(a, b string) bool {
+	if len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
 }
 
 func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
@@ -360,40 +393,90 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID str
 		}),
 	}
 	if len(historyChannelIDs) == 0 {
+		translationContext.PromptCacheGeneration = historyGenerationID(nil, 0)
 		return translationContext
 	}
-	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, translationHistoryLimit*mergeMaxCount)
+	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, historyFetchLimit)
 	if err != nil {
+		translationContext.PromptCacheGeneration = historyGenerationID(nil, 0)
 		return translationContext
 	}
-	cutoff := time.Now().UTC().Add(-translationHistoryMaxAge)
-	translationContext.History = mergeConsecutiveMessages(links, cutoff, excludeReplyKeys)
+	history, frozenCount := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
+	translationContext.History = history
+	translationContext.HistoryFrozenCount = frozenCount
+	translationContext.PromptCacheGeneration = historyGenerationID(history, frozenCount)
 	return translationContext
 }
 
 type historyMergeSlot struct {
-	author   string
-	content  string
-	lastTime time.Time
-	count    int
+	author          string
+	content         string
+	firstTime       time.Time
+	lastTime        time.Time
+	sourceChannelID string
+	sourceMessageID string
+	keys            []string
+	count           int
 }
 
-func mergeConsecutiveMessages(links []MessageLink, cutoff time.Time, excludeReplyKeys map[string]bool) []ChatContextMessage {
-	slots := make([]historyMergeSlot, 0, len(links))
+func (slot historyMergeSlot) toMessage() ChatContextMessage {
+	return ChatContextMessage{
+		Author:          slot.author,
+		Content:         slot.content,
+		SourceChannelID: slot.sourceChannelID,
+		SourceMessageID: slot.sourceMessageID,
+	}
+}
+
+func selectRecentHistory(links []MessageLink, currentMessageID string, excludeReplyKeys map[string]bool) ([]ChatContextMessage, int) {
+	session := truncateIdleSession(links, currentMessageID)
+	slots := replayHistoryHysteresis(mergeConsecutiveMessages(session))
+	return splitFrozenHistory(slots, excludeReplyKeys)
+}
+
+func truncateIdleSession(links []MessageLink, currentMessageID string) []MessageLink {
+	filtered := make([]MessageLink, 0, len(links))
 	for _, link := range links {
-		if excludeReplyKeys != nil && excludeReplyKeys[messageRefKey(link.SourceChannelID, link.SourceMessageID)] {
+		if strings.TrimSpace(link.SourceContentSnapshot) == "" {
 			continue
 		}
+		filtered = append(filtered, link)
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	newest := len(filtered) - 1
+	currentTime, hasCurrent := discordSnowflakeTime(currentMessageID)
+	newestTime, hasNewest := discordSnowflakeTime(filtered[newest].SourceMessageID)
+	if hasCurrent && hasNewest && currentTime.Sub(newestTime) > historyIdleGap {
+		return nil
+	}
+	sessionStart := 0
+	for i := newest; i > 0; i-- {
+		newerTime, hasNewer := discordSnowflakeTime(filtered[i].SourceMessageID)
+		olderTime, hasOlder := discordSnowflakeTime(filtered[i-1].SourceMessageID)
+		if !hasNewer || !hasOlder {
+			continue
+		}
+		if newerTime.Sub(olderTime) > historyIdleGap {
+			sessionStart = i
+			break
+		}
+	}
+	return filtered[sessionStart:]
+}
+
+func mergeConsecutiveMessages(links []MessageLink) []historyMergeSlot {
+	slots := make([]historyMergeSlot, 0, len(links))
+	for _, link := range links {
 		content := link.SourceContentSnapshot
 		if strings.TrimSpace(content) == "" {
 			continue
 		}
 		messageTime, hasTime := discordSnowflakeTime(link.SourceMessageID)
-		if hasTime && !messageTime.After(cutoff) {
-			continue
-		}
 		author := strings.TrimSpace(link.SourceAuthorDisplayName)
 		contentRunes := len([]rune(content))
+		key := messageRefKey(link.SourceChannelID, link.SourceMessageID)
 		if len(slots) > 0 {
 			last := &slots[len(slots)-1]
 			combinedRunes := len([]rune(last.content)) + 1 + contentRunes
@@ -405,36 +488,111 @@ func mergeConsecutiveMessages(links []MessageLink, cutoff time.Time, excludeRepl
 				!last.lastTime.IsZero() &&
 				messageTime.Sub(last.lastTime) <= mergeMaxInterval {
 				last.content += "\n" + content
-				if hasTime {
-					last.lastTime = messageTime
-				}
+				last.lastTime = messageTime
+				last.keys = append(last.keys, key)
 				last.count++
 				continue
 			}
 		}
 		slot := historyMergeSlot{
-			author:  author,
-			content: content,
-			count:   1,
+			author:          author,
+			content:         content,
+			sourceChannelID: link.SourceChannelID,
+			sourceMessageID: link.SourceMessageID,
+			keys:            []string{key},
+			count:           1,
 		}
 		if hasTime {
+			slot.firstTime = messageTime
 			slot.lastTime = messageTime
 		}
 		slots = append(slots, slot)
 	}
-	limit := translationHistoryLimit
-	if len(slots) < limit {
-		limit = len(slots)
+	return slots
+}
+
+func replayHistoryHysteresis(slots []historyMergeSlot) []historyMergeSlot {
+	if len(slots) == 0 {
+		return nil
 	}
-	out := make([]ChatContextMessage, 0, limit)
-	start := len(slots) - limit
-	for i := start; i < len(slots); i++ {
-		out = append(out, ChatContextMessage{
-			Author:  slots[i].author,
-			Content: slots[i].content,
-		})
+	start := 0
+	for k := 1; k <= len(slots); k++ {
+		if !historyExceedsHigh(slots[start:k]) {
+			continue
+		}
+		for start < k-1 && historyExceedsLow(slots[start:k]) {
+			start++
+		}
 	}
-	return out
+	return slots[start:]
+}
+
+func historyExceedsHigh(slots []historyMergeSlot) bool {
+	return len(slots) > historyCountHigh || historySpan(slots) > historySpanHigh || historyTokens(slots) > historyTokenHigh
+}
+
+func historyExceedsLow(slots []historyMergeSlot) bool {
+	return len(slots) > historyCountLow || historySpan(slots) > historySpanLow || historyTokens(slots) > historyTokenLow
+}
+
+func historySpan(slots []historyMergeSlot) time.Duration {
+	if len(slots) == 0 {
+		return 0
+	}
+	first := slots[0].firstTime
+	last := slots[len(slots)-1].lastTime
+	if first.IsZero() || last.IsZero() || last.Before(first) {
+		return 0
+	}
+	return last.Sub(first)
+}
+
+func historyTokens(slots []historyMergeSlot) int {
+	total := 0
+	for _, slot := range slots {
+		total += EstimateTranslationTokens(slot.content, "")
+	}
+	return total
+}
+
+func splitFrozenHistory(slots []historyMergeSlot, excludeReplyKeys map[string]bool) ([]ChatContextMessage, int) {
+	n := len(slots)
+	if n == 0 {
+		return nil, 0
+	}
+	frozen := slots[:n-1]
+	out := make([]ChatContextMessage, 0, n)
+	for _, slot := range frozen {
+		out = append(out, slot.toMessage())
+	}
+	tail := slots[n-1]
+	if slotMatchesReply(tail, excludeReplyKeys) {
+		return out, len(out)
+	}
+	out = append(out, tail.toMessage())
+	return out, len(frozen)
+}
+
+func slotMatchesReply(slot historyMergeSlot, excludeReplyKeys map[string]bool) bool {
+	if excludeReplyKeys == nil {
+		return false
+	}
+	for _, key := range slot.keys {
+		if excludeReplyKeys[key] {
+			return true
+		}
+	}
+	return false
+}
+
+func historyGenerationID(history []ChatContextMessage, frozenCount int) string {
+	if frozenCount > 0 && len(history) > 0 {
+		return history[0].SourceChannelID + history[0].SourceMessageID
+	}
+	if len(history) > 0 {
+		return history[0].SourceChannelID + history[0].SourceMessageID
+	}
+	return "empty"
 }
 
 type messageRef struct {

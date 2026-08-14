@@ -158,7 +158,7 @@ func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 }
 
 // SPEC 3.8
-func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
+func TestHandleMessageCreateExcludesHistoryAcrossIdleGap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -168,14 +168,14 @@ func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
 	now := time.Now().UTC()
 	for _, link := range []MessageLink{
 		{
-			SourceMessageID: snowflakeForTime(now.Add(-25*time.Hour), 1), SourceChannelID: "ja", GroupID: "g",
+			SourceMessageID: snowflakeForTime(now.Add(-21*time.Minute), 1), SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
-			SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "昨日の発言",
+			SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
 		},
 		{
-			SourceMessageID: snowflakeForTime(now.Add(-23*time.Hour), 2), SourceChannelID: "ja", GroupID: "g",
+			SourceMessageID: snowflakeForTime(now.Add(-4*time.Minute), 2), SourceChannelID: "ja", GroupID: "g",
 			TargetChannelID: "en", TargetMessageID: "recent-target", TargetLanguage: "en",
-			SourceAuthorID: "bob-id", SourceAuthorDisplayName: "Bob", SourceContentSnapshot: "今日の発言",
+			SourceAuthorID: "bob-id", SourceAuthorDisplayName: "Bob", SourceContentSnapshot: "今のバースト",
 		},
 	} {
 		if err := store.SaveMessageLink(ctx, link); err != nil {
@@ -195,19 +195,45 @@ func TestHandleMessageCreateExcludesHistoryOlderThan24Hours(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	got := translator.contexts[0].History
-	if len(got) != 1 || got[0].Author != "Bob" || got[0].Content != "今日の発言" {
+	if len(got) != 1 || got[0].Author != "Bob" || got[0].Content != "今のバースト" {
 		t.Fatalf("unexpected history: %#v", got)
 	}
 }
 
 // SPEC 3.8
+func TestSelectRecentHistoryDropsIdleBeforeCurrent(t *testing.T) {
+	now := time.Now().UTC()
+	current := snowflakeForTime(now, 2)
+	got, _ := selectRecentHistory([]MessageLink{
+		historyLink(now.Add(-16*time.Minute), 1, "Alice", "沈黙前"),
+	}, current, nil)
+	if len(got) != 0 {
+		t.Fatalf("history after 16m silence = %#v", got)
+	}
+	got, _ = selectRecentHistory([]MessageLink{
+		historyLink(now.Add(-14*time.Minute), 1, "Alice", "同じバースト"),
+	}, current, nil)
+	if len(got) != 1 || got[0].Content != "同じバースト" {
+		t.Fatalf("history within 15m = %#v", got)
+	}
+}
+
+func mergedHistory(links []MessageLink) []ChatContextMessage {
+	slots := mergeConsecutiveMessages(links)
+	out := make([]ChatContextMessage, len(slots))
+	for i, slot := range slots {
+		out[i] = slot.toMessage()
+	}
+	return out
+}
+
+// SPEC 3.8
 func TestMergeConsecutiveMessagesCombinesShortMessages(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
-	got := mergeConsecutiveMessages([]MessageLink{
+	got := mergedHistory([]MessageLink{
 		historyLink(now.Add(-3*time.Minute), 1, "Alice", "こんにちは"),
 		historyLink(now.Add(-2*time.Minute), 2, "Alice", "元気？"),
-	}, cutoff, nil)
+	})
 	if len(got) != 1 {
 		t.Fatalf("got %d slots, want 1: %#v", len(got), got)
 	}
@@ -219,12 +245,11 @@ func TestMergeConsecutiveMessagesCombinesShortMessages(t *testing.T) {
 // SPEC 3.8
 func TestMergeConsecutiveMessagesSkipsLongMessage(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
 	longContent := strings.Repeat("あ", mergeShortMessageMaxRunes+1)
-	got := mergeConsecutiveMessages([]MessageLink{
+	got := mergedHistory([]MessageLink{
 		historyLink(now.Add(-3*time.Minute), 1, "Alice", "短い"),
 		historyLink(now.Add(-2*time.Minute), 2, "Alice", longContent),
-	}, cutoff, nil)
+	})
 	if len(got) != 2 {
 		t.Fatalf("got %d slots, want 2: %#v", len(got), got)
 	}
@@ -236,15 +261,14 @@ func TestMergeConsecutiveMessagesSkipsLongMessage(t *testing.T) {
 // SPEC 3.8
 func TestMergeConsecutiveMessagesStopsAtCombinedLength(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
 	first := strings.Repeat("a", 100)
 	second := strings.Repeat("b", 49)
 	third := "c"
-	got := mergeConsecutiveMessages([]MessageLink{
+	got := mergedHistory([]MessageLink{
 		historyLink(now.Add(-4*time.Minute), 1, "Alice", first),
 		historyLink(now.Add(-3*time.Minute), 2, "Alice", second),
 		historyLink(now.Add(-2*time.Minute), 3, "Alice", third),
-	}, cutoff, nil)
+	})
 	if len(got) != 2 {
 		t.Fatalf("got %d slots, want 2: %#v", len(got), got)
 	}
@@ -259,12 +283,11 @@ func TestMergeConsecutiveMessagesStopsAtCombinedLength(t *testing.T) {
 // SPEC 3.8
 func TestMergeConsecutiveMessagesStopsAtCountLimit(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
 	links := make([]MessageLink, 0, mergeMaxCount+1)
 	for i := 0; i < mergeMaxCount+1; i++ {
 		links = append(links, historyLink(now.Add(time.Duration(-mergeMaxCount+i)*time.Minute), uint64(i+1), "Alice", "msg"))
 	}
-	got := mergeConsecutiveMessages(links, cutoff, nil)
+	got := mergedHistory(links)
 	if len(got) != 2 {
 		t.Fatalf("got %d slots, want 2: %#v", len(got), got)
 	}
@@ -280,11 +303,10 @@ func TestMergeConsecutiveMessagesStopsAtCountLimit(t *testing.T) {
 // SPEC 3.8
 func TestMergeConsecutiveMessagesRespectsTimeWindow(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
-	got := mergeConsecutiveMessages([]MessageLink{
+	got := mergedHistory([]MessageLink{
 		historyLink(now.Add(-10*time.Minute), 1, "Alice", "最初"),
 		historyLink(now.Add(-3*time.Minute), 2, "Alice", "あと"),
-	}, cutoff, nil)
+	})
 	if len(got) != 2 {
 		t.Fatalf("got %d slots, want 2: %#v", len(got), got)
 	}
@@ -296,45 +318,105 @@ func TestMergeConsecutiveMessagesRespectsTimeWindow(t *testing.T) {
 // SPEC 3.8
 func TestMergeConsecutiveMessagesStartsNewSlotForDifferentAuthor(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
-	got := mergeConsecutiveMessages([]MessageLink{
+	got := mergedHistory([]MessageLink{
 		historyLink(now.Add(-3*time.Minute), 1, "Alice", "A"),
 		historyLink(now.Add(-2*time.Minute), 2, "Bob", "B"),
-	}, cutoff, nil)
+	})
 	if len(got) != 2 || got[0].Author != "Alice" || got[1].Author != "Bob" {
 		t.Fatalf("unexpected authors: %#v", got)
 	}
 }
 
+func historySlotTimes(history []ChatContextMessage) (oldest, newest time.Time) {
+	for i, msg := range history {
+		ts, ok := discordSnowflakeTime(msg.SourceMessageID)
+		if !ok {
+			continue
+		}
+		if i == 0 || ts.Before(oldest) {
+			oldest = ts
+		}
+		if i == 0 || ts.After(newest) {
+			newest = ts
+		}
+	}
+	return oldest, newest
+}
+
 // SPEC 3.8
-func TestMergeConsecutiveMessagesLimitsHistorySlots(t *testing.T) {
+func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
-	links := make([]MessageLink, 0, 5)
-	for i := 0; i < 5; i++ {
-		links = append(links, historyLink(now.Add(time.Duration(-5+i)*time.Minute), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
+	links := make([]MessageLink, 0, 17)
+	for i := 0; i < 17; i++ {
+		links = append(links, historyLink(now.Add(time.Duration(i)*30*time.Second), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
 	}
-	got := mergeConsecutiveMessages(links, cutoff, nil)
-	if len(got) != translationHistoryLimit {
-		t.Fatalf("got %d slots, want %d: %#v", len(got), translationHistoryLimit, got)
+	current := snowflakeForTime(now.Add(17*30*time.Second), 99)
+	history, _ := selectRecentHistory(links, current, nil)
+	if len(history) == 0 || len(history) > 8 {
+		t.Fatalf("got %d slots after count overflow, want 1..8: %#v", len(history), history)
 	}
-	if got[0].Author != "user-2" || got[2].Author != "user-4" {
-		t.Fatalf("unexpected limited history: %#v", got)
+	oldest, newest := historySlotTimes(history)
+	if oldest.IsZero() || newest.Sub(oldest) > 15*time.Minute {
+		t.Fatalf("compressed span %s exceeds 15m: %#v", newest.Sub(oldest), history)
 	}
 }
 
 // SPEC 3.8
-func TestMergeConsecutiveMessagesExcludesReplyKeysAndOldMessages(t *testing.T) {
+func TestSelectRecentHistoryCompressesSpanOverflow(t *testing.T) {
 	now := time.Now().UTC()
-	cutoff := now.Add(-translationHistoryMaxAge)
-	old := historyLink(now.Add(-25*time.Hour), 1, "Alice", "古い")
-	reply := historyLink(now.Add(-3*time.Minute), 2, "Bob", "返信")
-	recent := historyLink(now.Add(-2*time.Minute), 3, "Carol", "最近")
-	got := mergeConsecutiveMessages([]MessageLink{old, reply, recent}, cutoff, map[string]bool{
-		messageRefKey(reply.SourceChannelID, reply.SourceMessageID): true,
-	})
-	if len(got) != 1 || got[0].Author != "Carol" || got[0].Content != "最近" {
-		t.Fatalf("unexpected filtered history: %#v", got)
+	links := make([]MessageLink, 0, 12)
+	for i := 0; i < 12; i++ {
+		links = append(links, historyLink(now.Add(time.Duration(i)*3*time.Minute), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
+	}
+	current := snowflakeForTime(now.Add(12*3*time.Minute), 99)
+	history, _ := selectRecentHistory(links, current, nil)
+	if len(history) == 0 || len(history) > 8 {
+		t.Fatalf("got %d slots after span overflow, want 1..8: %#v", len(history), history)
+	}
+	oldest, newest := historySlotTimes(history)
+	if oldest.IsZero() || newest.Sub(oldest) > 15*time.Minute {
+		t.Fatalf("compressed span %s exceeds 15m: %#v", newest.Sub(oldest), history)
+	}
+}
+
+// SPEC 3.8
+func TestSelectRecentHistoryKeepsFrozenMergedContentStable(t *testing.T) {
+	now := time.Now().UTC()
+	alice1 := historyLink(now.Add(-6*time.Minute), 1, "Alice", "こんにちは")
+	alice2 := historyLink(now.Add(-5*time.Minute), 2, "Alice", "元気？")
+	bob := historyLink(now.Add(-3*time.Minute), 3, "Bob", "別の人")
+	carol := historyLink(now.Add(-1*time.Minute), 4, "Carol", "さらに")
+	current := snowflakeForTime(now, 99)
+
+	first, frozenCount := selectRecentHistory([]MessageLink{alice1, alice2, bob}, current, nil)
+	if len(first) != 2 || frozenCount != 1 || first[0].Content != "こんにちは\n元気？" {
+		t.Fatalf("first history = %#v frozen=%d", first, frozenCount)
+	}
+	second, frozenCount := selectRecentHistory([]MessageLink{alice1, alice2, bob, carol}, current, nil)
+	if frozenCount != 2 || second[0].Content != first[0].Content || second[0].Author != first[0].Author {
+		t.Fatalf("frozen slot changed: first=%#v second=%#v", first, second)
+	}
+}
+
+// SPEC 3.8
+func TestSelectRecentHistoryKeepsFrozenReplyOverlap(t *testing.T) {
+	now := time.Now().UTC()
+	reply := historyLink(now.Add(-4*time.Minute), 1, "Alice", "返信先")
+	later := historyLink(now.Add(-2*time.Minute), 2, "Bob", "その後")
+	current := snowflakeForTime(now, 99)
+	replyKeys := map[string]bool{messageRefKey(reply.SourceChannelID, reply.SourceMessageID): true}
+
+	history, frozenCount := selectRecentHistory([]MessageLink{reply, later}, current, replyKeys)
+	if frozenCount != 1 || len(history) != 2 || history[0].Content != "返信先" || history[1].Content != "その後" {
+		t.Fatalf("frozen reply should remain: %#v frozen=%d", history, frozenCount)
+	}
+
+	other := historyLink(now.Add(-4*time.Minute), 3, "Bob", "その後")
+	replyTail := historyLink(now.Add(-2*time.Minute), 4, "Alice", "返信先")
+	tailKeys := map[string]bool{messageRefKey(replyTail.SourceChannelID, replyTail.SourceMessageID): true}
+	tailOnly, frozenCount := selectRecentHistory([]MessageLink{other, replyTail}, current, tailKeys)
+	if frozenCount != 1 || len(tailOnly) != 1 || tailOnly[0].Content != "その後" {
+		t.Fatalf("tail reply should drop: %#v frozen=%d", tailOnly, frozenCount)
 	}
 }
 
