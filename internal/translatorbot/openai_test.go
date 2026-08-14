@@ -413,13 +413,10 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 	}
 }
 
-func TestMessageTranslationSchemaLeavesAttachmentDescriptionsOptional(t *testing.T) {
+func TestMessageTranslationSchemaRequiresAttachmentDescriptions(t *testing.T) {
 	required := schemaItemRequired(t, mustMessageSchema(t, []string{"en"}))
-	if !required["language"] || !required["translated_text"] {
+	if !required["language"] || !required["translated_text"] || !required["attachment_descriptions"] {
 		t.Fatalf("required = %#v", required)
-	}
-	if required["attachment_descriptions"] {
-		t.Fatal("attachment_descriptions must not be required")
 	}
 }
 

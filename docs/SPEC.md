@@ -284,7 +284,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 | temperature | 省略（プロバイダー既定値） |
 | reasoning_effort | 未設定なら省略。`OPENAI_REASONING_EFFORT` を設定したときだけ送る |
 | max_tokens | 4096（アプリケーション固定上限） |
-| 出力形式 | 用途別の固定JSON Schemaを `response_format.json_schema`（`strict: true`）で指定し、制約付きデコードする。`language` は当該リクエストの target languages の BCP-47 enum。既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は任意。画像添付がある場合はパーサーがソース順で件数を検証する |
+| 出力形式 | 用途別の固定JSON Schemaを `response_format.json_schema`（`strict: true`）で指定し、制約付きデコードする。`language` は当該リクエストの target languages の BCP-47 enum。既存パーサーが件数・順序・BCP-47タグ・空文字・未知フィールドを厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は常に required。添付なしは空配列、添付ありはソース順の件数をパーサーが検証する |
 | 画像入力 | 縮小JPEGを base64 data URL として Chat Completions の `image_url` パートで渡し、テキスト（`text`）より前に置く。添付+OGP 合わせて最大 4 枚。リクエスト全体は 3.5MB 制約に収める |
 
 **環境変数（必須）:** `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL`。任意: `OPENAI_REASONING_EFFORT`（未設定で省略。`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max`）、`TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）、`TRANSLATION_DEBUG_LOG_PATH`（未設定でデバッグログ無効）。
@@ -293,7 +293,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 - 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない。画像は縮小JPEGの data URL を `image_url` としてテキストより前に置く（テキストのみなら user `content` は文字列）
 - 試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行する。親コンテキストのキャンセル、HTTP 4xx（429以外）、不正JSON・`finish_reason=length` 等の契約違反は再試行しない
-- 用途別の固定schemaを `response_format.json_schema`（`strict: true`）で送り、制約付きデコードする（通常メッセージ・投票・スレッド作成）。`language` は当該リクエストの target languages を enum にし、English などの英語名は出せないようにする。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は任意。画像添付がある場合はパーサーがソース順で件数を検証する
+- 用途別の固定schemaを `response_format.json_schema`（`strict: true`）で送り、制約付きデコードする（通常メッセージ・投票・スレッド作成）。`language` は当該リクエストの target languages を enum にし、English などの英語名は出せないようにする。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は常に required。添付なしは空配列、添付ありはソース順の件数をパーサーが検証する
 - スレッド作成時はタイトル（`name`）と初期本文（`message`）を1リクエストで翻訳する。ソースに本文がない場合だけ `message` 空を許容する
 - `finish_reason=length`（`max_tokens`到達）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Discord ID などの request metadata は送信しない。既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する

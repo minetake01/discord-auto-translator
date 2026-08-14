@@ -310,7 +310,7 @@ func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, 
 	if err := requireSchemaLanguages(targetLanguages); err != nil {
 		return nil, err
 	}
-	item := openaiObjectSchema([]string{"language", "translated_text"}, map[string]any{
+	item := openaiObjectSchema([]string{"language", "translated_text", "attachment_descriptions"}, map[string]any{
 		"language": openaiLanguageSchema(targetLanguages),
 		"translated_text": map[string]any{
 			"type":        "string",
@@ -319,7 +319,7 @@ func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, 
 		"attachment_descriptions": map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
-			"description": "Exactly as many attachment descriptions as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Omit when <attachments> is absent.",
+			"description": "Exactly as many strings as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Empty array when <attachments> is absent.",
 		},
 	})
 	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{

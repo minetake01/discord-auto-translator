@@ -119,6 +119,30 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	); err == nil {
 		t.Fatal("expected length mismatch error")
 	}
+
+	if _, _, err := parseMultiTranslationResponse(
+		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
+		[]string{"en"},
+		p,
+		"こんにちは",
+		1,
+	); err == nil {
+		t.Fatal("expected missing attachment_descriptions error")
+	}
+
+	texts, alts, err = parseMultiTranslationResponse(
+		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":[]}]}`,
+		[]string{"en"},
+		p,
+		"こんにちは",
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if texts["en"] != "Hello" || alts != nil {
+		t.Fatalf("texts=%#v alts=%#v", texts, alts)
+	}
 }
 
 func TestParseMultiTranslationResponseAllowsEmptyTextForImageOnly(t *testing.T) {
