@@ -8,22 +8,34 @@ import (
 	"testing"
 )
 
-func TestPrintDetailIncludesReasoningTokensAndText(t *testing.T) {
+func TestPrintDetailReadsChatCompletionsRoundTrip(t *testing.T) {
 	entry := logEntry{
-		Request: []byte(`{"input":[{"role":"user","content":"<final_message>こんにちは</final_message>"}]}`),
-		Response: []byte(`{
-			"status":"completed",
-			"usage":{"input_tokens":11,"output_tokens":22,"output_tokens_details":{"reasoning_tokens":7}},
-			"output":[
-				{"type":"reasoning","content":[{"type":"reasoning_text","text":"keep [USER:Alice] verbatim"}]},
-				{"type":"message","content":[{"type":"output_text","text":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}"}]}
+		Request: []byte(`{
+			"messages":[
+				{"role":"system","content":"Return JSON"},
+				{"role":"user","content":[
+					{"type":"text","text":"<translation_request><recent_context>"},
+					{"type":"text","text":"</recent_context><final_message>こんにちは</final_message></translation_request>"}
+				]}
 			]
+		}`),
+		Response: []byte(`{
+			"choices":[{
+				"finish_reason":"stop",
+				"message":{
+					"role":"assistant",
+					"content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}",
+					"reasoning":"keep [USER:Alice] verbatim"
+				}
+			}],
+			"usage":{"prompt_tokens":11,"completion_tokens":22,"completion_tokens_details":{"reasoning_tokens":7}}
 		}`),
 	}
 
 	output := captureStdout(t, func() { printDetail(entry) })
 	for _, want := range []string{
 		"source: こんにちは",
+		"finish_reason: stop",
 		"tokens: in=11 out=22 reasoning=7",
 		"reasoning: keep [USER:Alice] verbatim",
 		"[en] Hello",
@@ -37,9 +49,11 @@ func TestPrintDetailIncludesReasoningTokensAndText(t *testing.T) {
 func TestPrintDetailOmitsReasoningWhenAbsent(t *testing.T) {
 	entry := logEntry{
 		Response: []byte(`{
-			"status":"completed",
-			"usage":{"input_tokens":1,"output_tokens":2},
-			"output":[{"type":"message","content":[{"type":"output_text","text":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hi\"}]}"}]}]
+			"choices":[{
+				"finish_reason":"stop",
+				"message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hi\"}]}"}
+			}],
+			"usage":{"prompt_tokens":1,"completion_tokens":2}
 		}`),
 	}
 
