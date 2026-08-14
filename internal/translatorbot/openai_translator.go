@@ -45,6 +45,7 @@ type OpenAITranslator struct {
 	apiKey            string
 	model             string
 	completionsURL    string
+	reasoningEffort   string
 	now               func() time.Time
 	debugLog          *DebugLog
 	promptCacheMu     sync.Mutex
@@ -72,6 +73,7 @@ type openaiChatCompletionRequest struct {
 	Model              string                    `json:"model"`
 	Messages           []openaiChatMessage       `json:"messages"`
 	MaxTokens          int                       `json:"max_tokens"`
+	ReasoningEffort    string                    `json:"reasoning_effort,omitempty"`
 	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
 	PromptCacheOptions *openaiPromptCacheOptions `json:"prompt_cache_options,omitempty"`
 }
@@ -141,7 +143,7 @@ type openaiHTTPStatusError struct {
 
 func (e *openaiHTTPStatusError) Error() string { return e.message }
 
-func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model string) (*OpenAITranslator, error) {
+func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model, reasoningEffort string) (*OpenAITranslator, error) {
 	normalizedBase, err := normalizeOpenAIBaseURL(baseURL)
 	if err != nil {
 		return nil, err
@@ -154,7 +156,11 @@ func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model string) (*Ope
 	if model == "" {
 		return nil, errors.New("OPENAI_MODEL is required")
 	}
-	return newOpenAITranslator(newOpenAIHTTPClient(), apiKey, model, joinOpenAIChatCompletionsURL(normalizedBase)), nil
+	effort, err := normalizeOpenAIReasoningEffort(reasoningEffort)
+	if err != nil {
+		return nil, err
+	}
+	return newOpenAITranslator(newOpenAIHTTPClient(), apiKey, model, joinOpenAIChatCompletionsURL(normalizedBase), effort), nil
 }
 
 func normalizeOpenAIBaseURL(raw string) (string, error) {
@@ -181,6 +187,19 @@ func joinOpenAIChatCompletionsURL(baseURL string) string {
 	return strings.TrimRight(baseURL, "/") + "/chat/completions"
 }
 
+func normalizeOpenAIReasoningEffort(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "", nil
+	}
+	switch value {
+	case "none", "minimal", "low", "medium", "high", "xhigh", "max":
+		return value, nil
+	default:
+		return "", errors.New("OPENAI_REASONING_EFFORT must be none, minimal, low, medium, high, xhigh, or max")
+	}
+}
+
 // newOpenAIHTTPClient builds a dedicated client with explicit TCP keepalive
 // and a short idle-pool lifetime so long-quiet bots do not reuse half-open
 // connections through NAT/firewalls.
@@ -203,13 +222,14 @@ func newOpenAIHTTPClient() *http.Client {
 	}
 }
 
-func newOpenAITranslator(client openaiHTTPClient, apiKey, model, completionsURL string) *OpenAITranslator {
+func newOpenAITranslator(client openaiHTTPClient, apiKey, model, completionsURL, reasoningEffort string) *OpenAITranslator {
 	return &OpenAITranslator{
-		client:         client,
-		apiKey:         apiKey,
-		model:          model,
-		completionsURL: completionsURL,
-		now:            time.Now,
+		client:          client,
+		apiKey:          apiKey,
+		model:           model,
+		completionsURL:  completionsURL,
+		reasoningEffort: reasoningEffort,
+		now:             time.Now,
 	}
 }
 
@@ -368,8 +388,9 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 			{Role: "system", Content: openaiTextContent(systemInstruction)},
 			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPromptFrozen, prepared.userPromptVariable)},
 		},
-		MaxTokens:      openaiMaxTokens,
-		PromptCacheKey: prepared.promptCacheKey,
+		MaxTokens:       openaiMaxTokens,
+		ReasoningEffort: t.reasoningEffort,
+		PromptCacheKey:  prepared.promptCacheKey,
 	}
 	wroteTTL := false
 	if t.promptCacheNeedsTTL(prepared.promptCacheKey) {

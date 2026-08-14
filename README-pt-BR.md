@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
 | `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
 | `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
+| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
 | `DB_PATH` | Não | Caminho para o arquivo SQLite (padrão: `./translator.db`) |
 | `HTTP_ADDR` | Não | Endereço do servidor de badge de avatar (padrão: `:8080`) |
 | `PUBLIC_BASE_URL` | Não | URL base pública para badges de anel em avatares. Se não definida, mensagens espelhadas usam a URL de avatar original do Discord e o servidor de badge não é utilizado |

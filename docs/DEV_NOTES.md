@@ -71,10 +71,11 @@ internal/translatorbot/
 // per-attempt timeout: 60s
 // transient retry: exactly once after 1s (timeout / transport / HTTP 429+5xx)
 // temperature: omitted (provider default), max_tokens: 4096
+// reasoning_effort: omitted unless OPENAI_REASONING_EFFORT is set
 // endpoint: POST {OPENAI_BASE_URL}/chat/completions
 ```
 
-`OPENAI_BASE_URL`（例: `https://api.openai.com/v1`）に対して非ストリーミング Chat Completions へ HTTP リクエストを送り、`Authorization: Bearer {OPENAI_API_KEY}` で認証します。モデルは `OPENAI_MODEL` をそのまま送ります。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。Discord ID は送らず、既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
+`OPENAI_BASE_URL`（例: `https://api.openai.com/v1`）に対して非ストリーミング Chat Completions へ HTTP リクエストを送り、`Authorization: Bearer {OPENAI_API_KEY}` で認証します。モデルは `OPENAI_MODEL` をそのまま送ります。`OPENAI_REASONING_EFFORT` を設定したときだけ Chat Completions の `reasoning_effort` を送ります（未設定は省略）。ハイブリッド推論モデルでは `none` で思考トークンを省略できます。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。Discord ID は送らず、既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
 Structured Outputs（`response_format`）は互換性のため使いません。固定JSON Schemaはsystem instructionへ含め、レスポンスは単一 choice、非空の assistant content、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。
 
@@ -219,7 +220,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。メッセージ翻訳では history / reply / site の説明を常に入れ、always_include glossary だけを system に置き、本文マッチ glossary は可変ユーザーパートへ出します。
 - Chat Completions リクエストは `prompt_cache_key` を付け、凍結テキストパートに `prompt_cache_breakpoint` を置きます。そのキーを未保持のときだけ `prompt_cache_options.ttl=1h` を送り、期限内の再利用では ttl を付けません。
-- temperatureはリクエストから省略し、プロバイダー既定値を使用します。`max_tokens` はアプリケーション上限として `4096` 固定です。
+- temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
 ---
 
@@ -275,6 +276,7 @@ Discord の規約により、ウェブフック名に "discord" を含めるこ�
 | `OPENAI_BASE_URL` | 必須 | — | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
 | `OPENAI_API_KEY` | 必須 | — | Bearer 認証用 API キー |
 | `OPENAI_MODEL` | 必須 | — | プロバイダー側モデル ID |
+| `OPENAI_REASONING_EFFORT` | 任意 | 省略 | Chat Completions の `reasoning_effort`。未設定ではフィールド自体を送らない。`none` / `minimal` / `low` / `medium` / `high` / `xhigh` / `max` |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | `100000` | ギルドごとの翻訳トークン上限/分 |
 | `TRANSLATION_DEBUG_LOG_PATH` | 任意 | `""` | 翻訳往復のデバッグログの出力先。未設定でログを生成しない |
 | `DB_PATH` | 任意 | `./translator.db` | SQLite ファイルのパス |

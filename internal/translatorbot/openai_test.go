@@ -82,7 +82,7 @@ func successfulOpenAIResponse(raw string, inputTokens, outputTokens int) string 
 func fmtInt(value int) string { return strconv.Itoa(value) }
 
 func testTranslator(client openaiHTTPClient) *OpenAITranslator {
-	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL))
+	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL), "")
 	translator.now = func() time.Time { return time.Unix(123, 0) }
 	return translator
 }
@@ -100,7 +100,7 @@ func TestNewOpenAITranslatorRejectsInvalidConfig(t *testing.T) {
 		{name: "empty model", baseURL: testOpenAIBaseURL, apiKey: testOpenAIAPIKey},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, err := NewOpenAITranslator(context.Background(), tt.baseURL, tt.apiKey, tt.model); err == nil {
+			if _, err := NewOpenAITranslator(context.Background(), tt.baseURL, tt.apiKey, tt.model, ""); err == nil {
 				t.Fatal("expected error")
 			}
 		})
@@ -125,7 +125,7 @@ func TestNewOpenAIHTTPClientUsesKeepAliveTransport(t *testing.T) {
 	if transport.DialContext == nil {
 		t.Fatal("DialContext is nil")
 	}
-	translator, err := NewOpenAITranslator(context.Background(), testOpenAIBaseURL, testOpenAIAPIKey, testOpenAIModel)
+	translator, err := NewOpenAITranslator(context.Background(), testOpenAIBaseURL, testOpenAIAPIKey, testOpenAIModel, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"response_format"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
+		if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"response_format"`) || strings.Contains(string(body), `"reasoning_effort"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
 			t.Fatalf("request contains unsupported fields: %s", body)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
@@ -318,6 +318,29 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenAITranslatorSendsConfiguredReasoningEffort(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if input.ReasoningEffort != "none" {
+			t.Fatalf("reasoning_effort = %q, want none", input.ReasoningEffort)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL), "none")
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewOpenAITranslatorRejectsInvalidReasoningEffort(t *testing.T) {
+	if _, err := NewOpenAITranslator(context.Background(), testOpenAIBaseURL, testOpenAIAPIKey, testOpenAIModel, "off"); err == nil || !strings.Contains(err.Error(), "OPENAI_REASONING_EFFORT") {
+		t.Fatalf("error = %v, want OPENAI_REASONING_EFFORT", err)
 	}
 }
 

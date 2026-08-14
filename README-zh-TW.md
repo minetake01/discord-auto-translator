@@ -66,6 +66,7 @@ DISCORD_TOKEN=your-discord-bot-token
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_MODEL=your-model-id
+# OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
 PUBLIC_BASE_URL=https://your-public-domain.example
@@ -82,6 +83,7 @@ AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 | `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
 | `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
 | `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
+| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
 | `DB_PATH` | 選用 | SQLite 檔案路徑（預設: `./translator.db`） |
 | `HTTP_ADDR` | 選用 | 頭像徽章伺服器位址（預設: `:8080`） |
 | `PUBLIC_BASE_URL` | 選用 | 頭像環徽章的公開基礎 URL。未設定時，鏡像訊息使用 Discord 原始頭像 URL，不會使用徽章伺服器 |

@@ -19,6 +19,7 @@ type Config struct {
 	OpenAIBaseURL                    string
 	OpenAIAPIKey                     string
 	OpenAIModel                      string
+	OpenAIReasoningEffort            string
 	DBPath                           string
 	HTTPAddr                         string
 	PublicBaseURL                    string
@@ -36,6 +37,7 @@ func LoadConfig(path string) (Config, error) {
 		OpenAIBaseURL:           strings.TrimSpace(os.Getenv("OPENAI_BASE_URL")),
 		OpenAIAPIKey:            strings.TrimSpace(os.Getenv("OPENAI_API_KEY")),
 		OpenAIModel:             strings.TrimSpace(os.Getenv("OPENAI_MODEL")),
+		OpenAIReasoningEffort:   strings.TrimSpace(os.Getenv("OPENAI_REASONING_EFFORT")),
 		DBPath:                  os.Getenv("DB_PATH"),
 		HTTPAddr:                os.Getenv("HTTP_ADDR"),
 		PublicBaseURL:           strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/"),
@@ -103,6 +105,11 @@ func LoadConfig(path string) (Config, error) {
 	if cfg.OpenAIModel == "" {
 		return cfg, errors.New("OPENAI_MODEL is required")
 	}
+	effort, err := normalizeOpenAIReasoningEffort(cfg.OpenAIReasoningEffort)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.OpenAIReasoningEffort = effort
 	if err := validateHTTPAddr(cfg.HTTPAddr); err != nil {
 		return cfg, err
 	}
