@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,9 @@ const (
 	openaiRequestTimeout = 60 * time.Second
 	openaiRetryAttempts  = 2 // initial attempt + one retry
 	openaiRetryBackoff   = 1 * time.Second
+
+	promptCacheTTL     = time.Hour
+	promptCacheTTLText = "1h"
 
 	// Keep TCP probes active and drop idle pooled connections before common
 	// middlebox idle timeouts silently invalidate them. Per-attempt deadlines
@@ -37,18 +41,20 @@ type openaiHTTPClient interface {
 }
 
 type OpenAITranslator struct {
-	client         openaiHTTPClient
-	apiKey         string
-	model          string
-	completionsURL string
-	now            func() time.Time
-	debugLog       *DebugLog
+	client            openaiHTTPClient
+	apiKey            string
+	model             string
+	completionsURL    string
+	now               func() time.Time
+	debugLog          *DebugLog
+	promptCacheMu     sync.Mutex
+	promptCacheExpiry map[string]time.Time
 }
 
 // openaiDebugEntry records one Chat Completions round trip verbatim. The raw
 // response body keeps token usage details and unknown fields intact, which the
 // response parser discards. GuildID and MessageID are local correlation keys
-// only; the provider still receives no Discord IDs.
+// for the debug log; prompt_cache_key may identify the conversation location.
 type openaiDebugEntry struct {
 	Time            time.Time       `json:"time"`
 	GuildID         string          `json:"guild_id,omitempty"`
@@ -63,9 +69,11 @@ type openaiDebugEntry struct {
 }
 
 type openaiChatCompletionRequest struct {
-	Model     string              `json:"model"`
-	Messages  []openaiChatMessage `json:"messages"`
-	MaxTokens int                 `json:"max_tokens"`
+	Model              string                    `json:"model"`
+	Messages           []openaiChatMessage       `json:"messages"`
+	MaxTokens          int                       `json:"max_tokens"`
+	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
+	PromptCacheOptions *openaiPromptCacheOptions `json:"prompt_cache_options,omitempty"`
 }
 
 type openaiChatMessage struct {
@@ -83,8 +91,18 @@ type openaiImagePart struct {
 }
 
 type openaiTextPart struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type                  string                       `json:"type"`
+	Text                  string                       `json:"text"`
+	PromptCacheBreakpoint *openaiPromptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
+}
+
+type openaiPromptCacheBreakpoint struct {
+	Mode string `json:"mode"`
+}
+
+type openaiPromptCacheOptions struct {
+	Mode string `json:"mode"`
+	TTL  string `json:"ttl"`
 }
 
 type openaiChatCompletionResponse struct {
@@ -319,18 +337,25 @@ func openaiTextContent(text string) json.RawMessage {
 	return encoded
 }
 
-func openaiUserContent(images []visionImage, text string) json.RawMessage {
-	if len(images) == 0 {
-		return openaiTextContent(text)
+func openaiUserContent(images []visionImage, frozen, variable string) json.RawMessage {
+	if frozen == "" && variable == "" && len(images) == 0 {
+		return openaiTextContent("")
 	}
-	parts := make([]any, 0, len(images)+1)
+	if frozen == "" {
+		frozen, variable = variable, ""
+	}
+	parts := make([]any, 0, 2+len(images))
+	frozenPart := openaiTextPart{Type: "text", Text: frozen, PromptCacheBreakpoint: &openaiPromptCacheBreakpoint{Mode: "explicit"}}
+	parts = append(parts, frozenPart)
+	if variable != "" {
+		parts = append(parts, openaiTextPart{Type: "text", Text: variable})
+	}
 	for _, img := range images {
 		parts = append(parts, openaiImagePart{Type: "image_url", ImageURL: openaiImageURL{URL: img.DataURL}})
 	}
-	parts = append(parts, openaiTextPart{Type: "text", Text: text})
 	encoded, err := json.Marshal(parts)
 	if err != nil {
-		return openaiTextContent(text)
+		return openaiTextContent(frozen + variable)
 	}
 	return encoded
 }
@@ -341,9 +366,15 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		Model: t.model,
 		Messages: []openaiChatMessage{
 			{Role: "system", Content: openaiTextContent(systemInstruction)},
-			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPrompt)},
+			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPromptFrozen, prepared.userPromptVariable)},
 		},
-		MaxTokens: openaiMaxTokens,
+		MaxTokens:      openaiMaxTokens,
+		PromptCacheKey: prepared.promptCacheKey,
+	}
+	wroteTTL := false
+	if t.promptCacheNeedsTTL(prepared.promptCacheKey) {
+		payload.PromptCacheOptions = &openaiPromptCacheOptions{Mode: "explicit", TTL: promptCacheTTLText}
+		wroteTTL = true
 	}
 	start := t.now()
 	entry := openaiDebugEntry{
@@ -388,6 +419,9 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", 0, 0, openaiHTTPError(response, responseBody)
 	}
+	if wroteTTL {
+		t.rememberPromptCache(prepared.promptCacheKey)
+	}
 	var output openaiChatCompletionResponse
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
 	if err := decoder.Decode(&output); err != nil {
@@ -397,6 +431,33 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		return "", 0, 0, errors.New("decode OpenAI translation response")
 	}
 	return extractOpenAIChatText(output)
+}
+
+func (t *OpenAITranslator) promptCacheNeedsTTL(key string) bool {
+	if key == "" {
+		return false
+	}
+	now := t.now()
+	t.promptCacheMu.Lock()
+	defer t.promptCacheMu.Unlock()
+	if t.promptCacheExpiry == nil {
+		return true
+	}
+	expiry, ok := t.promptCacheExpiry[key]
+	return !ok || !now.Before(expiry)
+}
+
+func (t *OpenAITranslator) rememberPromptCache(key string) {
+	if key == "" {
+		return
+	}
+	now := t.now()
+	t.promptCacheMu.Lock()
+	defer t.promptCacheMu.Unlock()
+	if t.promptCacheExpiry == nil {
+		t.promptCacheExpiry = make(map[string]time.Time)
+	}
+	t.promptCacheExpiry[key] = now.Add(promptCacheTTL)
 }
 
 func (e *openaiDebugEntry) recordResponse(body []byte) {

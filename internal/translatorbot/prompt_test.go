@@ -6,8 +6,17 @@ import (
 	"testing"
 )
 
+func testTranslationTaskIntro() string {
+	return "Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n"
+}
+
+func testTranslationSystem(glossary []GlossaryEntry, content string, hasStyle bool) string {
+	always, _ := splitGlossaryEntries(content, glossary)
+	return buildTranslationSystemInstruction(testTranslationTaskIntro(), "<final_message>", always, hasStyle)
+}
+
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
-	systemInstruction := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "こんにちは", nil, true, false, false, false)
+	systemInstruction := testTranslationSystem(nil, "こんにちは", false)
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		ServerName:        "Ship Room",
 		ServerDescription: "A community for release coordination",
@@ -21,7 +30,7 @@ func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
 		writeAttributedElement(b, "final_message", "bob", "こんにちは")
 	})
 	if !strings.Contains(systemInstruction, "recent_context") {
-		t.Fatal("system instruction should mention recent_context when history is present")
+		t.Fatal("system instruction should mention recent_context")
 	}
 	if strings.Contains(systemInstruction, "style_instructions") {
 		t.Fatal(systemInstruction)
@@ -88,7 +97,7 @@ func TestBuildTranslationPromptIncludesThreadName(t *testing.T) {
 }
 
 func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
-	systemInstruction := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "reply body", nil, false, true, false, false)
+	systemInstruction := testTranslationSystem(nil, "reply body", false)
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		Author: "carol",
 		ReplyChain: []ChatContextMessage{
@@ -99,7 +108,7 @@ func TestBuildTranslationPromptIncludesReplyContext(t *testing.T) {
 		writeAttributedElement(b, "final_message", "carol", "reply body")
 	})
 	if !strings.Contains(systemInstruction, "reply_context") {
-		t.Fatal("system instruction should mention reply_context when reply chain is present")
+		t.Fatal("system instruction should mention reply_context")
 	}
 	if !strings.Contains(prompt, "<reply_context>") {
 		t.Fatal(prompt)
@@ -123,12 +132,9 @@ func TestBuildTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true},
 		{SourceTerm: "guild", PreferredTranslation: "ギルド"},
 	}
-	systemInstruction := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "An npc appeared", glossary, false, false, false, false)
-	if !strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
-		t.Fatal(systemInstruction)
-	}
-	if !strings.Contains(systemInstruction, "<attribute>略語</attribute>") {
-		t.Fatal(systemInstruction)
+	systemInstruction := testTranslationSystem(glossary, "An npc appeared", false)
+	if strings.Contains(systemInstruction, "<source_term>NPC</source_term>") {
+		t.Fatal("matched glossary must not be in the system instruction:\n" + systemInstruction)
 	}
 	if !strings.Contains(systemInstruction, "<source_term>raid</source_term>") {
 		t.Fatal(systemInstruction)
@@ -137,11 +143,18 @@ func TestBuildTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 		t.Fatal(systemInstruction)
 	}
 
-	prompt := buildTranslationUserPrompt([]string{"en", "ja"}, TranslationContext{}, func(b *strings.Builder) {
+	_, matched := splitGlossaryEntries("An npc appeared", glossary)
+	frozen, variable := buildTranslationUserPromptParts([]string{"en", "ja"}, TranslationContext{}, matched, func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "", "An npc appeared")
 	})
-	if strings.Contains(prompt, "<glossary>") {
-		t.Fatal(prompt)
+	if strings.Contains(frozen, "<glossary>") || strings.Contains(frozen, "NPC") {
+		t.Fatalf("matched glossary leaked into frozen prompt:\n%s", frozen)
+	}
+	if !strings.Contains(variable, "<source_term>NPC</source_term>") || !strings.Contains(variable, "<attribute>略語</attribute>") {
+		t.Fatalf("matched glossary missing from variable prompt:\n%s", variable)
+	}
+	if strings.Contains(variable, "<source_term>raid</source_term>") || strings.Contains(variable, "<source_term>guild</source_term>") {
+		t.Fatalf("unexpected glossary in variable prompt:\n%s", variable)
 	}
 }
 
@@ -174,44 +187,44 @@ func TestBuildTranslationUserPromptIncludesStyleInstructions(t *testing.T) {
 	}
 }
 
-func TestBuildTranslationSystemInstructionReflectsHistoryAndReplyFlags(t *testing.T) {
-	taskIntro := "Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n"
-
-	withHistory := buildTranslationSystemInstruction(taskIntro, "<final_message>", "hello", nil, true, false, false, false)
-	if !strings.Contains(withHistory, "recent_context") {
-		t.Fatal("history flag should surface recent_context in system instruction")
+func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *testing.T) {
+	got := testTranslationSystem(nil, "hello", false)
+	if !strings.Contains(got, "recent_context") {
+		t.Fatal("system instruction should always describe recent_context")
 	}
-
-	withReply := buildTranslationSystemInstruction(taskIntro, "<final_message>", "hello", nil, false, true, false, false)
-	if !strings.Contains(withReply, "reply_context") {
-		t.Fatal("reply flag should surface reply_context in system instruction")
+	if !strings.Contains(got, "reply_context") {
+		t.Fatal("system instruction should always describe reply_context")
 	}
-
-	withoutContext := buildTranslationSystemInstruction(taskIntro, "<final_message>", "hello", nil, false, false, false, false)
-	if strings.Contains(withoutContext, "recent_context") || strings.Contains(withoutContext, "reply_context") {
-		t.Fatal("no history or reply flags should omit context section names from system instruction")
+	if !strings.Contains(got, "up to 3") {
+		t.Fatal("reply_context should keep its up-to-3 bound")
+	}
+	if strings.Contains(got, "up to 16") || strings.Contains(got, "up to 8") {
+		t.Fatal("recent_context must not advertise a slot count:\n" + got)
+	}
+	if !strings.Contains(got, "site_context") || !strings.Contains(got, "[SITE:N]") {
+		t.Fatal("system instruction should always describe site_context")
 	}
 }
 
 func TestBuildTranslationSystemInstructionIncludesStyleInstructions(t *testing.T) {
-	withStyle := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "hello", nil, false, false, true, false)
+	withStyle := testTranslationSystem(nil, "hello", true)
 	if !strings.Contains(withStyle, "style_instructions") {
 		t.Fatal("style flag should surface style_instructions in system instruction")
 	}
 
-	withoutStyle := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "hello", nil, false, false, false, false)
+	withoutStyle := testTranslationSystem(nil, "hello", false)
 	if strings.Contains(withoutStyle, "style_instructions") {
 		t.Fatal("without style flag, system instruction should not mention style_instructions")
 	}
 }
 
 func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
-	systemInstruction := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "see link", nil, false, false, false, true)
+	systemInstruction := testTranslationSystem(nil, "see link", false)
 	if !strings.Contains(systemInstruction, "site_context") {
-		t.Fatal("site flag should surface site_context in system instruction")
+		t.Fatal("system instruction should mention site_context")
 	}
 	if !strings.Contains(systemInstruction, "[SITE:N]") {
-		t.Fatal("site flag should tell the model to match site id to [SITE:N]")
+		t.Fatal("system instruction should tell the model to match site id to [SITE:N]")
 	}
 	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
 		Sites: []SiteContextEntry{
@@ -233,10 +246,6 @@ func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
 		t.Fatalf("site_context should appear before final_message:\n%s", prompt)
 	}
 
-	without := buildTranslationSystemInstruction("Translate the text inside <final_message> into every language in <target_languages>, one translations item per language, in the same order.\n", "<final_message>", "hello", nil, false, false, false, false)
-	if strings.Contains(without, "site_context") {
-		t.Fatal("without site flag, system instruction should not mention site_context")
-	}
 	emptyPrompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{}, func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "", "hello")
 	})
@@ -312,6 +321,55 @@ func TestBuildTranslationUserPromptPreservesNewlinesAndBlockquotes(t *testing.T)
 	}
 }
 
+func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
+	writeFinal := func(b *strings.Builder) {
+		writeAttributedElement(b, "final_message", "carol", "now")
+	}
+	one := TranslationContext{
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+		},
+	}
+	two := TranslationContext{
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+			{Author: "bob", Content: "second"},
+		},
+		HistoryFrozenCount: 1,
+	}
+	three := TranslationContext{
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+			{Author: "bob", Content: "second"},
+			{Author: "carol", Content: "third"},
+		},
+		HistoryFrozenCount: 2,
+		ReplyChain: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+		},
+		Sites: []SiteContextEntry{{ID: "1", Title: "Doc", Description: "page"}},
+	}
+	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, nil, writeFinal)
+	frozen2, variable2 := buildTranslationUserPromptParts([]string{"en"}, two, nil, writeFinal)
+	frozen3, _ := buildTranslationUserPromptParts([]string{"en"}, three, nil, writeFinal)
+	if !strings.HasPrefix(frozen2, frozen1) {
+		t.Fatalf("second frozen prompt is not an append-only extension:\n%s\n---\n%s", frozen1, frozen2)
+	}
+	if !strings.HasPrefix(frozen3, frozen2) {
+		t.Fatalf("third frozen prompt is not an append-only extension:\n%s\n---\n%s", frozen2, frozen3)
+	}
+	for i, frozen := range []string{frozen1, frozen2, frozen3} {
+		for _, leaked := range []string{"</recent_context>", "<reply_context>", "<site_context>", "<final_message"} {
+			if strings.Contains(frozen, leaked) {
+				t.Fatalf("frozen[%d] contains %q:\n%s", i, leaked, frozen)
+			}
+		}
+	}
+	if !strings.Contains(variable1, "</recent_context>") || !strings.Contains(variable2, "</recent_context>") {
+		t.Fatal("recent_context close tag belongs in the variable prompt")
+	}
+}
+
 func TestWriteContextSectionEscapesAttributeValues(t *testing.T) {
 	var b strings.Builder
 	writeContextSection(&b, "recent_context", []ChatContextMessage{
@@ -347,16 +405,16 @@ func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
 	if !strings.Contains(prepared.systemInstruction, "attachment_descriptions") {
 		t.Fatal(prepared.systemInstruction)
 	}
-	if !strings.Contains(prepared.userPrompt, `<attachment index="1" filename="shot.png">出口</attachment>`) {
-		t.Fatalf("missing attachment 1:\n%s", prepared.userPrompt)
+	if !strings.Contains(prepared.userPrompt(), `<attachment index="1" filename="shot.png">出口</attachment>`) {
+		t.Fatalf("missing attachment 1:\n%s", prepared.userPrompt())
 	}
-	if !strings.Contains(prepared.userPrompt, `<attachment index="2" filename="deco.png"></attachment>`) {
-		t.Fatalf("missing attachment 2:\n%s", prepared.userPrompt)
+	if !strings.Contains(prepared.userPrompt(), `<attachment index="2" filename="deco.png"></attachment>`) {
+		t.Fatalf("missing attachment 2:\n%s", prepared.userPrompt())
 	}
-	attachIndex := strings.Index(prepared.userPrompt, "<attachments>")
-	finalIndex := strings.Index(prepared.userPrompt, "<final_message")
+	attachIndex := strings.Index(prepared.userPrompt(), "<attachments>")
+	finalIndex := strings.Index(prepared.userPrompt(), "<final_message")
 	if attachIndex == -1 || finalIndex == -1 || attachIndex > finalIndex {
-		t.Fatalf("attachments should appear before final_message:\n%s", prepared.userPrompt)
+		t.Fatalf("attachments should appear before final_message:\n%s", prepared.userPrompt())
 	}
 	if prepared.attachmentCount != 2 {
 		t.Fatalf("attachmentCount = %d", prepared.attachmentCount)
@@ -414,14 +472,14 @@ func TestPrepareThreadCreateTranslationOmitsEmptyMessageAndThreadNameContext(t *
 	if prepared.messageRequired {
 		t.Fatal("empty source message should not require message")
 	}
-	if strings.Contains(prepared.userPrompt, "<message") {
-		t.Fatalf("expected omitted message element:\n%s", prepared.userPrompt)
+	if strings.Contains(prepared.userPrompt(), "<message") {
+		t.Fatalf("expected omitted message element:\n%s", prepared.userPrompt())
 	}
-	if strings.Contains(prepared.userPrompt, "<thread_name>") || strings.Contains(prepared.userPrompt, "should-not-appear") {
-		t.Fatalf("thread name must not appear as discord_context:\n%s", prepared.userPrompt)
+	if strings.Contains(prepared.userPrompt(), "<thread_name>") || strings.Contains(prepared.userPrompt(), "should-not-appear") {
+		t.Fatalf("thread name must not appear as discord_context:\n%s", prepared.userPrompt())
 	}
-	if !strings.Contains(prepared.userPrompt, "<thread_create><name>topic</name></thread_create>") {
-		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt)
+	if !strings.Contains(prepared.userPrompt(), "<thread_create><name>topic</name></thread_create>") {
+		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt())
 	}
 	if prepared.translationContext.ThreadName != "" {
 		t.Fatalf("prepared context ThreadName = %q", prepared.translationContext.ThreadName)
@@ -436,8 +494,8 @@ func TestPrepareThreadCreateTranslationIncludesMessage(t *testing.T) {
 	if !prepared.messageRequired {
 		t.Fatal("non-empty source message must require message")
 	}
-	if !strings.Contains(prepared.userPrompt, `<thread_create><name>topic</name><message author="alice">hello</message></thread_create>`) {
-		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt)
+	if !strings.Contains(prepared.userPrompt(), `<thread_create><name>topic</name><message author="alice">hello</message></thread_create>`) {
+		t.Fatalf("unexpected prompt:\n%s", prepared.userPrompt())
 	}
 }
 

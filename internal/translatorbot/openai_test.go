@@ -29,10 +29,22 @@ func (f openaiRoundTripFunc) Do(req *http.Request) (*http.Response, error) { ret
 func openaiContentText(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 	var text string
-	if err := json.Unmarshal(raw, &text); err != nil {
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text
+	}
+	var parts []map[string]any
+	if err := json.Unmarshal(raw, &parts); err != nil {
 		t.Fatalf("content %s: %v", raw, err)
 	}
-	return text
+	var b strings.Builder
+	for _, part := range parts {
+		if typ, _ := part["type"].(string); typ != "" && typ != "text" {
+			continue
+		}
+		text, _ := part["text"].(string)
+		b.WriteString(text)
+	}
+	return b.String()
 }
 
 func translateMulti(t testing.TB, ctx context.Context, translator *OpenAITranslator, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
@@ -122,7 +134,7 @@ func TestNewOpenAIHTTPClientUsesKeepAliveTransport(t *testing.T) {
 	}
 }
 
-func TestOpenAITranslatorSendsVisionImagesBeforeText(t *testing.T) {
+func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var input openaiChatCompletionRequest
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
@@ -135,17 +147,35 @@ func TestOpenAITranslatorSendsVisionImagesBeforeText(t *testing.T) {
 		if err := json.Unmarshal(input.Messages[1].Content, &parts); err != nil {
 			t.Fatalf("user content = %s", input.Messages[1].Content)
 		}
-		if len(parts) != 2 || parts[0]["type"] != "image_url" || parts[1]["type"] != "text" {
+		if len(parts) < 3 {
 			t.Fatalf("parts = %#v", parts)
 		}
-		imageURLObj, _ := parts[0]["image_url"].(map[string]any)
+		breakpointIndex := -1
+		imageIndex := -1
+		for i, part := range parts {
+			if _, ok := part["prompt_cache_breakpoint"]; ok {
+				breakpointIndex = i
+			}
+			if part["type"] == "image_url" {
+				imageIndex = i
+			}
+		}
+		if breakpointIndex == -1 {
+			t.Fatalf("missing prompt_cache_breakpoint: %#v", parts)
+		}
+		if imageIndex == -1 || imageIndex <= breakpointIndex {
+			t.Fatalf("image part must come after breakpoint: %#v", parts)
+		}
+		if parts[0]["type"] != "text" {
+			t.Fatalf("frozen text should be first: %#v", parts)
+		}
+		imageURLObj, _ := parts[imageIndex]["image_url"].(map[string]any)
 		imageURL, _ := imageURLObj["url"].(string)
 		if !strings.HasPrefix(imageURL, "data:image/jpeg;base64,") {
-			t.Fatalf("image_url = %#v", parts[0]["image_url"])
+			t.Fatalf("image_url = %#v", parts[imageIndex]["image_url"])
 		}
-		text, _ := parts[1]["text"].(string)
-		if !strings.Contains(text, "<attachments>") {
-			t.Fatalf("text part = %#v", parts[1]["text"])
+		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<attachments>") {
+			t.Fatalf("text parts = %s", input.Messages[1].Content)
 		}
 		if !strings.Contains(openaiContentText(t, input.Messages[0].Content), `"attachment_descriptions"`) {
 			t.Fatalf("schema missing attachment_descriptions: %s", input.Messages[0].Content)
@@ -288,6 +318,79 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
+	var bodies []string
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bodies = append(bodies, string(body))
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	now := time.Unix(123, 0)
+	translator := testTranslator(client)
+	translator.now = func() time.Time { return now }
+	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "start1"}
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Hour + time.Second)
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 3 {
+		t.Fatalf("calls = %d, want 3", len(bodies))
+	}
+	if !strings.Contains(bodies[0], `"prompt_cache_key":"guild:g:group:start1"`) || !strings.Contains(bodies[0], `"ttl":"1h"`) {
+		t.Fatalf("first request should write cache ttl: %s", bodies[0])
+	}
+	if !strings.Contains(bodies[0], `"prompt_cache_breakpoint"`) {
+		t.Fatalf("first request should mark breakpoint: %s", bodies[0])
+	}
+	if strings.Contains(bodies[1], `"prompt_cache_options"`) || strings.Contains(bodies[1], `"ttl"`) {
+		t.Fatalf("reuse must not send ttl: %s", bodies[1])
+	}
+	if !strings.Contains(bodies[1], `"prompt_cache_key":"guild:g:group:start1"`) {
+		t.Fatalf("reuse must keep cache key: %s", bodies[1])
+	}
+	if !strings.Contains(bodies[2], `"ttl":"1h"`) {
+		t.Fatalf("expired key should write ttl again: %s", bodies[2])
+	}
+}
+
+func TestOpenAITranslatorSeparatesPollPromptCacheKey(t *testing.T) {
+	var keys []string
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, input.PromptCacheKey)
+		if len(keys) == 2 {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","question":"Q","answers":["A"]}]}`, 1, 1)))}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+	})
+	translator := testTranslator(client)
+	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "empty"}
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := translatePollMulti(t, translator, []string{"en"}, "Q", []string{"A"}, tc, nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 || keys[0] == keys[1] {
+		t.Fatalf("keys = %#v", keys)
+	}
+	if keys[0] != "guild:g:group:empty" || keys[1] != "guild:g:group:poll:empty" {
+		t.Fatalf("keys = %#v", keys)
 	}
 }
 
