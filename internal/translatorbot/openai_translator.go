@@ -34,6 +34,7 @@ const (
 	openaiMessageTranslationSchemaName      = "message_translations"
 	openaiPollTranslationSchemaName         = "poll_translations"
 	openaiThreadCreateTranslationSchemaName = "thread_create_translations"
+	openaiTopicSummarySchemaName            = "topic_summary"
 )
 
 type openaiHTTPClient interface {
@@ -368,6 +369,15 @@ func openaiThreadCreateTranslationSchema(targetLanguages []string) (json.RawMess
 	}))
 }
 
+func openaiTopicSummarySchema() (json.RawMessage, error) {
+	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"summary"}, map[string]any{
+		"summary": map[string]any{
+			"type":        "string",
+			"description": "A 2-4 sentence topic summary of the discarded conversation, for later translation background only.",
+		},
+	}))
+}
+
 func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
@@ -423,6 +433,26 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 		return ThreadCreateMultiTranslationResult{}, err
 	}
 	return ThreadCreateMultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+}
+
+func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, req TopicSummaryRequest) (TopicSummaryResult, error) {
+	prepared, err := prepareTopicSummary(req)
+	if err != nil {
+		return TopicSummaryResult{}, err
+	}
+	schema, err := openaiTopicSummarySchema()
+	if err != nil {
+		return TopicSummaryResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiTopicSummarySchemaName, schema)
+	if err != nil {
+		return TopicSummaryResult{}, err
+	}
+	summary, err := parseTopicSummaryResponse(text)
+	if err != nil {
+		return TopicSummaryResult{}, err
+	}
+	return TopicSummaryResult{Summary: summary, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
 // WarmUp verifies credentials, model access, and the fixed response contract

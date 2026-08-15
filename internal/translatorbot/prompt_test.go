@@ -205,6 +205,9 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "style_instructions") {
 		t.Fatal("system instruction should always describe style_instructions")
 	}
+	if !strings.Contains(got, "topic_summary") {
+		t.Fatal("system instruction should always describe topic_summary")
+	}
 	if !strings.Contains(got, "attachment_descriptions") {
 		t.Fatal("system instruction should always describe attachment_descriptions")
 	}
@@ -391,6 +394,78 @@ func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
 	}
 	if !strings.Contains(variable1, "</recent_context>") || !strings.Contains(variable2, "</recent_context>") {
 		t.Fatal("recent_context close tag belongs in the variable prompt")
+	}
+}
+
+func TestFrozenUserPromptKeepsTopicSummaryStable(t *testing.T) {
+	writeFinal := func(b *strings.Builder) {
+		writeAttributedElement(b, "final_message", "carol", "now")
+	}
+	summary := "they are coordinating a delayed shipment"
+	one := TranslationContext{
+		TopicSummary: summary,
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+		},
+	}
+	two := TranslationContext{
+		TopicSummary: summary,
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+			{Author: "bob", Content: "second"},
+		},
+		HistoryFrozenCount: 1,
+	}
+	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, nil, nil, writeFinal)
+	frozen2, _ := buildTranslationUserPromptParts([]string{"en"}, two, nil, nil, writeFinal)
+	if !strings.Contains(frozen1, "<topic_summary>"+summary+"</topic_summary>") {
+		t.Fatalf("missing topic_summary in frozen prompt:\n%s", frozen1)
+	}
+	if strings.Contains(variable1, "topic_summary") {
+		t.Fatalf("topic_summary leaked into variable prompt:\n%s", variable1)
+	}
+	if !strings.HasPrefix(frozen2, frozen1) {
+		t.Fatalf("frozen prompt with a stable topic summary is not append-only:\n%s\n---\n%s", frozen1, frozen2)
+	}
+	without := TranslationContext{
+		History: []ChatContextMessage{
+			{Author: "alice", Content: "first"},
+		},
+	}
+	frozenWithout, _ := buildTranslationUserPromptParts([]string{"en"}, without, nil, nil, writeFinal)
+	if strings.Contains(frozenWithout, "topic_summary") {
+		t.Fatalf("empty topic summary should omit the tag:\n%s", frozenWithout)
+	}
+}
+
+func TestParseTopicSummaryResponseRejectsEmptyAndUnknownFields(t *testing.T) {
+	got, err := parseTopicSummaryResponse(`{"summary":"they are coordinating a delayed shipment"}`)
+	if err != nil || got != "they are coordinating a delayed shipment" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+	if _, err := parseTopicSummaryResponse(`{"summary":"   "}`); err == nil {
+		t.Fatal("empty summary should fail")
+	}
+	if _, err := parseTopicSummaryResponse(`{"summary":"ok","extra":1}`); err == nil {
+		t.Fatal("unknown fields should fail")
+	}
+	long := strings.Repeat("あ", topicSummaryMaxRunes+10)
+	got, err = parseTopicSummaryResponse(`{"summary":"` + long + `"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len([]rune(got)) != topicSummaryMaxRunes {
+		t.Fatalf("summary runes = %d, want %d", len([]rune(got)), topicSummaryMaxRunes)
+	}
+}
+
+func TestTranslationPromptCacheKeyChangesWhenTopicSummaryAppears(t *testing.T) {
+	tc := TranslationContext{PromptCacheLocation: "loc", PromptCacheGeneration: "gen"}
+	without := translationPromptCacheKey(tc, "")
+	tc.TopicSummary = "they are coordinating a delayed shipment"
+	with := translationPromptCacheKey(tc, "")
+	if without == with {
+		t.Fatal("prompt cache key must change when a topic summary is added to a generation")
 	}
 }
 

@@ -143,6 +143,15 @@ func mustThreadCreateSchema(t *testing.T, langs []string) json.RawMessage {
 	return schema
 }
 
+func mustTopicSummarySchema(t *testing.T) json.RawMessage {
+	t.Helper()
+	schema, err := openaiTopicSummarySchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return schema
+}
+
 func schemaHasJSONSchemaDump(content string) bool {
 	return strings.Contains(content, `"additionalProperties"`) || strings.Contains(content, `"enum"`)
 }
@@ -1056,5 +1065,56 @@ func TestOpenAITranslatorTranslateThreadCreateMultiRejectsEmptyMessage(t *testin
 	_, err := translateThreadCreateMulti(t, testTranslator(client), []string{"en"}, "議題", "本文", TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected empty message rejection")
+	}
+}
+
+func TestTopicSummarySchemaIsStrictStructuredOutput(t *testing.T) {
+	schema := mustTopicSummarySchema(t)
+	assertStrictJSONSchema(t, schema, "root")
+	var root map[string]any
+	if err := json.Unmarshal(schema, &root); err != nil {
+		t.Fatal(err)
+	}
+	required, _ := root["required"].([]any)
+	if len(required) != 1 || required[0] != "summary" {
+		t.Fatalf("required = %#v", required)
+	}
+}
+
+func TestOpenAITranslatorSummarizeTopic(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		requireJSONSchemaResponseFormat(t, input, openaiTopicSummarySchemaName, mustTopicSummarySchema(t))
+		if input.PromptCacheKey != "" {
+			t.Fatalf("topic summary should not share translation prompt cache keys: %q", input.PromptCacheKey)
+		}
+		system := openaiContentText(t, input.Messages[0].Content)
+		user := openaiContentText(t, input.Messages[1].Content)
+		if !strings.Contains(system, "untrusted") {
+			t.Fatalf("system = %s", system)
+		}
+		if !strings.Contains(user, "<previous_summary>packing</previous_summary>") || !strings.Contains(user, `author="Alice"`) {
+			t.Fatalf("user = %s", user)
+		}
+		body := successfulOpenAIResponse(`{"summary":"they are coordinating a delayed shipment"}`, 11, 6)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	result, err := testTranslator(client).SummarizeTopic(context.Background(), TopicSummaryRequest{
+		PreviousSummary: "packing",
+		Discarded:       []ChatContextMessage{{Author: "Alice", Content: "遅れるかも"}},
+		GuildID:         "guild",
+		MessageID:       "1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Summary != "they are coordinating a delayed shipment" {
+		t.Fatalf("summary = %q", result.Summary)
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 6 {
+		t.Fatalf("tokens = %d/%d", result.InputTokens, result.OutputTokens)
 	}
 }

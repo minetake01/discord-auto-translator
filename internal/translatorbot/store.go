@@ -162,6 +162,14 @@ func (s *Store) Init(ctx context.Context) error {
 			UNIQUE (guild_id, group_id, channel_b_id, tag_b_id, channel_a_id),
 			FOREIGN KEY (guild_id, group_id) REFERENCES translation_groups(guild_id, id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS topic_summaries (
+			guild_id TEXT NOT NULL,
+			location_key TEXT NOT NULL,
+			generation_id TEXT NOT NULL,
+			summary TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (location_key)
+		)`,
 	}
 	indexes := []string{
 		`CREATE INDEX IF NOT EXISTS idx_group_channels_guild_channel ON group_channels(guild_id, channel_id)`,
@@ -186,6 +194,7 @@ func (s *Store) Init(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_pin_states_message ON pin_states(message_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_processed_events_created_at ON processed_events(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_guild_removals_removed_at ON guild_removals(removed_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_topic_summaries_guild ON topic_summaries(guild_id)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -269,6 +278,7 @@ func (s *Store) validateOptimizedSchema(ctx context.Context) error {
 		"processed_events":       {"created_at": "INTEGER"},
 		"glossary_entries":       {"created_at": "INTEGER"},
 		"poll_translation_cache": {"source_message_id": "INTEGER", "expires_at": "INTEGER"},
+		"topic_summaries":        {"created_at": "INTEGER"},
 	}
 	for table, columns := range required {
 		rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
@@ -378,6 +388,11 @@ func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error 
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache
 		WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)`, guildID, groupID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM topic_summaries WHERE guild_id=? AND (
+		location_key=? OR location_key LIKE ?
+	)`, guildID, guildID+":"+groupID+":group", guildID+":"+groupID+":thread:%"); err != nil {
 		return err
 	}
 	res, err := tx.ExecContext(ctx, `DELETE FROM translation_groups WHERE guild_id=? AND id=?`, guildID, groupID)

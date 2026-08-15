@@ -253,13 +253,13 @@ func TestHandleMessageCreateExcludesHistoryAcrossIdleGap(t *testing.T) {
 func TestSelectRecentHistoryDropsIdleBeforeCurrent(t *testing.T) {
 	now := time.Now().UTC()
 	current := snowflakeForTime(now, 2)
-	got, _ := selectRecentHistory([]MessageLink{
+	got, _, _ := selectRecentHistory([]MessageLink{
 		historyLink(now.Add(-16*time.Minute), 1, "Alice", "沈黙前"),
 	}, current, nil)
 	if len(got) != 0 {
 		t.Fatalf("history after 16m silence = %#v", got)
 	}
-	got, _ = selectRecentHistory([]MessageLink{
+	got, _, _ = selectRecentHistory([]MessageLink{
 		historyLink(now.Add(-14*time.Minute), 1, "Alice", "同じバースト"),
 	}, current, nil)
 	if len(got) != 1 || got[0].Content != "同じバースト" {
@@ -400,9 +400,15 @@ func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 		links = append(links, historyLink(now.Add(time.Duration(i)*30*time.Second), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
 	}
 	current := snowflakeForTime(now.Add(17*30*time.Second), 99)
-	history, _ := selectRecentHistory(links, current, nil)
+	history, _, discarded := selectRecentHistory(links, current, nil)
 	if len(history) == 0 || len(history) > 8 {
 		t.Fatalf("got %d slots after count overflow, want 1..8: %#v", len(history), history)
+	}
+	if len(discarded) == 0 {
+		t.Fatalf("count overflow should discard older slots, history=%#v", history)
+	}
+	if discarded[len(discarded)-1].SourceMessageID == history[0].SourceMessageID {
+		t.Fatalf("discarded tail should not overlap kept history: discarded=%#v history=%#v", discarded, history)
 	}
 	oldest, newest := historySlotTimes(history)
 	if oldest.IsZero() || newest.Sub(oldest) > 15*time.Minute {
@@ -418,7 +424,7 @@ func TestSelectRecentHistoryCompressesSpanOverflow(t *testing.T) {
 		links = append(links, historyLink(now.Add(time.Duration(i)*3*time.Minute), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
 	}
 	current := snowflakeForTime(now.Add(12*3*time.Minute), 99)
-	history, _ := selectRecentHistory(links, current, nil)
+	history, _, _ := selectRecentHistory(links, current, nil)
 	if len(history) == 0 || len(history) > 8 {
 		t.Fatalf("got %d slots after span overflow, want 1..8: %#v", len(history), history)
 	}
@@ -437,11 +443,11 @@ func TestSelectRecentHistoryKeepsFrozenMergedContentStable(t *testing.T) {
 	carol := historyLink(now.Add(-1*time.Minute), 4, "Carol", "さらに")
 	current := snowflakeForTime(now, 99)
 
-	first, frozenCount := selectRecentHistory([]MessageLink{alice1, alice2, bob}, current, nil)
+	first, frozenCount, _ := selectRecentHistory([]MessageLink{alice1, alice2, bob}, current, nil)
 	if len(first) != 2 || frozenCount != 1 || first[0].Content != "こんにちは\n元気？" {
 		t.Fatalf("first history = %#v frozen=%d", first, frozenCount)
 	}
-	second, frozenCount := selectRecentHistory([]MessageLink{alice1, alice2, bob, carol}, current, nil)
+	second, frozenCount, _ := selectRecentHistory([]MessageLink{alice1, alice2, bob, carol}, current, nil)
 	if frozenCount != 2 || second[0].Content != first[0].Content || second[0].Author != first[0].Author {
 		t.Fatalf("frozen slot changed: first=%#v second=%#v", first, second)
 	}
@@ -455,7 +461,7 @@ func TestSelectRecentHistoryKeepsFrozenReplyOverlap(t *testing.T) {
 	current := snowflakeForTime(now, 99)
 	replyKeys := map[string]bool{messageRefKey(reply.SourceChannelID, reply.SourceMessageID): true}
 
-	history, frozenCount := selectRecentHistory([]MessageLink{reply, later}, current, replyKeys)
+	history, frozenCount, _ := selectRecentHistory([]MessageLink{reply, later}, current, replyKeys)
 	if frozenCount != 1 || len(history) != 2 || history[0].Content != "返信先" || history[1].Content != "その後" {
 		t.Fatalf("frozen reply should remain: %#v frozen=%d", history, frozenCount)
 	}
@@ -463,7 +469,7 @@ func TestSelectRecentHistoryKeepsFrozenReplyOverlap(t *testing.T) {
 	other := historyLink(now.Add(-4*time.Minute), 3, "Bob", "その後")
 	replyTail := historyLink(now.Add(-2*time.Minute), 4, "Alice", "返信先")
 	tailKeys := map[string]bool{messageRefKey(replyTail.SourceChannelID, replyTail.SourceMessageID): true}
-	tailOnly, frozenCount := selectRecentHistory([]MessageLink{other, replyTail}, current, tailKeys)
+	tailOnly, frozenCount, _ := selectRecentHistory([]MessageLink{other, replyTail}, current, tailKeys)
 	if frozenCount != 1 || len(tailOnly) != 1 || tailOnly[0].Content != "その後" {
 		t.Fatalf("tail reply should drop: %#v frozen=%d", tailOnly, frozenCount)
 	}
@@ -711,7 +717,7 @@ func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testin
 func TestSelectRecentHistoryKeepsImageOnlyMessages(t *testing.T) {
 	now := time.Now().UTC()
 	image := []DiscordAttachment{{URL: "https://cdn.discordapp.com/photo.png", Filename: "photo.png", ContentType: "image/png"}}
-	history, _ := selectRecentHistory([]MessageLink{
+	history, _, _ := selectRecentHistory([]MessageLink{
 		historyImageLink(now.Add(-2*time.Minute), 1, "Alice", "", image),
 		historyLink(now.Add(-1*time.Minute), 2, "Bob", "なにこれ"),
 	}, snowflakeForTime(now, 3), nil)
@@ -725,7 +731,7 @@ func TestSelectRecentHistoryKeepsImageOnlyMessages(t *testing.T) {
 		t.Fatalf("unexpected follow-up: %#v", history[1])
 	}
 
-	empty, _ := selectRecentHistory([]MessageLink{
+	empty, _, _ := selectRecentHistory([]MessageLink{
 		historyLink(now.Add(-1*time.Minute), 1, "Alice", ""),
 	}, snowflakeForTime(now, 2), nil)
 	if len(empty) != 0 {
@@ -852,5 +858,205 @@ func TestHandleMessageCreateReservesVisionSlotsForCurrentAttachments(t *testing.
 	}
 	if len(translator.visions[0]) != visionMaxImages {
 		t.Fatalf("vision images = %d, want %d", len(translator.visions[0]), visionMaxImages)
+	}
+}
+
+func seedCountOverflowHistory(t *testing.T, store *Store, now time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	for i := 0; i < 17; i++ {
+		if err := store.SaveMessageLink(ctx, MessageLink{
+			SourceMessageID:         snowflakeForTime(now.Add(time.Duration(i)*30*time.Second), uint64(i+1)),
+			SourceChannelID:         "ja",
+			GroupID:                 "g",
+			TargetChannelID:         "en",
+			TargetMessageID:         fmt.Sprintf("2000000000000000%02d", i),
+			TargetLanguage:          "en",
+			SourceAuthorID:          fmt.Sprintf("user-%d", i),
+			SourceAuthorDisplayName: fmt.Sprintf("user-%d", i),
+			SourceContentSnapshot:   fmt.Sprintf("topic-%d", i),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func currentAfterOverflow(now time.Time, extra int) (id string) {
+	return snowflakeForTime(now.Add(time.Duration(17+extra)*30*time.Second), uint64(90+extra))
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateInsertsTopicSummaryOnNextMessage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	translator := &topicSummaryTranslator{summary: "they are coordinating a delayed shipment"}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	service.runTopicSummary = func(f func()) { f() }
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	seedCountOverflowHistory(t, store, now)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 0), ChannelID: "ja", GuildID: "guild", AuthorID: "next",
+		AuthorDisplayName: "next", Content: "今の状況は？",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if translator.contexts[0].TopicSummary != "" {
+		t.Fatalf("overflowing message should not include the new summary: %#v", translator.contexts[0])
+	}
+	if len(translator.summaryRequests()) != 1 {
+		t.Fatalf("summary requests = %#v", translator.summaryRequests())
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 1), ChannelID: "ja", GuildID: "guild", AuthorID: "later",
+		AuthorDisplayName: "later", Content: "了解",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 2 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if translator.contexts[1].TopicSummary != "they are coordinating a delayed shipment" {
+		t.Fatalf("next message summary = %q", translator.contexts[1].TopicSummary)
+	}
+	if len(translator.userPrompts) < 2 || !strings.Contains(translator.userPrompts[1], "<topic_summary>they are coordinating a delayed shipment</topic_summary>") {
+		t.Fatalf("next prompt missing frozen topic summary: %#v", translator.userPrompts)
+	}
+	if strings.Contains(translator.userPrompts[0], "<topic_summary>") {
+		t.Fatalf("overflowing prompt should not include topic_summary: %s", translator.userPrompts[0])
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateDoesNotWaitForInFlightTopicSummary(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	started := make(chan struct{})
+	block := make(chan struct{})
+	finished := make(chan struct{})
+	translator := &topicSummaryTranslator{summary: "they are coordinating a delayed shipment", started: started, block: block}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	service.runTopicSummary = func(f func()) {
+		go func() {
+			defer close(finished)
+			f()
+		}()
+	}
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	seedCountOverflowHistory(t, store, now)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 0), ChannelID: "ja", GuildID: "guild", AuthorID: "next",
+		AuthorDisplayName: "next", Content: "今の状況は？",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("topic summary did not start")
+	}
+	if translator.contexts[0].TopicSummary != "" {
+		t.Fatal("overflowing message waited for the summary")
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 1), ChannelID: "ja", GuildID: "guild", AuthorID: "later",
+		AuthorDisplayName: "later", Content: "了解",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if translator.contexts[1].TopicSummary != "" {
+		t.Fatal("next message waited for an in-flight summary")
+	}
+
+	close(block)
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("topic summary did not finish")
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 2), ChannelID: "ja", GuildID: "guild", AuthorID: "after",
+		AuthorDisplayName: "after", Content: "続けよう",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if translator.contexts[2].TopicSummary != "they are coordinating a delayed shipment" {
+		t.Fatalf("summary after completion = %q", translator.contexts[2].TopicSummary)
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateRollsPreviousTopicSummaryIntoNextGeneration(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	translator := &topicSummaryTranslator{summary: "updated shipment delay"}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	service.runTopicSummary = func(f func()) { f() }
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	seedCountOverflowHistory(t, store, now)
+	if err := store.UpsertTopicSummary(ctx, "guild", "guild:g:group", "old-generation", "earlier they discussed packing"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: currentAfterOverflow(now, 0), ChannelID: "ja", GuildID: "guild", AuthorID: "next",
+		AuthorDisplayName: "next", Content: "今の状況は？",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reqs := translator.summaryRequests()
+	if len(reqs) != 1 || reqs[0].PreviousSummary != "earlier they discussed packing" {
+		t.Fatalf("previous summary not rolled forward: %#v", reqs)
+	}
+	if translator.contexts[0].TopicSummary != "" {
+		t.Fatalf("overflowing message should not use the previous generation summary: %q", translator.contexts[0].TopicSummary)
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateOmitsTopicSummaryAcrossIdleGap(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	translator := &topicSummaryTranslator{summary: "should not appear"}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	service.runTopicSummary = func(f func()) { f() }
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	old := snowflakeForTime(now.Add(-21*time.Minute), 1)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: old, SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpsertTopicSummary(ctx, "guild", "guild:g:group", "ja"+old, "old burst topic"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: snowflakeForTime(now, 3), ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "新しい話",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if translator.contexts[0].TopicSummary != "" {
+		t.Fatalf("idle gap should drop the previous summary: %q", translator.contexts[0].TopicSummary)
+	}
+	if len(translator.summaryRequests()) != 0 {
+		t.Fatalf("idle gap should not summarize: %#v", translator.summaryRequests())
 	}
 }

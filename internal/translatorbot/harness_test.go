@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
@@ -262,6 +263,51 @@ func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepare
 	}
 	return ThreadCreateMultiTranslationResult{Translations: out}, nil
 }
+
+type topicSummaryTranslator struct {
+	echoTranslator
+	mu       sync.Mutex
+	requests []TopicSummaryRequest
+	summary  string
+	block    <-chan struct{}
+	started  chan struct{}
+	err      error
+}
+
+func (t *topicSummaryTranslator) SummarizeTopic(ctx context.Context, req TopicSummaryRequest) (TopicSummaryResult, error) {
+	if t.started != nil {
+		select {
+		case <-t.started:
+		default:
+			close(t.started)
+		}
+	}
+	if t.block != nil {
+		select {
+		case <-t.block:
+		case <-ctx.Done():
+			return TopicSummaryResult{}, ctx.Err()
+		}
+	}
+	t.mu.Lock()
+	t.requests = append(t.requests, req)
+	t.mu.Unlock()
+	if t.err != nil {
+		return TopicSummaryResult{}, t.err
+	}
+	summary := t.summary
+	if summary == "" {
+		summary = "ongoing topic"
+	}
+	return TopicSummaryResult{Summary: summary, InputTokens: 10, OutputTokens: 5}, nil
+}
+
+func (t *topicSummaryTranslator) summaryRequests() []TopicSummaryRequest {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]TopicSummaryRequest(nil), t.requests...)
+}
+
 func seedGroup(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
