@@ -35,6 +35,7 @@ type MessageLink struct {
 	SourceAuthorID          string
 	SourceAuthorDisplayName string
 	SourceContentSnapshot   string
+	SourceImageAttachments  []DiscordAttachment
 }
 
 // MessageReference is the reply target of a source message (message_references row).
@@ -139,4 +140,5 @@ type DiscordFetchedMessage struct {
 	AuthorDisplayName   string
 	ReferencedChannelID string
 	ReferencedMessageID string
+	Attachments         []DiscordAttachment
 }

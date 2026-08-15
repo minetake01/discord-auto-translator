@@ -262,6 +262,26 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 	}
 }
 
+func TestOpenAITranslatorIgnoresOGPAltsWhenThereAreNoAttachments(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Linked page hero image"]}]}`, 1, 2)))}, nil
+	})
+	prepared, err := prepareMultiTranslation([]string{"en"}, "see this", TranslationContext{
+		Sites: []SiteContextEntry{{ID: "1", Title: "Article", Description: "About", HasVisionImage: true}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	result, err := testTranslator(client).TranslateMulti(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Translations["en"] != "Hello" || result.AttachmentDescriptions != nil {
+		t.Fatalf("OGP alts must not be applied: %#v", result)
+	}
+}
+
 func TestOpenAITranslatorRequestContractAndResponseUsage(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.Method != http.MethodPost || req.URL.String() != "https://api.example.test/v1/chat/completions" {

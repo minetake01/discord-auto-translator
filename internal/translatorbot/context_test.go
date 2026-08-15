@@ -125,6 +125,55 @@ func TestHandleMessageCreateIncludesSiteMetaInTranslationContext(t *testing.T) {
 }
 
 // SPEC 3.8
+func TestHandleMessageCreateTagsLoadedOGPImagesAndDoesNotApplyTheirAlts(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/hero.png") {
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(png1x1)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<html><head>
+			<meta property="og:title" content="Example Article">
+			<meta property="og:description" content="About the article">
+			<meta property="og:image" content="/hero.png">
+		</head></html>`)
+	}))
+	t.Cleanup(page.Close)
+	service.urlPages.client = page.Client()
+	service.httpClient = page.Client()
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Content: "これ見て " + page.URL,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	sites := translator.contexts[0].Sites
+	if len(sites) != 1 || !sites[0].HasVisionImage {
+		t.Fatalf("loaded OGP image should be marked on site context: %#v", sites)
+	}
+	if len(translator.visions) != 1 || len(translator.visions[0]) != 1 {
+		t.Fatalf("OGP vision images = %#v", translator.visions)
+	}
+	if len(translator.userPrompts) != 1 || !strings.Contains(translator.userPrompts[0], `<site id="1" title="Example Article">About the article<image></image></site>`) {
+		t.Fatalf("OGP image missing from prompt:\n%s", translator.userPrompts)
+	}
+	if len(discord.sent) != 1 || len(discord.sent[0].Files) != 0 {
+		t.Fatalf("OGP images must not be reuploaded: %#v", discord.sent)
+	}
+}
+
+// SPEC 3.8
 func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -572,7 +621,7 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 		{Author: "D", Content: "fourth"},
 	}
 	for i, entry := range want {
-		if got[i] != entry {
+		if got[i].Author != entry.Author || got[i].Content != entry.Content {
 			t.Fatalf("reply chain[%d] = %#v, want %#v", i, got[i], entry)
 		}
 	}
@@ -655,5 +704,153 @@ func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testin
 	got := translator.contexts[0].ReplyChain
 	if len(got) != 1 || got[0].Content != "Hello" {
 		t.Fatalf("unexpected reply chain: %#v", got)
+	}
+}
+
+// SPEC 3.8
+func TestSelectRecentHistoryKeepsImageOnlyMessages(t *testing.T) {
+	now := time.Now().UTC()
+	image := []DiscordAttachment{{URL: "https://cdn.discordapp.com/photo.png", Filename: "photo.png", ContentType: "image/png"}}
+	history, _ := selectRecentHistory([]MessageLink{
+		historyImageLink(now.Add(-2*time.Minute), 1, "Alice", "", image),
+		historyLink(now.Add(-1*time.Minute), 2, "Bob", "なにこれ"),
+	}, snowflakeForTime(now, 3), nil)
+	if len(history) != 2 {
+		t.Fatalf("image-only history dropped: %#v", history)
+	}
+	if history[0].Author != "Alice" || history[0].Content != "" || len(history[0].Attachments) != 1 {
+		t.Fatalf("unexpected image-only slot: %#v", history[0])
+	}
+	if history[1].Content != "なにこれ" {
+		t.Fatalf("unexpected follow-up: %#v", history[1])
+	}
+
+	empty, _ := selectRecentHistory([]MessageLink{
+		historyLink(now.Add(-1*time.Minute), 1, "Alice", ""),
+	}, snowflakeForTime(now, 2), nil)
+	if len(empty) != 0 {
+		t.Fatalf("empty text without images should still be dropped: %#v", empty)
+	}
+}
+
+func historyImageLink(t time.Time, increment uint64, author, content string, images []DiscordAttachment) MessageLink {
+	link := historyLink(t, increment, author, content)
+	link.SourceImageAttachments = images
+	return link
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateIncludesHistoryImagesInTranslationContext(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+
+	image := DiscordAttachment{URL: "https://cdn.discordapp.com/photo.png", Filename: "photo.png", ContentType: "image/png"}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "alice",
+		AuthorDisplayName: "Alice", Attachments: []DiscordAttachment{image},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "Bob", Content: "これ何？",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	history := translator.contexts[0].History
+	if len(history) != 1 || history[0].Author != "Alice" || history[0].Content != "" {
+		t.Fatalf("unexpected history: %#v", history)
+	}
+	if len(history[0].Images) != 1 || history[0].Images[0].Index != 1 || history[0].Images[0].Filename != "photo.png" {
+		t.Fatalf("history images = %#v", history[0].Images)
+	}
+	if len(translator.visions) != 1 || len(translator.visions[0]) != 1 {
+		t.Fatalf("follow-up vision images = %#v", translator.visions)
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateIncludesReplyImagesInTranslationContext(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	image := DiscordAttachment{URL: "https://cdn.discordapp.com/sign.png", Filename: "sign.png", ContentType: "image/png", Description: "出口"}
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		SourceAuthorDisplayName: "Alice", SourceImageAttachments: []DiscordAttachment{image},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "Bob", Content: "これ何？",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	reply := translator.contexts[0].ReplyChain
+	if len(reply) != 1 || reply[0].Author != "Alice" {
+		t.Fatalf("unexpected reply chain: %#v", reply)
+	}
+	if len(reply[0].Images) != 1 || reply[0].Images[0].Filename != "sign.png" || reply[0].Images[0].Description != "出口" {
+		t.Fatalf("reply images = %#v", reply[0].Images)
+	}
+	if len(translator.visions[0]) != 1 {
+		t.Fatalf("reply vision images = %#v", translator.visions)
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateReservesVisionSlotsForCurrentAttachments(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "old", TargetLanguage: "en",
+		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "見て",
+		SourceImageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/old.png", Filename: "old.png", ContentType: "image/png"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current := make([]DiscordAttachment, visionMaxImages)
+	for i := range current {
+		current[i] = DiscordAttachment{URL: fmt.Sprintf("https://cdn.discordapp.com/%d.png", i), Filename: fmt.Sprintf("%d.png", i), ContentType: "image/png"}
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "Bob", Content: "追加", Attachments: current,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 || len(translator.contexts[0].History) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	if len(translator.contexts[0].History[0].Images) != 0 {
+		t.Fatalf("history images should yield to current attachments: %#v", translator.contexts[0].History[0].Images)
+	}
+	if len(translator.visions[0]) != visionMaxImages {
+		t.Fatalf("vision images = %d, want %d", len(translator.visions[0]), visionMaxImages)
 	}
 }

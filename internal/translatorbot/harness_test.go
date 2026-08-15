@@ -202,10 +202,14 @@ func (f *fakeDiscordAPI) Channel(channelID string) (*discordgo.Channel, error) {
 type echoTranslator struct {
 	contexts     []TranslationContext
 	pollContexts []TranslationContext
+	visions      [][]visionImage
+	userPrompts  []string
 }
 
 func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
 	e.contexts = append(e.contexts, prepared.translationContext)
+	e.visions = append(e.visions, append([]visionImage(nil), prepared.visionImages...))
+	e.userPrompts = append(e.userPrompts, prepared.userPrompt())
 	out := make(map[string]string, len(prepared.targetLanguages))
 	alts := make(map[string][]string, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {

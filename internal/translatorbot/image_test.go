@@ -110,6 +110,34 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 		t.Fatalf("alts = %#v", alts["en"])
 	}
 
+	texts, alts, err = parseMultiTranslationResponse(
+		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Warning: doors closing","","og image caption"]}]}`,
+		[]string{"en"},
+		p,
+		"こんにちは",
+		2,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(alts["en"]) != 2 || alts["en"][0] != "Warning: doors closing" || alts["en"][1] != "" {
+		t.Fatalf("extra background alts should be dropped: %#v", alts["en"])
+	}
+
+	texts, alts, err = parseMultiTranslationResponse(
+		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["og image caption"]}]}`,
+		[]string{"en"},
+		p,
+		"こんにちは",
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if texts["en"] != "Hello" || alts != nil {
+		t.Fatalf("OGP-only extra alts should not be applied: texts=%#v alts=%#v", texts, alts)
+	}
+
 	if _, _, err := parseMultiTranslationResponse(
 		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["only one"]}]}`,
 		[]string{"en"},
@@ -173,6 +201,17 @@ func TestWebhookFilesForImagesTruncatesDescription(t *testing.T) {
 	}
 	if got := []rune(files[0].Description); len(got) != discordAttachmentDescriptionLimit {
 		t.Fatalf("description runes = %d", len(got))
+	}
+}
+
+func TestWebhookFilesForImagesKeepsSourceDescriptionWhenTranslationsOmitted(t *testing.T) {
+	loaded := []loadedImageAttachment{{
+		Attachment: DiscordAttachment{Filename: "a.png", ContentType: "image/png", Description: "出口"},
+		Original:   png1x1,
+	}}
+	files := webhookFilesForImages(loaded, nil)
+	if len(files) != 1 || files[0].Description != "出口" {
+		t.Fatalf("files = %#v", files)
 	}
 }
 

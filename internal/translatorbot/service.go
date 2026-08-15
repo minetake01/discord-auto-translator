@@ -99,10 +99,10 @@ func (s *Service) notifyTranslationIssue(channelID, messageID, language string, 
 	_ = s.discord.SendChannelMessage(channelID, messageID, localizedUIString(language, key))
 }
 
-// translateWithLimit translates content and image attachments into every
+// translateWithLimit translates content and existing image alt text into every
 // requested language while enforcing the per-guild token rate limit.
-// Messages without translatable text or image attachments are returned as-is
-// without calling the translator, in which case contextFn is never invoked.
+// Messages without translatable text or existing image alt text are returned
+// as-is without calling the translator, in which case contextFn is never invoked.
 // Returns errTranslationRateLimited when the guild is over budget.
 func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext) (MultiTranslationResult, error) {
 	if !needsTranslation(content, attachmentsFromLoaded(loaded)) {
@@ -114,20 +114,8 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	}
 	prepared, err := s.prepareTranslation(ctx, guildID, content, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		tc.Attachments = translationAttachmentsFromLoaded(loaded)
-		prepared, err := prepareMultiTranslation(langs, content, tc, glossary)
-		if err != nil {
-			return preparedTranslation{}, err
-		}
-		vision := make([]visionImage, 0, visionMaxImages)
-		for _, item := range loaded {
-			vision = append(vision, item.Vision)
-		}
-		remainingSlots := visionMaxImages - len(vision)
-		remainingBytes := visionMaxTotalBytes - visionBytesTotal(vision)
-		vision = append(vision, s.loadOGPVisionImages(ctx, prepared.translationContext.Sites, remainingSlots, remainingBytes)...)
-		prepared.visionImages = vision
-		return prepared, nil
-	})
+		return prepareMultiTranslation(langs, content, tc, glossary)
+	}, visionFromLoaded(loaded))
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -172,7 +160,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 	}
 	prepared, err := s.prepareTranslation(ctx, guildID, pollText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return preparePollTranslation(langs, question, answers, tc, glossary)
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +196,7 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	}
 	prepared, err := s.prepareTranslation(ctx, guildID, lookupText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return prepareThreadCreateTranslation(langs, name, message, tc, glossary)
-	})
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -227,17 +215,42 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	return translations, nil
 }
 
-func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error)) (preparedTranslation, error) {
+func visionFromLoaded(loaded []loadedImageAttachment) []visionImage {
+	if len(loaded) == 0 {
+		return nil
+	}
+	vision := make([]visionImage, 0, len(loaded))
+	for _, item := range loaded {
+		vision = append(vision, item.Vision)
+	}
+	return vision
+}
+
+func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error), reservedVision []visionImage) (preparedTranslation, error) {
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
 		return preparedTranslation{}, err
 	}
 	translationContext := contextFn()
 	attachURLPageMeta(&translationContext, s.urlPages.Lookup(ctx, lookupText))
+	remainingSlots := visionMaxImages - len(reservedVision)
+	remainingBytes := visionMaxTotalBytes - visionBytesTotal(reservedVision)
+	contextVision := s.loadContextVisionImages(ctx, &translationContext, remainingSlots, remainingBytes)
 	prepared, err := prepare(languages, translationContext, glossary)
 	if err != nil {
 		return preparedTranslation{}, err
 	}
+	remainingSlots -= len(contextVision)
+	remainingBytes -= visionBytesTotal(contextVision)
+	ogpVision := s.loadOGPVisionImages(ctx, prepared.translationContext.Sites, remainingSlots, remainingBytes)
+	if hasSiteVisionImage(prepared.translationContext.Sites) {
+		translationContext.Sites = prepared.translationContext.Sites
+		prepared, err = prepare(languages, translationContext, glossary)
+		if err != nil {
+			return preparedTranslation{}, err
+		}
+	}
+	prepared.visionImages = append(append(append([]visionImage{}, reservedVision...), contextVision...), ogpVision...)
 	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
 		return preparedTranslation{}, err
 	}
@@ -417,6 +430,7 @@ type historyMergeSlot struct {
 	sourceMessageID string
 	keys            []string
 	count           int
+	attachments     []DiscordAttachment
 }
 
 func (slot historyMergeSlot) toMessage() ChatContextMessage {
@@ -425,6 +439,7 @@ func (slot historyMergeSlot) toMessage() ChatContextMessage {
 		Content:         slot.content,
 		SourceChannelID: slot.sourceChannelID,
 		SourceMessageID: slot.sourceMessageID,
+		Attachments:     append([]DiscordAttachment(nil), slot.attachments...),
 	}
 }
 
@@ -437,7 +452,7 @@ func selectRecentHistory(links []MessageLink, currentMessageID string, excludeRe
 func truncateIdleSession(links []MessageLink, currentMessageID string) []MessageLink {
 	filtered := make([]MessageLink, 0, len(links))
 	for _, link := range links {
-		if strings.TrimSpace(link.SourceContentSnapshot) == "" {
+		if !historyLinkHasContext(link) {
 			continue
 		}
 		filtered = append(filtered, link)
@@ -469,10 +484,11 @@ func truncateIdleSession(links []MessageLink, currentMessageID string) []Message
 func mergeConsecutiveMessages(links []MessageLink) []historyMergeSlot {
 	slots := make([]historyMergeSlot, 0, len(links))
 	for _, link := range links {
-		content := link.SourceContentSnapshot
-		if strings.TrimSpace(content) == "" {
+		if !historyLinkHasContext(link) {
 			continue
 		}
+		content := link.SourceContentSnapshot
+		images := imageAttachmentsOnly(link.SourceImageAttachments)
 		messageTime, hasTime := discordSnowflakeTime(link.SourceMessageID)
 		author := strings.TrimSpace(link.SourceAuthorDisplayName)
 		contentRunes := len([]rune(content))
@@ -487,7 +503,14 @@ func mergeConsecutiveMessages(links []MessageLink) []historyMergeSlot {
 				hasTime &&
 				!last.lastTime.IsZero() &&
 				messageTime.Sub(last.lastTime) <= mergeMaxInterval {
-				last.content += "\n" + content
+				if strings.TrimSpace(content) != "" {
+					if strings.TrimSpace(last.content) != "" {
+						last.content += "\n" + content
+					} else {
+						last.content = content
+					}
+				}
+				last.attachments = append(last.attachments, images...)
 				last.lastTime = messageTime
 				last.keys = append(last.keys, key)
 				last.count++
@@ -501,6 +524,7 @@ func mergeConsecutiveMessages(links []MessageLink) []historyMergeSlot {
 			sourceMessageID: link.SourceMessageID,
 			keys:            []string{key},
 			count:           1,
+			attachments:     append([]DiscordAttachment(nil), images...),
 		}
 		if hasTime {
 			slot.firstTime = messageTime
@@ -585,6 +609,10 @@ func slotMatchesReply(slot historyMergeSlot, excludeReplyKeys map[string]bool) b
 	return false
 }
 
+func historyLinkHasContext(link MessageLink) bool {
+	return strings.TrimSpace(link.SourceContentSnapshot) != "" || len(imageAttachmentsOnly(link.SourceImageAttachments)) > 0
+}
+
 func historyGenerationID(history []ChatContextMessage, frozenCount int) string {
 	if frozenCount > 0 && len(history) > 0 {
 		return history[0].SourceChannelID + history[0].SourceMessageID
@@ -648,22 +676,31 @@ func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, message
 		fetchMessageID = sourceMessageID
 		entry.Content = original.Snapshot
 		entry.Author = strings.TrimSpace(original.SourceAuthorDisplayName)
+		entry.Attachments = append([]DiscordAttachment(nil), original.ImageAttachments...)
+		entry.SourceChannelID = sourceChannelID
+		entry.SourceMessageID = sourceMessageID
 	}
 	fetched, fetchErr := s.discord.Message(fetchChannelID, fetchMessageID)
 	if fetchErr != nil {
 		if !tracked {
 			return entry, "", "", nextRef, false
 		}
-		return entry, sourceChannelID, sourceMessageID, nextRef, strings.TrimSpace(entry.Content) != ""
+		return entry, sourceChannelID, sourceMessageID, nextRef, contextMessageHasContent(entry)
 	}
 	if !tracked {
 		entry.Content = fetched.Content
 		entry.Author = strings.TrimSpace(fetched.AuthorDisplayName)
+		entry.Attachments = append([]DiscordAttachment(nil), fetched.Attachments...)
 		sourceChannelID = channelID
 		sourceMessageID = messageID
 	} else if entry.Author == "" {
 		entry.Author = strings.TrimSpace(fetched.AuthorDisplayName)
 	}
+	if len(fetched.Attachments) > 0 {
+		entry.Attachments = append([]DiscordAttachment(nil), fetched.Attachments...)
+	}
+	entry.SourceChannelID = sourceChannelID
+	entry.SourceMessageID = sourceMessageID
 	nextRef = messageRef{
 		channelID: fetched.ReferencedChannelID,
 		messageID: fetched.ReferencedMessageID,
@@ -671,7 +708,11 @@ func (s *Service) resolveReplyChainEntry(ctx context.Context, channelID, message
 	if nextRef.channelID == "" && nextRef.messageID != "" {
 		nextRef.channelID = fetchChannelID
 	}
-	return entry, sourceChannelID, sourceMessageID, nextRef, strings.TrimSpace(entry.Content) != ""
+	return entry, sourceChannelID, sourceMessageID, nextRef, contextMessageHasContent(entry)
+}
+
+func contextMessageHasContent(entry ChatContextMessage) bool {
+	return strings.TrimSpace(entry.Content) != "" || len(imageAttachmentsOnly(entry.Attachments)) > 0
 }
 
 // lockMessage serializes concurrent handling of the same (channel, message).

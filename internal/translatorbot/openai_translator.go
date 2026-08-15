@@ -319,7 +319,7 @@ func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, 
 		"attachment_descriptions": map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
-			"description": "Exactly as many strings as <attachment> elements, in source order. Translate existing alt text. If an image has no alt and is not primarily text, use an empty string. Empty array when <attachments> is absent.",
+			"description": "Exactly as many strings as <attachment> elements, in source order. Translate existing non-empty alt text. If an attachment has no alt, return an empty string. Never invent alt text. Empty array when <attachments> is absent. Do not describe background images from history, replies, or linked pages.",
 		},
 	})
 	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{

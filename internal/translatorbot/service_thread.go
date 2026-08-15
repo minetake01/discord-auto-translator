@@ -168,6 +168,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 				TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
 				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
+				SourceImageAttachments: imageAttachmentsOnly(req.InitialMessageFiles),
 			}); err != nil {
 				return false, err
 			}

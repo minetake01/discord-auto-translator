@@ -14,7 +14,15 @@ func hasTranslatableText(text string) bool {
 }
 
 func needsTranslation(content string, imageAttachments []DiscordAttachment) bool {
-	return len(imageAttachments) > 0 || hasTranslatableText(content)
+	if hasTranslatableText(content) {
+		return true
+	}
+	for _, attachment := range imageAttachments {
+		if hasTranslatableText(attachment.Description) {
+			return true
+		}
+	}
+	return false
 }
 
 type NameMaps struct {
@@ -25,10 +33,11 @@ type NameMaps struct {
 }
 
 type SiteContextEntry struct {
-	ID          string // matches N in [SITE:N]
-	Title       string // page title for model background only
-	Description string
-	ImageURL    string
+	ID             string // matches N in [SITE:N]
+	Title          string // page title for model background only
+	Description    string
+	ImageURL       string
+	HasVisionImage bool // set after a linked-page image is actually loaded for vision
 }
 
 type Protector struct {

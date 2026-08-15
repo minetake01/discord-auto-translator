@@ -1002,6 +1002,43 @@ func TestPinStateAndSnapshotUpdates(t *testing.T) {
 	}
 }
 
+func TestSaveMessageLinkRoundTripsImageAttachments(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	images := []DiscordAttachment{{
+		URL: "https://cdn.discordapp.com/photo.png", Filename: "photo.png", ContentType: "image/png", Description: "出口",
+	}}
+	if err := s.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000014", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "target", TargetLanguage: "en",
+		SourceAuthorDisplayName: "Alice", SourceImageAttachments: images,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	links, err := s.MessageTargets(ctx, "ja", "100000000000000014")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != 1 || len(links[0].SourceImageAttachments) != 1 {
+		t.Fatalf("links = %#v", links)
+	}
+	got := links[0].SourceImageAttachments[0]
+	if got.URL != images[0].URL || got.Filename != images[0].Filename || got.Description != images[0].Description {
+		t.Fatalf("image = %#v", got)
+	}
+	history, err := s.RecentMessageHistory(ctx, []string{"ja"}, "100000000000000015", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || len(history[0].SourceImageAttachments) != 1 {
+		t.Fatalf("history = %#v", history)
+	}
+	original, ok, err := s.MessageOriginal(ctx, "en", "target")
+	if err != nil || !ok || len(original.ImageAttachments) != 1 || original.ImageAttachments[0].Filename != "photo.png" {
+		t.Fatalf("original = %#v ok=%v err=%v", original, ok, err)
+	}
+}
+
 func TestMessageOriginal(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

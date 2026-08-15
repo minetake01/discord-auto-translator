@@ -201,7 +201,7 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	if got := discord.sent[0].Content; got != "[en] 画像です" {
 		t.Fatalf("unexpected content: %q", got)
 	}
-	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "image.png" {
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "image.png" || discord.sent[0].Files[0].Description != "" {
 		t.Fatalf("unexpected files: %#v", discord.sent[0].Files)
 	}
 }
@@ -245,14 +245,40 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(translator.contexts) != 1 {
-		t.Fatalf("image-only messages are translation targets: %#v", translator.contexts)
+	if len(translator.contexts) != 0 {
+		t.Fatalf("image-only messages without alt are not translation targets: %#v", translator.contexts)
 	}
 	if len(discord.sent) != 1 || strings.TrimSpace(discord.sent[0].Content) != "" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "photo.jpg" {
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Name != "photo.jpg" || discord.sent[0].Files[0].Description != "" {
 		t.Fatalf("unexpected files: %#v", discord.sent[0].Files)
+	}
+}
+
+// SPEC 3.2 message mirroring
+func TestHandleMessageCreateTranslatesImageOnlyExistingAltText(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png", Description: "出口はこちら"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("image-only messages with alt are translation targets: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || strings.TrimSpace(discord.sent[0].Content) != "" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Description != "[en] 出口はこちら" {
+		t.Fatalf("files: %#v", discord.sent[0].Files)
 	}
 }
 
