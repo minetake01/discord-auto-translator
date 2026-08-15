@@ -211,6 +211,21 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if strings.Contains(got, "Omit attachment_descriptions") {
 		t.Fatal("system instruction must not allow omitting attachment_descriptions:\n" + got)
 	}
+	if !strings.Contains(got, "<image>") || !strings.Contains(got, "recent_context") {
+		t.Fatal("system instruction should describe history/reply images as background")
+	}
+	if !strings.Contains(got, "inside <site>") {
+		t.Fatal("system instruction should describe linked-page images as background")
+	}
+	if !strings.Contains(got, "Never include background images") {
+		t.Fatal("system instruction should forbid putting background images in attachment_descriptions")
+	}
+	if !strings.Contains(got, "Never invent or generate alt text") {
+		t.Fatal("system instruction must not ask the model to generate missing alt text:\n" + got)
+	}
+	if strings.Contains(got, "primarily readable text") {
+		t.Fatal("system instruction must not ask to generate alt from image text:\n" + got)
+	}
 }
 
 func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
@@ -246,6 +261,19 @@ func TestBuildTranslationUserPromptIncludesSiteContext(t *testing.T) {
 	})
 	if strings.Contains(emptyPrompt, "<site_context>") {
 		t.Fatal(emptyPrompt)
+	}
+}
+
+func TestBuildTranslationUserPromptIncludesLoadedSiteImages(t *testing.T) {
+	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
+		Sites: []SiteContextEntry{
+			{ID: "1", Title: "Example Article", Description: "About the article", HasVisionImage: true},
+		},
+	}, func(b *strings.Builder) {
+		writeAttributedElement(b, "final_message", "", "see [SITE:1]")
+	})
+	if !strings.Contains(prompt, `<site id="1" title="Example Article">About the article<image></image></site>`) {
+		t.Fatalf("loaded OGP image should be tagged in site_context:\n%s", prompt)
 	}
 }
 
@@ -414,6 +442,25 @@ func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
 	}
 	if prepared.attachmentCount != 2 {
 		t.Fatalf("attachmentCount = %d", prepared.attachmentCount)
+	}
+}
+
+func TestBuildTranslationPromptIncludesHistoryAndReplyImages(t *testing.T) {
+	prompt := buildTranslationUserPrompt([]string{"en"}, TranslationContext{
+		History: []ChatContextMessage{
+			{Author: "Alice", Content: "見て", Images: []TranslationAttachment{{Index: 1, Filename: "photo.png"}}},
+		},
+		ReplyChain: []ChatContextMessage{
+			{Author: "Alice", Images: []TranslationAttachment{{Index: 1, Filename: "photo.png", Description: "出口"}}},
+		},
+	}, func(b *strings.Builder) {
+		writeAttributedElement(b, "final_message", "Bob", "これ何？")
+	})
+	if !strings.Contains(prompt, `<message author="Alice">見て<image index="1" filename="photo.png"></image></message>`) {
+		t.Fatalf("missing history image:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, `<message author="Alice"><image index="1" filename="photo.png">出口</image></message>`) {
+		t.Fatalf("missing reply image:\n%s", prompt)
 	}
 }
 

@@ -6,13 +6,14 @@ import (
 	"testing"
 )
 
-func TestNeedsTranslationIncludesImageAttachments(t *testing.T) {
+func TestNeedsTranslationIncludesExistingImageAltText(t *testing.T) {
 	image := []DiscordAttachment{{Filename: "shot.png", ContentType: "image/png"}}
-	if needsTranslation("", nil) || needsTranslation("https://example.com", nil) {
-		t.Fatal("text-only non-translatable content should not need translation")
+	withAlt := []DiscordAttachment{{Filename: "shot.png", ContentType: "image/png", Description: "出口"}}
+	if needsTranslation("", nil) || needsTranslation("https://example.com", nil) || needsTranslation("", image) || needsTranslation("https://example.com", image) {
+		t.Fatal("content without translatable text or existing alt should not need translation")
 	}
-	if !needsTranslation("hello", nil) || !needsTranslation("", image) || !needsTranslation("https://example.com", image) {
-		t.Fatal("plain text or image attachments should need translation")
+	if !needsTranslation("hello", nil) || !needsTranslation("hello", image) || !needsTranslation("", withAlt) || !needsTranslation("https://example.com", withAlt) {
+		t.Fatal("plain text or existing image alt text should need translation")
 	}
 }
 

@@ -325,6 +325,7 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
 		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
+		SourceImageAttachments: sourceImageAttachments(m),
 	}, ref)
 }
 

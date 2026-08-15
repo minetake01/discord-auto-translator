@@ -65,8 +65,8 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != translatorCalls+1 {
-		t.Fatal("image-only thread message must be translated")
+	if len(translator.contexts) != translatorCalls {
+		t.Fatal("image-only thread message without alt must not be translated")
 	}
 	if got := discord.sent[1]; got.ThreadID != "thread-1" || strings.TrimSpace(got.Content) != "" || len(got.Files) != 1 {
 		t.Fatalf("unexpected attachment-only thread message: %#v", got)
@@ -78,7 +78,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != translatorCalls+1 {
+	if len(translator.contexts) != translatorCalls {
 		t.Fatal("code-only thread message must not be translated")
 	}
 	if got := discord.sent[2]; got.ThreadID != "thread-1" || got.Content != "`fmt.Println()`" {

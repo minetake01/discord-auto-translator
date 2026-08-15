@@ -195,7 +195,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
     <channel_topic>...</channel_topic>
   </discord_context>
   <recent_context>
-    <message author="Alice">Hello!</message>
+    <message author="Alice">見て<image index="1" filename="photo.png"></image></message>
   </recent_context>
   <reply_context>
     <message author="Bob">Earlier reply target</message>
@@ -211,15 +211,15 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 ```
 
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
-- `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から、同一バーストの原文を束ね後枠として積み上げます。隣接間隔が 15 分を超えると古い側を切り、件数・時間幅・トークンのハイウォーターで世代を切り替えます。履歴 0 件のときはセクション自体を出しません。
+- `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から、同一バーストの原文を束ね後枠として積み上げます。隣接間隔が 15 分を超えると古い側を切り、件数・時間幅・トークンのハイウォーターで世代を切り替えます。履歴 0 件のときはセクション自体を出しません。本文が空でも画像添付がある投稿は残し、含まれた画像は `<image index>` で示します。
 - ユーザープロンプトは凍結パート（`always_include` glossary と `<recent_context>` の途中まで）と可変パート（末尾枠・閉じタグ・本文マッチ glossary・reply/site/attachments/final）に分かれます。凍結パートは世代内で追記だけします。
-- `<reply_context>` はリプライ先を最大 3 件遡った引用チェイン（古い順、時間制限なし）です。`<recent_context>` より優先して解釈に使います。凍結済み履歴枠はリプライ先と重複しても残し、可変末尾だけ同一投稿なら除外します。
-- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。`og:image` はビジョン入力の文脈画像として別途渡します。
-- `<attachments>` は画像添付の翻訳対象です。ビジョン入力はテキスト（breakpoint の後）の後ろに置き、index 順で対応します。既存 alt は翻訳し、alt なしで文字が主内容のときだけ生成します。
-- 履歴・リプライの `<message>` は `author`（表示名）と原文のみ。`lang` 属性は付けません。
+- `<reply_context>` はリプライ先を最大 3 件遡った引用チェイン（古い順、時間制限なし）です。`<recent_context>` より優先して解釈に使います。凍結済み履歴枠はリプライ先と重複しても残し、可変末尾だけ同一投稿なら除外します。画像は履歴と同じ `<image>` で示し、同一投稿の画像は同じ index を共有します。
+- `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。読み込めた `og:image` は `<site>` 内の `<image>` として示し、ビジョン入力の文脈画像として渡します。
+- `<attachments>` は現在メッセージの画像添付です。ビジョン入力はテキスト（breakpoint の後）の後ろに置き、現在メッセージの添付、履歴/リプライの `<image>`、OGP の順です。既存 alt だけ翻訳し、alt が空なら空文字を返します。生成はしません。履歴・リプライ・OGP 画像は文脈のみで、取得失敗時はスキップします。`attachment_descriptions` の余剰要素は背景画像向けとして無視し、再アップロードには使いません。
+- 履歴・リプライの `<message>` は `author`（表示名）と原文、任意の `<image>`。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は凍結ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
-- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同数・同順です。`language` はリクエストの target languages の BCP-47 enum です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
+- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同順で少なくとも同数です。余剰要素は適用しません。`language` はリクエストの target languages の BCP-47 enum です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
 - Chat Completions リクエストは `prompt_cache_key` を付け、凍結テキストパートに `prompt_cache_breakpoint` を置きます。そのキーを未保持のときだけ `prompt_cache_options.ttl=1h` を送り、期限内の再利用では ttl を付けません。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
@@ -332,7 +332,7 @@ dg.Identify.Intents = discordgo.IntentsGuilds |
 
 ### メッセージ内容がない場合
 
-`HandleMessageCreate` は本文が空でも、添付ファイルまたはステッカーがあればミラーリングします。画像添付は翻訳対象として再アップロードし、非画像添付とステッカーは署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
+`HandleMessageCreate` は本文が空でも、添付ファイルまたはステッカーがあればミラーリングします。画像添付は再アップロードし、既存の代替テキストがある場合のみ翻訳して付与します。非画像添付とステッカーは署名クエリを除いた Discord CDN URL を本文末尾へ追加します。
 
 ### ウェブフック由来メッセージの無視
 

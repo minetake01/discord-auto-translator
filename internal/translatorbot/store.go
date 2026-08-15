@@ -12,6 +12,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot,source_image_attachments`
+
 var (
 	ErrDuplicateGroup       = errors.New("translation group already exists in this guild")
 	ErrDuplicateChannel     = errors.New("channel already exists in this group")
@@ -89,6 +91,7 @@ func (s *Store) Init(ctx context.Context) error {
 			source_author_id TEXT NOT NULL,
 			source_author_display_name TEXT NOT NULL DEFAULT '',
 			source_content_snapshot TEXT NOT NULL,
+			source_image_attachments TEXT NOT NULL DEFAULT '[]',
 			PRIMARY KEY (source_message_id, source_channel_id, target_channel_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS message_references (
@@ -189,6 +192,9 @@ func (s *Store) Init(ctx context.Context) error {
 			return err
 		}
 	}
+	if err := s.ensureColumn(ctx, "message_links", "source_image_attachments", "TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
 	if err := s.validateOptimizedSchema(ctx); err != nil {
 		return err
 	}
@@ -231,10 +237,34 @@ func (s *Store) Init(ctx context.Context) error {
 	return nil
 }
 
+func (s *Store) ensureColumn(ctx context.Context, table, column, declaration string) error {
+	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, declaredType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &declaredType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+declaration)
+	return err
+}
+
 func (s *Store) validateOptimizedSchema(ctx context.Context) error {
 	required := map[string]map[string]string{
 		"translation_groups":     {"created_at": "INTEGER"},
-		"message_links":          {"source_message_id": "INTEGER"},
+		"message_links":          {"source_message_id": "INTEGER", "source_image_attachments": "TEXT"},
 		"pin_states":             {"message_id": "INTEGER"},
 		"processed_events":       {"created_at": "INTEGER"},
 		"glossary_entries":       {"created_at": "INTEGER"},
@@ -677,8 +707,12 @@ func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageR
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot) VALUES(?,?,?,?,?,?,?,?,?)`,
-		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot); err != nil {
+	imagesJSON, err := marshalImageAttachments(l.SourceImageAttachments)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot, imagesJSON); err != nil {
 		return err
 	}
 	if ref.MessageID != "" {
@@ -751,7 +785,7 @@ func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessa
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE source_channel_id=? AND source_message_id=?`, sourceChannelID, sourceMessageIDValue)
 	if err != nil {
 		return nil, err
 	}
@@ -763,7 +797,7 @@ func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelI
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot
+	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot,ml.source_image_attachments
 		FROM message_links ml
 		JOIN message_references mr ON mr.source_channel_id=ml.source_channel_id AND mr.source_message_id=ml.source_message_id
 		WHERE mr.referenced_channel_id=? AND mr.referenced_message_id=?`, referencedChannelID, referencedMessageIDValue)
@@ -778,7 +812,7 @@ func (s *Store) MessagePeers(ctx context.Context, channelID, messageID string) (
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=?`, channelID, messageID)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=?`, channelID, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -823,20 +857,21 @@ type MessageOriginalResult struct {
 	SourceMessageID         string
 	SourceAuthorDisplayName string
 	Snapshot                string
+	ImageAttachments        []DiscordAttachment
 	TargetLanguage          string
 	IsSource                bool
 }
 
 func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string) (MessageOriginalResult, bool, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
-	var link MessageLink
-	err := row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceAuthorDisplayName, &link.SourceContentSnapshot)
+	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
+	link, err := scanMessageLink(row)
 	if err == nil {
 		return MessageOriginalResult{
 			SourceChannelID:         link.SourceChannelID,
 			SourceMessageID:         link.SourceMessageID,
 			SourceAuthorDisplayName: link.SourceAuthorDisplayName,
 			Snapshot:                link.SourceContentSnapshot,
+			ImageAttachments:        link.SourceImageAttachments,
 			TargetLanguage:          link.TargetLanguage,
 			IsSource:                false,
 		}, true, nil
@@ -858,6 +893,7 @@ func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string
 		SourceMessageID:         messageID,
 		SourceAuthorDisplayName: link.SourceAuthorDisplayName,
 		Snapshot:                link.SourceContentSnapshot,
+		ImageAttachments:        link.SourceImageAttachments,
 		IsSource:                true,
 	}, true, nil
 }
@@ -880,9 +916,8 @@ func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, ta
 		return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 	}
 
-	row := s.db.QueryRowContext(ctx, `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
-	var link MessageLink
-	err = row.Scan(&link.SourceMessageID, &link.SourceChannelID, &link.GroupID, &link.TargetChannelID, &link.TargetMessageID, &link.TargetLanguage, &link.SourceAuthorID, &link.SourceAuthorDisplayName, &link.SourceContentSnapshot)
+	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
+	link, err := scanMessageLink(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", "", "", false, nil
 	}
@@ -922,7 +957,7 @@ func (s *Store) RecentMessageHistory(ctx context.Context, channelIDs []string, e
 		args = append(args, channelID)
 	}
 	args = append(args, excludeMessageIDValue, limit)
-	query := `SELECT source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot
+	query := `SELECT ` + messageLinkColumns + `
 		FROM message_links
 		WHERE source_channel_id IN (` + placeholders + `) AND source_message_id<>?
 		GROUP BY source_channel_id, source_message_id
@@ -946,13 +981,31 @@ func scanMessageLinks(rows *sql.Rows) ([]MessageLink, error) {
 	defer rows.Close()
 	var out []MessageLink
 	for rows.Next() {
-		var l MessageLink
-		if err := rows.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot); err != nil {
+		link, err := scanMessageLink(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, l)
+		out = append(out, link)
 	}
 	return out, rows.Err()
+}
+
+type messageLinkScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
+	var l MessageLink
+	var imagesJSON string
+	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot, &imagesJSON); err != nil {
+		return MessageLink{}, err
+	}
+	images, err := unmarshalImageAttachments(imagesJSON)
+	if err != nil {
+		return MessageLink{}, err
+	}
+	l.SourceImageAttachments = images
+	return l, nil
 }
 
 func (s *Store) SaveThreadLink(ctx context.Context, l ThreadLink) error {

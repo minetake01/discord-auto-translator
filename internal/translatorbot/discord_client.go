@@ -126,6 +126,19 @@ func fetchedMessageFromDiscord(message *discordgo.Message) DiscordFetchedMessage
 	if message.Author != nil {
 		result.AuthorDisplayName = strings.TrimSpace(message.Author.Username)
 	}
+	if len(message.Attachments) > 0 {
+		result.Attachments = make([]DiscordAttachment, 0, len(message.Attachments))
+		for _, attachment := range message.Attachments {
+			if attachment == nil {
+				continue
+			}
+			result.Attachments = append(result.Attachments, DiscordAttachment{
+				URL:         attachment.URL,
+				Filename:    attachment.Filename,
+				ContentType: attachment.ContentType,
+			})
+		}
+	}
 	if message.MessageReference != nil && message.MessageReference.Type != discordgo.MessageReferenceTypeForward {
 		result.ReferencedMessageID = message.MessageReference.MessageID
 		result.ReferencedChannelID = message.MessageReference.ChannelID
