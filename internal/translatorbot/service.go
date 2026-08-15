@@ -19,6 +19,8 @@ const historyTokenHigh = 800
 const historyTokenLow = 400
 const historyFetchLimit = 512
 const translationReplyChainLimit = 3
+const topicSummaryTimeout = 2 * time.Minute
+const topicSummarySourceTokenLimit = 1200
 
 const mergeShortMessageMaxRunes = 60
 const mergeMaxCombinedRunes = 150
@@ -31,16 +33,18 @@ var errTranslationRateLimited = errors.New("translation rate limit exceeded")
 // events, translates content through the Translator, and fans the result out
 // to every peer channel of a translation group via webhooks.
 type Service struct {
-	store         *Store
-	discord       DiscordAPI
-	translator    Translator
-	rateLimiter   *TokenRateLimiter
-	urlPages      *urlPageCache
-	httpClient    *http.Client
-	publicBaseURL string
-	selfBotUserID string
-	threadMu      sync.Mutex
-	messageLocks  sync.Map
+	store                *Store
+	discord              DiscordAPI
+	translator           Translator
+	rateLimiter          *TokenRateLimiter
+	urlPages             *urlPageCache
+	httpClient           *http.Client
+	publicBaseURL        string
+	selfBotUserID        string
+	threadMu             sync.Mutex
+	messageLocks         sync.Map
+	topicSummaryAttempts sync.Map
+	runTopicSummary      func(func())
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
@@ -302,7 +306,7 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author, threadName string) TranslationContext {
 	channelIDs, locationKey := s.conversationScope(ctx, guildID, groupID, historyChannelID)
 	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID)
-	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, excludeMessageID, replyKeys)
+	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, locationKey, excludeMessageID, replyKeys)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
 	translationContext.Author = strings.TrimSpace(author)
@@ -388,7 +392,7 @@ func snowflakeIDLess(a, b string) bool {
 	return a < b
 }
 
-func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
+func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, locationKey, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
 	translationContext := TranslationContext{
 		GuildID:   guildID,
 		MessageID: excludeMessageID,
@@ -414,10 +418,16 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID str
 		translationContext.PromptCacheGeneration = historyGenerationID(nil, 0)
 		return translationContext
 	}
-	history, frozenCount := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
+	history, frozenCount, discarded := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
 	translationContext.History = history
 	translationContext.HistoryFrozenCount = frozenCount
 	translationContext.PromptCacheGeneration = historyGenerationID(history, frozenCount)
+	if summary, err := s.store.TopicSummary(ctx, locationKey, translationContext.PromptCacheGeneration); err == nil {
+		translationContext.TopicSummary = summary
+	}
+	if len(discarded) > 0 && translationContext.TopicSummary == "" {
+		s.scheduleTopicSummary(guildID, locationKey, translationContext.PromptCacheGeneration, excludeMessageID, discarded)
+	}
 	return translationContext
 }
 
@@ -443,10 +453,15 @@ func (slot historyMergeSlot) toMessage() ChatContextMessage {
 	}
 }
 
-func selectRecentHistory(links []MessageLink, currentMessageID string, excludeReplyKeys map[string]bool) ([]ChatContextMessage, int) {
+func selectRecentHistory(links []MessageLink, currentMessageID string, excludeReplyKeys map[string]bool) ([]ChatContextMessage, int, []ChatContextMessage) {
 	session := truncateIdleSession(links, currentMessageID)
-	slots := replayHistoryHysteresis(mergeConsecutiveMessages(session))
-	return splitFrozenHistory(slots, excludeReplyKeys)
+	slots, discardedSlots := replayHistoryHysteresis(mergeConsecutiveMessages(session))
+	history, frozenCount := splitFrozenHistory(slots, excludeReplyKeys)
+	discarded := make([]ChatContextMessage, 0, len(discardedSlots))
+	for _, slot := range discardedSlots {
+		discarded = append(discarded, slot.toMessage())
+	}
+	return history, frozenCount, discarded
 }
 
 func truncateIdleSession(links []MessageLink, currentMessageID string) []MessageLink {
@@ -535,9 +550,9 @@ func mergeConsecutiveMessages(links []MessageLink) []historyMergeSlot {
 	return slots
 }
 
-func replayHistoryHysteresis(slots []historyMergeSlot) []historyMergeSlot {
+func replayHistoryHysteresis(slots []historyMergeSlot) (kept, discarded []historyMergeSlot) {
 	if len(slots) == 0 {
-		return nil
+		return nil, nil
 	}
 	start := 0
 	for k := 1; k <= len(slots); k++ {
@@ -548,7 +563,10 @@ func replayHistoryHysteresis(slots []historyMergeSlot) []historyMergeSlot {
 			start++
 		}
 	}
-	return slots[start:]
+	if start == 0 {
+		return slots, nil
+	}
+	return slots[start:], slots[:start]
 }
 
 func historyExceedsHigh(slots []historyMergeSlot) bool {
@@ -621,6 +639,88 @@ func historyGenerationID(history []ChatContextMessage, frozenCount int) string {
 		return history[0].SourceChannelID + history[0].SourceMessageID
 	}
 	return "empty"
+}
+
+func (s *Service) scheduleTopicSummary(guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) {
+	if _, ok := s.translator.(TopicSummarizer); !ok {
+		return
+	}
+	if strings.TrimSpace(locationKey) == "" || strings.TrimSpace(generationID) == "" || generationID == "empty" || len(discarded) == 0 {
+		return
+	}
+	attemptKey := locationKey + "\x00" + generationID
+	if _, loaded := s.topicSummaryAttempts.LoadOrStore(attemptKey, struct{}{}); loaded {
+		return
+	}
+	copied := append([]ChatContextMessage(nil), discarded...)
+	run := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), topicSummaryTimeout)
+		defer cancel()
+		if err := s.generateAndStoreTopicSummary(ctx, guildID, locationKey, generationID, messageID, copied); err != nil && errors.Is(err, errTranslationRateLimited) {
+			s.topicSummaryAttempts.Delete(attemptKey)
+		}
+	}
+	if s.runTopicSummary != nil {
+		s.runTopicSummary(run)
+		return
+	}
+	go run()
+}
+
+func (s *Service) generateAndStoreTopicSummary(ctx context.Context, guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) error {
+	summarizer, ok := s.translator.(TopicSummarizer)
+	if !ok {
+		return nil
+	}
+	if existing, err := s.store.TopicSummary(ctx, locationKey, generationID); err == nil && existing != "" {
+		return nil
+	}
+	previous := ""
+	if prevGeneration, prevSummary, err := s.store.TopicSummaryForLocation(ctx, locationKey); err == nil && prevGeneration != generationID {
+		previous = prevSummary
+	}
+	req := TopicSummaryRequest{
+		PreviousSummary: previous,
+		Discarded:       capDiscardedForSummary(discarded),
+		GuildID:         guildID,
+		MessageID:       messageID,
+	}
+	prepared, err := prepareTopicSummary(req)
+	if err != nil {
+		return err
+	}
+	if s.rateLimiter != nil {
+		estimate := EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptFrozen+prepared.userPromptVariable, "") + 200
+		if !s.rateLimiter.Allow(guildID, estimate) {
+			return errTranslationRateLimited
+		}
+	}
+	result, err := summarizer.SummarizeTopic(ctx, req)
+	if err != nil {
+		return err
+	}
+	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
+	if strings.TrimSpace(result.Summary) == "" {
+		return errors.New("empty topic summary")
+	}
+	return s.store.UpsertTopicSummary(ctx, guildID, locationKey, generationID, result.Summary)
+}
+
+func capDiscardedForSummary(messages []ChatContextMessage) []ChatContextMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	total := 0
+	start := len(messages)
+	for i := len(messages) - 1; i >= 0; i-- {
+		n := EstimateTranslationTokens(messages[i].Content, "")
+		if total+n > topicSummarySourceTokenLimit && start < len(messages) {
+			break
+		}
+		total += n
+		start = i
+	}
+	return messages[start:]
 }
 
 type messageRef struct {

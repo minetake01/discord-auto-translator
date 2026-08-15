@@ -317,6 +317,9 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 		`INSERT INTO poll_translation_cache(source_channel_id,source_message_id,language,answers_json,expires_at) VALUES
 			('a-source',101,'en','["Red"]',999), ('a-thread',102,'en','["Yes"]',999),
 			('b-source',201,'en','["Blue"]',999), ('b-thread',202,'en','["No"]',999)`,
+		`INSERT INTO topic_summaries(guild_id,location_key,generation_id,summary,created_at) VALUES
+			('guild-a','guild-a:shared:group','gen-a','a topic',1),
+			('guild-b','guild-b:shared:group','gen-b','b topic',1)`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -344,7 +347,7 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 		"translation_groups": 2, "group_channels": 4, "thread_links": 2,
 		"message_links": 4, "message_references": 4, "pin_states": 4,
 		"glossary_entries": 2, "source_allowlists": 2, "guild_removals": 1,
-		"poll_translation_cache": 4,
+		"poll_translation_cache": 4, "topic_summaries": 2,
 	} {
 		assertCount(`SELECT COUNT(*) FROM `+table, want)
 	}
@@ -370,6 +373,8 @@ func TestPurgeGuildRemovedBeforeDeletesOnlyRemovedGuildData(t *testing.T) {
 		assertCount(`SELECT COUNT(*) FROM `+table, 2)
 	}
 	assertCount(`SELECT COUNT(*) FROM poll_translation_cache`, 2)
+	assertCount(`SELECT COUNT(*) FROM topic_summaries`, 1)
+	assertCount(`SELECT COUNT(*) FROM topic_summaries WHERE guild_id='guild-a'`, 0)
 	assertCount(`SELECT COUNT(*) FROM poll_translation_cache WHERE source_channel_id IN ('a-source','a-thread')`, 0)
 	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('a-source','a-thread') OR target_channel_id IN ('a-target','a-target-thread')`, 0)
 	assertCount(`SELECT COUNT(*) FROM message_links WHERE source_channel_id IN ('b-source','b-thread')`, 2)
@@ -798,6 +803,39 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}
 	if len(links) != 0 {
 		t.Fatalf("message links were not removed: %#v", links)
+	}
+}
+
+func TestTopicSummaryRoundTripAndDeleteGroup(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "c1", Language: "ja", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertTopicSummary(ctx, "g1", "g1:team:group", "gen-1", "first topic"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.TopicSummary(ctx, "g1:team:group", "gen-1")
+	if err != nil || got != "first topic" {
+		t.Fatalf("got %q err=%v", got, err)
+	}
+	if _, err := s.TopicSummary(ctx, "g1:team:group", "gen-2"); err == nil {
+		t.Fatal("different generation should miss")
+	}
+	if err := s.UpsertTopicSummary(ctx, "g1", "g1:team:group", "gen-2", "next topic"); err != nil {
+		t.Fatal(err)
+	}
+	generation, summary, err := s.TopicSummaryForLocation(ctx, "g1:team:group")
+	if err != nil || generation != "gen-2" || summary != "next topic" {
+		t.Fatalf("location summary = %q %q err=%v", generation, summary, err)
+	}
+	if err := s.DeleteGroup(ctx, "g1", "team"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.TopicSummary(ctx, "g1:team:group", "gen-2"); err == nil {
+		t.Fatal("group delete should remove topic summaries")
 	}
 }
 

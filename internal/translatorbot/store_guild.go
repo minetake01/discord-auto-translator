@@ -23,6 +23,7 @@ func (s *Store) GuildIDsWithStoredData(ctx context.Context) ([]string, error) {
 		UNION SELECT guild_id FROM glossary_entries
 		UNION SELECT guild_id FROM source_allowlists
 		UNION SELECT guild_id FROM guild_removals
+		UNION SELECT guild_id FROM topic_summaries
 	) WHERE guild_id <> '' ORDER BY guild_id`)
 	if err != nil {
 		return nil, err
@@ -126,6 +127,9 @@ func (s *Store) PurgeGuildRemovedBefore(ctx context.Context, guildID string, cut
 		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM source_allowlists WHERE guild_id=?`, guildID); err != nil {
+		return false, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM topic_summaries WHERE guild_id=?`, guildID); err != nil {
 		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM translation_groups WHERE guild_id=?`, guildID); err != nil {

@@ -220,6 +220,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 | チャンネル名・トピック | Discord API | チャンネルのトーンや主題を翻訳に反映（スレッド内メッセージでは親チャンネル） |
 | スレッド名 | Gateway イベントまたは Discord API | スレッド内メッセージの翻訳時に `<thread_name>` としてスレッドの主題を反映 |
 | 直近の会話履歴（同一バースト。沈黙15分・件数16/8・時間幅30/15分・トークン800/400で世代切替） | 翻訳グループ内の全チャンネル（または同期済みスレッド）の DB `source_content_snapshot` と画像添付 | 会話の流れを踏まえた翻訳と、プレフィックスキャッシュ可能な凍結文脈。各メッセージは原文スナップショットと投稿者表示名（`author`）付き。画像添付は縮小してビジョン入力へ（文脈のみ、再投稿しない）。24時間窓は使わない |
+| 切り捨て済み話題の要約 | 世代切替で捨てた枠から非同期生成し、会話ロケーションと世代 ID に保存 | 次の翻訳から凍結ユーザーパート先頭の `<topic_summary>` として挿入。件数・時間幅・トークンの世代切替上限には含めない。未完了・失敗時は要約なしで翻訳を続ける |
 | リプライ引用チェイン（最大3件、時間制限なし） | `message_links` による原文解決 + Discord API で参照を遡る | `<recent_context>` より優先して、返信先メッセージの原文を解釈に利用。各メッセージは `author` 付き。画像添付も履歴と同様にビジョン入力へ（文脈のみ）。凍結済み履歴枠からは除去しない（重複可）。可変末尾だけが同一投稿なら除外する |
 | 翻訳対象メッセージの投稿者 | 処理中 `DiscordMessage.AuthorDisplayName` | `<final_message author="...">` として翻訳対象の話者を明示 |
 | 共有 URL のページメタ（title / description / image） | 本文中の HTTP(S) URL を GET して OGP / Twitter / `<title>` 等から抽出 | `<site_context>` と `[SITE:N]` プレースホルダでリンク先の背景を翻訳に反映。`og:image` / `twitter:image` は縮小してビジョン入力へ（文脈のみ、再投稿しない） |
@@ -227,7 +228,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 翻訳対象テキストまたは既存の画像代替テキストがあるメッセージでは、翻訳 API 呼び出し前に本文中の URL を best-effort で取得します。Discord 系ホストは取得対象外です。title が取れた URL だけ `<site_context>` に載せ、プレースホルダの `[SITE:N]` と `<site id="N">` で対応付けます。画像添付のダウンロードや縮小に失敗した場合は fail-closed でミラーせず、投稿元へ通知します。履歴・リプライ・OGP 画像の取得失敗はスキップします。本文が空でも画像添付がある履歴・リプライは文脈に残します。
 
-直近履歴は追加テーブルを持たず、各翻訳リクエストで `message_links` から再計算します。隣接投稿の間隔が 15 分を超えたらそれより古い枠は使いません。同一バースト内では束ね後枠を append-only に積み、件数が 16 を超える・時間幅が 30 分を超える・推定トークンが 800 を超えるのいずれかで世代を切り、残す枠は 8 件以下かつ幅 15 分以下かつ 400 トークン以下になるまで古い側をまとめて捨てます（1 枠だけが上限を超える場合はその 1 枠を残して翻訳を続けます）。同一作者の短文マージ（5 分・最大 4 件）は末尾枠にだけ適用し、凍結済み枠の本文は世代内で変わりません。ユーザープロンプトは凍結パートと可変パートに分かれ、凍結テキストの末尾にキャッシュ breakpoint を置きます。メッセージ・投票・スレッド作成それぞれのシステムプロンプトはリクエスト間で固定します。JSON Schema の構造も固定し、`language` の enum だけリクエストの `<target_languages>` に合わせます。`always_include` の glossary は凍結ユーザーパート、本文マッチ glossary と現在メッセージの添付・OGP 画像は breakpoint より後ろです。履歴・リプライの `<image>` タグは所属メッセージと同じ凍結/可変パートに置き、ビジョンバイトは breakpoint より後ろです。`prompt_cache_key` は会話ロケーションと世代先頭メッセージで決まり、キャッシュ TTL 1 時間の write は未保持時だけ送ります。投票・スレッド作成は別 system / 別 schema / 別キャッシュキーです。履歴取得に失敗しても翻訳自体は履歴なしで継続します。
+直近履歴の枠自体は追加テーブルを持たず、各翻訳リクエストで `message_links` から再計算します。隣接投稿の間隔が 15 分を超えたらそれより古い枠は使いません（沈黙で切れたバーストの要約も使いません）。同一バースト内では束ね後枠を append-only に積み、件数が 16 を超える・時間幅が 30 分を超える・推定トークンが 800 を超えるのいずれかで世代を切り、残す枠は 8 件以下かつ幅 15 分以下かつ 400 トークン以下になるまで古い側をまとめて捨てます（1 枠だけが上限を超える場合はその 1 枠を残して翻訳を続けます）。切り捨てが確定した翻訳は待たず、捨てた枠（と前回の要約があればそれ）から話題を短く要約するリクエストを裏で送ります。要約は会話ロケーションと世代 ID に紐づけて保存し、次のメッセージから凍結ユーザーパート先頭の `<topic_summary>` に載せます。要約生成中に次のメッセージが来た場合も待ちません。同一作者の短文マージ（5 分・最大 4 件）は末尾枠にだけ適用し、凍結済み枠の本文は世代内で変わりません。ユーザープロンプトは凍結パートと可変パートに分かれ、凍結テキストの末尾にキャッシュ breakpoint を置きます。メッセージ・投票・スレッド作成・話題要約それぞれのシステムプロンプトはリクエスト間で固定します。JSON Schema の構造も固定し、翻訳用途では `language` の enum だけリクエストの `<target_languages>` に合わせます。`always_include` の glossary は凍結ユーザーパート、本文マッチ glossary と現在メッセージの添付・OGP 画像は breakpoint より後ろです。履歴・リプライの `<image>` タグは所属メッセージと同じ凍結/可変パートに置き、ビジョンバイトは breakpoint より後ろです。`prompt_cache_key` は会話ロケーションと世代先頭メッセージで決まり、その世代に要約が載った時点でキーを分けます。キャッシュ TTL 1 時間の write は未保持時だけ送ります。投票・スレッド作成・話題要約は別 system / 別 schema / 別キャッシュキーです。履歴取得や要約の失敗は翻訳自体を止めません。
 
 ### 3.9 URL の代替版置換
 
@@ -293,8 +294,9 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 - 全対象言語を1リクエストで生成する。分割・別プロバイダーへのfallbackは行わない。画像は縮小JPEGの data URL を `image_url` としてテキスト（breakpoint の後）の後ろに置く（テキストのみなら user `content` は文字列）
 - 試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行する。親コンテキストのキャンセル、HTTP 4xx（429以外）、不正JSON・`finish_reason=length` 等の契約違反は再試行しない
-- 用途別の固定schemaを `response_format.json_schema`（`strict: true`）で送り、制約付きデコードする（通常メッセージ・投票・スレッド作成）。`language` は当該リクエストの target languages を enum にし、English などの英語名は出せないようにする。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は常に required。添付なしは空配列、添付ありはソース順に少なくともその件数。余剰要素は背景画像向けとして無視し適用しない
+- 用途別の固定schemaを `response_format.json_schema`（`strict: true`）で送り、制約付きデコードする（通常メッセージ・投票・スレッド作成・話題要約）。翻訳用途の `language` はリクエストの target languages を enum にし、English などの英語名は出せないようにする。件数・順序・言語タグ・空文字・未知フィールドはパーサーで厳密検証する。メッセージ翻訳の schema は画像の有無で変えず、`attachment_descriptions` は常に required。添付なしは空配列、添付ありはソース順に少なくともその件数。余剰要素は背景画像向けとして無視し適用しない
 - スレッド作成時はタイトル（`name`）と初期本文（`message`）を1リクエストで翻訳する。ソースに本文がない場合だけ `message` 空を許容する
+- 話題要約は翻訳を待たせず、捨てた履歴枠だけを対象にする別リクエストである。出力は短い `summary` 文字列で、翻訳の `prompt_cache_key` は共有しない。トークンはギルドの翻訳レート制限に含める。失敗しても翻訳は継続する
 - `finish_reason=length`（`max_tokens`到達）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Discord ID などの request metadata は送信しない。既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する
 - `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査用に1往復1行のJSON Linesを指定ファイルへ追記する（リトライ時は最大2行）。リクエストペイロード、生のレスポンス本文（token内訳を含む）、HTTPステータス、所要時間、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、プロバイダーへ送るフィールドも変わらない
@@ -331,7 +333,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 ### システムプロンプト設計
 
-- すべての `<discord_context>`、`<recent_context>`、`<reply_context>`、`<site_context>`、`<final_message>` 内コンテンツを「信頼できないDiscordのコンテンツ」として扱うよう指示
+- すべての `<discord_context>`、`<recent_context>`、`<topic_summary>`、`<reply_context>`、`<site_context>`、`<final_message>` 内コンテンツを「信頼できないDiscordのコンテンツ」として扱うよう指示
 - 翻訳先言語の変更・コード出力・要約などの指示を無視するよう指示
 
 ---
@@ -427,13 +429,22 @@ guild_removals (
     guild_id TEXT PRIMARY KEY,
     removed_at INTEGER -- Unix milliseconds
 )
+
+-- 世代切替で捨てた会話の話題要約（次の翻訳の凍結文脈用）
+topic_summaries (
+    guild_id TEXT,
+    location_key TEXT PRIMARY KEY,
+    generation_id TEXT,
+    summary TEXT,
+    created_at INTEGER -- Unix milliseconds
+)
 ```
 
 ### ギルド削除後のデータ保持
 
 `GUILD_DATA_RETENTION_DAYS` は、Bot がギルドから削除された後にそのギルドの SQLite データを保持する日数です。未指定または `0` では自動削除しません。正の整数の場合、削除確認から指定日数を超えたギルドを起動時および 24 時間ごとに削除します。負数または整数以外は起動時エラーになります。
 
-一時的な Gateway 障害を示す `GUILD_DELETE` の `unavailable=true` は削除として記録しません。保持期限前に利用可能な `GUILD_CREATE` を受け取った場合は削除予定を取り消します。削除処理は対象ギルドごとのトランザクションで、`translation_groups`、`group_channels`、`glossary_entries`、`source_allowlists` と、そのギルドの登録チャンネルおよび同期済みスレッドに属する `message_links`、孤立した `message_references`、`thread_links`、`pin_states` を SQLite から削除します。Discord 上のメッセージや Webhook は削除しません。
+一時的な Gateway 障害を示す `GUILD_DELETE` の `unavailable=true` は削除として記録しません。保持期限前に利用可能な `GUILD_CREATE` を受け取った場合は削除予定を取り消します。削除処理は対象ギルドごとのトランザクションで、`translation_groups`、`group_channels`、`glossary_entries`、`source_allowlists`、`topic_summaries` と、そのギルドの登録チャンネルおよび同期済みスレッドに属する `message_links`、孤立した `message_references`、`thread_links`、`pin_states` を SQLite から削除します。Discord 上のメッセージや Webhook は削除しません。
 
 ---
 
