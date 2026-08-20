@@ -112,7 +112,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		files := item.files
 		var err error
 		if item.needsAssets {
-			body, err = messageContentWithAssetURLs(body, forwarded.Attachments, forwarded.Stickers)
+			body, err = messageContentWithLoadedImages(body, forwarded.Attachments, forwarded.Stickers, loaded)
 			if err != nil {
 				return nil, err
 			}

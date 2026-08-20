@@ -165,7 +165,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 		case quote != "":
 			content = quote
 		}
-		content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
+		content, err = messageContentWithLoadedImages(content, m.Attachments, m.Stickers, loaded)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue

@@ -410,11 +410,12 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if err != nil {
 			return "", "", err
 		}
-		loaded, err := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
+		loaded := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
+		content, err = messageContentWithAllAssetURLs(content, imagesNotReuploaded(req.InitialMessageFiles, loaded), nil)
 		if err != nil {
 			return "", "", err
 		}
-		files := webhookFilesForImages(loaded, sourceImageDescriptions(req.InitialMessageFiles))
+		files := webhookFilesForImages(loaded, nil)
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			if req.DeferWithoutSourceMsg {
 				return "", "", nil
@@ -442,7 +443,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", nil
 		}
 	}
-		threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
 	return threadID, "", err
 }
 
