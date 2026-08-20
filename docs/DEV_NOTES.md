@@ -86,29 +86,34 @@ Structured Outputs は `response_format.type=json_schema`（`strict: true`）で
 
 ### 翻訳デバッグログ（`debug_log.go`）
 
-翻訳失敗の原因調査用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します（一時障害リトライ時は最大2行）。パーサーが捨てる情報（`usage` の内訳、未知フィールド、非2xx時のエラー本文）を欠落なく残すため、構造体ではなく**送信したpayloadバイト列と受信本文バイト列そのもの**を記録します。
+翻訳失敗の原因調査と、翻訳精度・キャッシュ効率・料金の効果測定用に、`TRANSLATION_DEBUG_LOG_PATH` を設定したときだけ `translatePrepared` の1往復を1行のJSONとして追記します（一時障害リトライ時は最大2行）。パーサーが捨てる情報（未知フィールド、非2xx時のエラー本文）を欠落なく残すため、**送信したpayloadバイト列と受信本文バイト列そのもの**に加え、測定しやすい一次フィールドを記録します。
 
 ```json
-{"time":"...","guild_id":"...","message_id":"...","target_languages":["en"],"duration_ms":812,"request":{...},"http_status":200,"response":{...},"error":"..."}
+{"time":"...","guild_id":"...","message_id":"...","model":"...","schema_name":"message_translations","target_languages":["en"],"duration_ms":812,"prompt_cache_key":"...","prompt_cache_ttl_sent":false,"prompt_cache_hit":true,"system_instruction":"...","user_prompt_frozen":"...","user_prompt_variable":"...","usage":{"prompt_tokens":1200,"cached_tokens":800,"completion_tokens":40,"cost_usd":0.00014},"request":{...},"http_status":200,"response":{...},"error":"..."}
 ```
 
+- `system_instruction` / `user_prompt_frozen` / `user_prompt_variable` は実際に合成したプロンプト本文です（リクエストの image data URL は含めません）。
+- `prompt_cache_hit` はプロバイダーが `usage.prompt_tokens_details.cached_tokens`（または同等フィールド）を報告し、その値が 1 以上のとき `true`、0 のとき `false`。報告が無い場合はフィールド自体を省略します。
+- `prompt_cache_ttl_sent` はこの往復でキャッシュ TTL write を送ったかどうかです（ヒットそのものではありません）。
+- `usage.cost_usd` はプロバイダーが `usage.cost` を返したときだけ記録します（OpenRouter は USD）。単価表からの推計はしません。
 - `error` は encode・transport（タイムアウト含む）・HTTP・レスポンス契約・JSONパースの全経路を `translatePrepared` の `defer` で拾います。レスポンスがJSONとして不正な場合だけ `response` の代わりに `response_text` へ生文字列を入れます。
 - `guild_id` / `message_id` はDiscord側と突き合わせるためのローカル記録で、プロバイダーへは送りません。
 - `main.go` が起動時にファイルを開き、開けなければ `log.Fatal` で停止します（`--model-prewarm` でも有効）。書き込み失敗は翻訳を止めず stderr へ出します。
 - 本文全量を書くためディスクを圧迫します。`0600` で作成し、64 MiB を超えると `<path>.1` へ1世代だけローテートします。**プライバシーポリシーのメッセージ関連データ60日以内削除に合わせ、調査が終わったらログを削除してください。**
 
-確認用 CLI（直近50件の要約。`.1` ローテートも自動読込。パス未指定時は `TRANSLATION_DEBUG_LOG_PATH` → `.env` → `./translation-debug.log`）。`--detail` はソース抜粋・翻訳・usage・エラーを出す:
+確認用 CLI（直近50件の要約。`.1` ローテートも自動読込。パス未指定時は `TRANSLATION_DEBUG_LOG_PATH` → `.env` → `./translation-debug.log`）。要約行は cache / cost を含みます。`--detail` はソース抜粋・翻訳・キャッシュ・料金・usage・エラーを、`--prompt` は合成プロンプト全文を、`--stats` はフィルタ後のキャッシュヒット率と料金合計を出します:
 
 ```sh
-go run ./cmd/inspect-translation-log
+go run ./cmd/inspect-translation-log --stats
 go run ./cmd/inspect-translation-log --errors --detail
-go run ./cmd/inspect-translation-log --message-id <id> --detail
+go run ./cmd/inspect-translation-log --message-id <id> --detail --prompt
 ```
 
 `jq` で失敗だけを絞り込む例:
 
 ```sh
 jq -c 'select(.error) | {time, guild_id, message_id, http_status, duration_ms, error}' translation-debug.log
+jq -c '{time, message_id, prompt_cache_hit, usage}' translation-debug.log
 ```
 
 ---

@@ -39,6 +39,8 @@ func TestPrintDetailReadsChatCompletionsRoundTrip(t *testing.T) {
 		"tokens: in=11 out=22 reasoning=7",
 		"reasoning: keep [USER:Alice] verbatim",
 		"[en] Hello",
+		"cache: ?",
+		"prompt: system=11B frozen=",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("detail output missing %q\n%s", want, output)
@@ -63,6 +65,106 @@ func TestPrintDetailOmitsReasoningWhenAbsent(t *testing.T) {
 	}
 	if strings.Contains(output, "reasoning") {
 		t.Fatalf("unexpected reasoning output\n%s", output)
+	}
+}
+
+func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
+	hit := true
+	ttl := false
+	cached := 800
+	cost := 0.00014
+	entry := logEntry{
+		Model:              "qwen/qwen3.6-35b-a3b",
+		SchemaName:         "message_translations",
+		PromptCacheKey:     "guild:g:group:start1",
+		PromptCacheTTLSent: &ttl,
+		PromptCacheHit:     &hit,
+		SystemInstruction:  "Translate faithfully.",
+		UserPromptFrozen:   "<translation_request><target_languages>en</target_languages>",
+		UserPromptVariable: "<final_message>こんにちは</final_message></translation_request>",
+		Usage: &loggedUsage{
+			PromptTokens:     1200,
+			CompletionTokens: 40,
+			CachedTokens:     &cached,
+			CostUSD:          &cost,
+		},
+	}
+
+	output := captureStdout(t, func() { printDetail(entry) })
+	for _, want := range []string{
+		"schema: message_translations",
+		"model: qwen/qwen3.6-35b-a3b",
+		"cache_key: guild:g:group:start1",
+		"cache: hit  cached=800/1200  ttl_sent=false",
+		"cost_usd: $0.00014",
+		"tokens: in=1200 cached=800 out=40",
+		"source: こんにちは",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("detail output missing %q\n%s", want, output)
+		}
+	}
+}
+
+func TestPrintPromptDumpsSynthesizedParts(t *testing.T) {
+	entry := logEntry{
+		SystemInstruction:  "System line",
+		UserPromptFrozen:   "Frozen part",
+		UserPromptVariable: "Variable part",
+	}
+	output := captureStdout(t, func() { printPrompt(entry) })
+	for _, want := range []string{
+		"--- system ---",
+		"System line",
+		"--- user frozen ---",
+		"Frozen part",
+		"--- user variable ---",
+		"Variable part",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("prompt output missing %q\n%s", want, output)
+		}
+	}
+}
+
+func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
+	hit, miss := true, false
+	cachedHit, cachedMiss := 800, 0
+	cost1, cost2 := 0.0002, 0.0001
+	ttlTrue, ttlFalse := true, false
+	entries := []logEntry{
+		{PromptCacheHit: &hit, PromptCacheTTLSent: &ttlTrue, Usage: &loggedUsage{PromptTokens: 1000, CachedTokens: &cachedHit, CompletionTokens: 10, CostUSD: &cost1}},
+		{PromptCacheHit: &miss, PromptCacheTTLSent: &ttlFalse, Usage: &loggedUsage{PromptTokens: 200, CachedTokens: &cachedMiss, CompletionTokens: 5, CostUSD: &cost2}},
+		{Usage: &loggedUsage{PromptTokens: 50, CompletionTokens: 2}},
+	}
+
+	output := captureStdout(t, func() { printStats(entries) })
+	for _, want := range []string{
+		"stats (filtered n=3):",
+		"cost_usd=$0.0003 (2/3 reported)",
+		"tokens: prompt=1250 cached=800 (64.0%) completion=17",
+		"cache: hit=1 miss=1 unknown=1 hit_rate=50.0% ttl_writes=1",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("stats output missing %q\n%s", want, output)
+		}
+	}
+}
+
+func TestParseEntryReadsMeasurementFields(t *testing.T) {
+	line := []byte(`{"time":"2026-08-20T05:00:00Z","schema_name":"message_translations","prompt_cache_key":"k","prompt_cache_ttl_sent":false,"prompt_cache_hit":true,"system_instruction":"sys","user_prompt_frozen":"frozen","user_prompt_variable":"var","usage":{"prompt_tokens":9,"cached_tokens":3,"cost_usd":0.001}}`)
+	entry, err := parseEntry(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.SchemaName != "message_translations" || entry.PromptCacheKey != "k" || entry.SystemInstruction != "sys" {
+		t.Fatalf("entry = %#v", entry)
+	}
+	if entry.PromptCacheTTLSent == nil || *entry.PromptCacheTTLSent || entry.PromptCacheHit == nil || !*entry.PromptCacheHit {
+		t.Fatalf("cache flags = ttl=%v hit=%v", entry.PromptCacheTTLSent, entry.PromptCacheHit)
+	}
+	if entry.Usage == nil || entry.Usage.PromptTokens != 9 || entry.Usage.CachedTokens == nil || *entry.Usage.CachedTokens != 3 || entry.Usage.CostUSD == nil || *entry.Usage.CostUSD != 0.001 {
+		t.Fatalf("usage = %#v", entry.Usage)
 	}
 }
 
