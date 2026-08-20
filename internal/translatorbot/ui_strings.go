@@ -116,7 +116,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "This message was not translated because the translation rate limit was reached. Messages may go untranslated for a while until the limit is lifted.",
 		uiKeyTranslationFailedNotice:   "This message was not mirrored because translation failed.",
-		uiKeyProviderMayContinueNotice: "Messages may go untranslated for a while until the external server recovers.",
+		uiKeyProviderMayContinueNotice: "Messages may go untranslated for a while until the external translation service recovers.",
 
 		uiKeyUnexpectedError:        "An internal error occurred. Please try again later.",
 		uiKeyInvalidLanguage:        "Specify the language as a short BCP-47 code such as `en`, `ja`, `zh-CN`, or `pt-BR`.",
@@ -204,7 +204,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "翻訳レート制限に達したため、このメッセージは翻訳されませんでした。制限が解除されるまで、しばらくメッセージが翻訳されない可能性があります。",
 		uiKeyTranslationFailedNotice:   "翻訳に失敗したため、このメッセージはミラーリングされませんでした。",
-		uiKeyProviderMayContinueNotice: "外部のサーバーが復旧するまで、しばらくメッセージが翻訳されない可能性があります。",
+		uiKeyProviderMayContinueNotice: "外部の翻訳サービスが復旧するまで、しばらくメッセージが翻訳されない可能性があります。",
 
 		uiKeyUnexpectedError:        "内部エラーが発生しました。時間をおいて再度お試しください。",
 		uiKeyInvalidLanguage:        "言語は `en`, `ja`, `zh-CN`, `pt-BR` のようなBCP-47形式の短いコードで指定してください。",
@@ -292,7 +292,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "已达到翻译速率限制，此消息未被翻译。在限制解除之前，一段时间内消息可能无法翻译。",
 		uiKeyTranslationFailedNotice:   "翻译失败，此消息未被镜像。",
-		uiKeyProviderMayContinueNotice: "在外部服务器恢复之前，一段时间内消息可能无法翻译。",
+		uiKeyProviderMayContinueNotice: "在外部翻译服务恢复之前，一段时间内消息可能无法翻译。",
 
 		uiKeyUnexpectedError:        "发生内部错误，请稍后重试。",
 		uiKeyInvalidLanguage:        "请使用 BCP-47 格式的简短语言代码，例如 `en`、`ja`、`zh-CN`、`pt-BR`。",
@@ -380,7 +380,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "已達到翻譯速率限制，此訊息未被翻譯。在限制解除之前，一段時間內訊息可能無法翻譯。",
 		uiKeyTranslationFailedNotice:   "翻譯失敗，此訊息未被鏡像。",
-		uiKeyProviderMayContinueNotice: "在外部伺服器恢復之前，一段時間內訊息可能無法翻譯。",
+		uiKeyProviderMayContinueNotice: "在外部翻譯服務恢復之前，一段時間內訊息可能無法翻譯。",
 
 		uiKeyUnexpectedError:        "發生內部錯誤，請稍後再試。",
 		uiKeyInvalidLanguage:        "請使用 BCP-47 格式的簡短語言代碼，例如 `en`、`ja`、`zh-CN`、`pt-BR`。",
@@ -468,7 +468,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "번역 속도 제한에 도달하여 이 메시지는 번역되지 않았습니다. 제한이 해제될 때까지 한동안 메시지가 번역되지 않을 수 있습니다.",
 		uiKeyTranslationFailedNotice:   "번역에 실패하여 이 메시지는 미러링되지 않았습니다.",
-		uiKeyProviderMayContinueNotice: "외부 서버가 복구될 때까지 한동안 메시지가 번역되지 않을 수 있습니다.",
+		uiKeyProviderMayContinueNotice: "외부 번역 서비스가 복구될 때까지 한동안 메시지가 번역되지 않을 수 있습니다.",
 
 		uiKeyUnexpectedError:        "내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
 		uiKeyInvalidLanguage:        "언어는 `en`, `ja`, `zh-CN`, `pt-BR`와 같은 BCP-47 형식의 짧은 코드로 지정해 주세요.",
@@ -556,7 +556,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Ce message n'a pas été traduit car la limite de débit de traduction a été atteinte. Les messages risquent de ne pas être traduits pendant un moment, jusqu'à ce que la limite soit levée.",
 		uiKeyTranslationFailedNotice:   "Ce message n'a pas été miroité car la traduction a échoué.",
-		uiKeyProviderMayContinueNotice: "Les messages risquent de ne pas être traduits pendant un moment, jusqu'à ce que le serveur externe se rétablisse.",
+		uiKeyProviderMayContinueNotice: "Les messages risquent de ne pas être traduits pendant un moment, jusqu'à ce que le service de traduction externe se rétablisse.",
 
 		uiKeyUnexpectedError:        "Une erreur interne s'est produite. Veuillez réessayer plus tard.",
 		uiKeyInvalidLanguage:        "Indiquez la langue sous forme de code BCP-47 court, par exemple `en`, `ja`, `zh-CN` ou `pt-BR`.",
@@ -644,7 +644,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Diese Nachricht wurde nicht übersetzt, weil das Übersetzungsratenlimit erreicht wurde. Bis das Limit aufgehoben wird, können Nachrichten vorübergehend unübersetzt bleiben.",
 		uiKeyTranslationFailedNotice:   "Diese Nachricht wurde nicht gespiegelt, weil die Übersetzung fehlgeschlagen ist.",
-		uiKeyProviderMayContinueNotice: "Bis der externe Server wiederhergestellt ist, können Nachrichten vorübergehend unübersetzt bleiben.",
+		uiKeyProviderMayContinueNotice: "Bis der externe Übersetzungsdienst wieder da ist, können Nachrichten vorübergehend unübersetzt bleiben.",
 
 		uiKeyUnexpectedError:        "Ein interner Fehler ist aufgetreten. Bitte versuche es später erneut.",
 		uiKeyInvalidLanguage:        "Gib die Sprache als kurzen BCP-47-Code an, z. B. `en`, `ja`, `zh-CN` oder `pt-BR`.",
@@ -732,7 +732,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Este mensaje no se tradujo porque se alcanzó el límite de traducciones. Hasta que se levante el límite, es posible que los mensajes no se traduzcan durante un tiempo.",
 		uiKeyTranslationFailedNotice:   "Este mensaje no se replicó porque falló la traducción.",
-		uiKeyProviderMayContinueNotice: "Hasta que el servidor externo se restablezca, es posible que los mensajes no se traduzcan durante un tiempo.",
+		uiKeyProviderMayContinueNotice: "Hasta que vuelva el servicio de traducción externo, es posible que los mensajes no se traduzcan durante un tiempo.",
 
 		uiKeyUnexpectedError:        "Se produjo un error interno. Inténtalo de nuevo más tarde.",
 		uiKeyInvalidLanguage:        "Especifica el idioma con un código BCP-47 corto, como `en`, `ja`, `zh-CN` o `pt-BR`.",
@@ -820,7 +820,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Esta mensagem não foi traduzida porque o limite de traduções foi atingido. Até o limite ser liberado, as mensagens podem ficar sem tradução por um tempo.",
 		uiKeyTranslationFailedNotice:   "Esta mensagem não foi espelhada porque a tradução falhou.",
-		uiKeyProviderMayContinueNotice: "Até o servidor externo se recuperar, as mensagens podem ficar sem tradução por um tempo.",
+		uiKeyProviderMayContinueNotice: "Até o serviço de tradução externo voltar, as mensagens podem ficar sem tradução por um tempo.",
 
 		uiKeyUnexpectedError:        "Ocorreu um erro interno. Tente novamente mais tarde.",
 		uiKeyInvalidLanguage:        "Especifique o idioma com um código BCP-47 curto, como `en`, `ja`, `zh-CN` ou `pt-BR`.",
@@ -908,7 +908,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Questo messaggio non è stato tradotto perché è stato raggiunto il limite di traduzioni. Finché il limite non viene rimosso, i messaggi potrebbero non essere tradotti per un po'.",
 		uiKeyTranslationFailedNotice:   "Questo messaggio non è stato replicato perché la traduzione non è riuscita.",
-		uiKeyProviderMayContinueNotice: "Finché il server esterno non si ripristina, i messaggi potrebbero non essere tradotti per un po'.",
+		uiKeyProviderMayContinueNotice: "Finché il servizio di traduzione esterno non torna disponibile, i messaggi potrebbero non essere tradotti per un po'.",
 
 		uiKeyUnexpectedError:        "Si è verificato un errore interno. Riprova più tardi.",
 		uiKeyInvalidLanguage:        "Specifica la lingua con un codice BCP-47 breve, ad esempio `en`, `ja`, `zh-CN` o `pt-BR`.",
@@ -996,7 +996,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Pesan ini tidak diterjemahkan karena batas laju terjemahan telah tercapai. Sampai batasnya dicabut, pesan mungkin tidak diterjemahkan untuk sementara.",
 		uiKeyTranslationFailedNotice:   "Pesan ini tidak dicerminkan karena terjemahan gagal.",
-		uiKeyProviderMayContinueNotice: "Sampai server eksternal pulih, pesan mungkin tidak diterjemahkan untuk sementara.",
+		uiKeyProviderMayContinueNotice: "Sampai layanan terjemahan eksternal pulih, pesan mungkin tidak diterjemahkan untuk sementara.",
 
 		uiKeyUnexpectedError:        "Terjadi kesalahan internal. Silakan coba lagi nanti.",
 		uiKeyInvalidLanguage:        "Tentukan bahasa dengan kode BCP-47 pendek, misalnya `en`, `ja`, `zh-CN`, atau `pt-BR`.",
@@ -1084,7 +1084,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "ข้อความนี้ไม่ได้รับการแปลเนื่องจากถึงขีดจำกัดอัตราการแปลแล้ว จนกว่าจะปลดจำกัด ข้อความอาจไม่ถูกแปลสักพัก",
 		uiKeyTranslationFailedNotice:   "ข้อความนี้ไม่ได้ถูกมิเรอร์เนื่องจากการแปลล้มเหลว",
-		uiKeyProviderMayContinueNotice: "จนกว่าเซิร์ฟเวอร์ภายนอกจะกลับมา ข้อความอาจไม่ถูกแปลสักพัก",
+		uiKeyProviderMayContinueNotice: "จนกว่าบริการแปลภายนอกจะกลับมา ข้อความอาจไม่ถูกแปลสักพัก",
 
 		uiKeyUnexpectedError:        "เกิดข้อผิดพลาดภายใน โปรดลองอีกครั้งในภายหลัง",
 		uiKeyInvalidLanguage:        "โปรดระบุภาษาด้วยรหัส BCP-47 แบบสั้น เช่น `en`, `ja`, `zh-CN` หรือ `pt-BR`",
@@ -1172,7 +1172,7 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyRateLimitNotice:           "Tin nhắn này không được dịch vì đã đạt giới hạn tốc độ dịch. Cho đến khi giới hạn được gỡ, tin nhắn có thể không được dịch trong một thời gian.",
 		uiKeyTranslationFailedNotice:   "Tin nhắn này không được sao chép vì dịch thất bại.",
-		uiKeyProviderMayContinueNotice: "Cho đến khi máy chủ bên ngoài khôi phục, tin nhắn có thể không được dịch trong một thời gian.",
+		uiKeyProviderMayContinueNotice: "Cho đến khi dịch vụ dịch thuật bên ngoài khôi phục, tin nhắn có thể không được dịch trong một thời gian.",
 
 		uiKeyUnexpectedError:        "Đã xảy ra lỗi nội bộ. Vui lòng thử lại sau.",
 		uiKeyInvalidLanguage:        "Hãy chỉ định ngôn ngữ bằng mã BCP-47 ngắn, ví dụ `en`, `ja`, `zh-CN` hoặc `pt-BR`.",

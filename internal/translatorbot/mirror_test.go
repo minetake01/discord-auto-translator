@@ -761,7 +761,7 @@ func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testin
 	if got := noticeReplyIDs(discord.channelMessages); len(got) != 1 || got[0] != "100000000000000001" {
 		t.Fatalf("same-channel notices = %#v, want first message only", discord.channelMessages)
 	}
-	if !strings.Contains(discord.channelMessages[0].content, "外部のサーバーが復旧するまで") {
+	if !strings.Contains(discord.channelMessages[0].content, "外部の翻訳サービスが復旧するまで") {
 		t.Fatalf("provider notice should warn that later messages may stay untranslated: %#v", discord.channelMessages[0])
 	}
 
