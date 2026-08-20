@@ -1032,6 +1032,9 @@ func TestOpenAITranslatorDoesNotRetryClientHTTPError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+	if errors.Is(err, errTranslationProvider) {
+		t.Fatalf("client HTTP error must not be a provider outage: %v", err)
+	}
 	if calls.Load() != 1 {
 		t.Fatalf("calls = %d, want 1", calls.Load())
 	}
@@ -1048,6 +1051,9 @@ func TestOpenAITranslatorDoesNotRetryContractViolation(t *testing.T) {
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	if errors.Is(err, errTranslationProvider) {
+		t.Fatalf("contract violation must not be a provider outage: %v", err)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("calls = %d, want 1", calls.Load())
@@ -1066,6 +1072,9 @@ func TestOpenAITranslatorReturnsLastErrorAfterRetryExhausted(t *testing.T) {
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "HTTP 503") {
 		t.Fatalf("error = %v", err)
+	}
+	if !errors.Is(err, errTranslationProvider) {
+		t.Fatalf("exhausted retryable HTTP error must be a provider outage: %v", err)
 	}
 	if calls.Load() != 2 {
 		t.Fatalf("calls = %d, want 2", calls.Load())

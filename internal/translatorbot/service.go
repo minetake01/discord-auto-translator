@@ -45,6 +45,7 @@ type Service struct {
 	messageLocks         sync.Map
 	topicSummaryAttempts sync.Map
 	runTopicSummary      func(func())
+	issueNotices         issueNoticeState
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
@@ -92,15 +93,78 @@ func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetL
 	return ReplaceDiscordRefs(ctx, s.store, guildID, text, targetLanguage)
 }
 
+type issueNoticeKind string
+
+const (
+	issueNoticeProvider  issueNoticeKind = "provider"
+	issueNoticeRateLimit issueNoticeKind = "rate_limit"
+)
+
+// issueNoticeState suppresses repeat source-channel notices while the same
+// provider outage or guild token rate limit continues. Each kind is tracked
+// separately so one condition does not hide the other.
+type issueNoticeState struct {
+	mu       sync.Mutex
+	notified map[issueNoticeKind]map[string]struct{}
+}
+
+func issueNoticeKindFor(err error) (issueNoticeKind, bool) {
+	switch {
+	case errors.Is(err, errTranslationProvider):
+		return issueNoticeProvider, true
+	case errors.Is(err, errTranslationRateLimited):
+		return issueNoticeRateLimit, true
+	default:
+		return "", false
+	}
+}
+
+func (p *issueNoticeState) allow(channelID string, err error) bool {
+	kind, suppress := issueNoticeKindFor(err)
+	if !suppress {
+		return true
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.notified == nil {
+		p.notified = make(map[issueNoticeKind]map[string]struct{})
+	}
+	channels := p.notified[kind]
+	if channels == nil {
+		channels = make(map[string]struct{})
+		p.notified[kind] = channels
+	}
+	if _, already := channels[channelID]; already {
+		return false
+	}
+	channels[channelID] = struct{}{}
+	return true
+}
+
+func (p *issueNoticeState) clear(kind issueNoticeKind) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.notified, kind)
+}
+
 // notifyTranslationIssue posts a localized notice as a reply to the source
 // message when it could not be mirrored. The language is the source channel's
-// registered language, since that is where the notice is shown.
+// registered language, since that is where the notice is shown. Provider
+// outages and token rate limits notify each source channel once until that
+// condition clears.
 func (s *Service) notifyTranslationIssue(channelID, messageID, language string, err error) {
+	if !s.issueNotices.allow(channelID, err) {
+		return
+	}
 	key := uiKeyTranslationFailedNotice
 	if errors.Is(err, errTranslationRateLimited) {
 		key = uiKeyRateLimitNotice
 	}
-	_ = s.discord.SendChannelMessage(channelID, messageID, localizedUIString(language, key))
+	content := localizedUIString(language, key)
+	if errors.Is(err, errTranslationProvider) {
+		content = content + " " + localizedUIString(language, uiKeyProviderMayContinueNotice)
+	}
+	_ = s.discord.SendChannelMessage(channelID, messageID, content)
 }
 
 // translateWithLimit translates content and existing image alt text into every
@@ -127,6 +191,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
+	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	for _, language := range languages {
 		if _, ok := result.Translations[language]; !ok {
@@ -172,6 +237,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 	if err != nil {
 		return nil, err
 	}
+	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	for _, language := range languages {
 		translated, ok := result.Translations[language]
@@ -208,6 +274,7 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	if err != nil {
 		return nil, err
 	}
+	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	for _, language := range languages {
 		translated, ok := result.Translations[language]
@@ -292,6 +359,7 @@ func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared pre
 	if !s.rateLimiter.Allow(guildID, estimate) {
 		return errTranslationRateLimited
 	}
+	s.issueNotices.clear(issueNoticeRateLimit)
 	return nil
 }
 
@@ -699,6 +767,7 @@ func (s *Service) generateAndStoreTopicSummary(ctx context.Context, guildID, loc
 	if err != nil {
 		return err
 	}
+	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, result.InputTokens, result.OutputTokens)
 	if strings.TrimSpace(result.Summary) == "" {
 		return errors.New("empty topic summary")
