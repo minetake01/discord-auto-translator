@@ -499,6 +499,6 @@ Discordゲートウェイ
 
 ```sh
 cp .env.example .env
-# .env を編集して DISCORD_TOKEN と AWS 認証情報を入力
+# .env を編集して DISCORD_TOKEN と OpenAI 互換 API の認証情報を入力
 go run ./cmd/discord-auto-translator
 ```
