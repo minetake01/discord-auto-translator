@@ -292,6 +292,9 @@ func visionFromLoaded(loaded []loadedImageAttachment) []visionImage {
 	}
 	vision := make([]visionImage, 0, len(loaded))
 	for _, item := range loaded {
+		if item.Vision.DataURL == "" {
+			continue
+		}
 		vision = append(vision, item.Vision)
 	}
 	return vision

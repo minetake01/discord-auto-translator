@@ -81,20 +81,20 @@ func nonImageAttachments(attachments []DiscordAttachment) []DiscordAttachment {
 	return out
 }
 
-func (s *Service) downloadImageOriginals(ctx context.Context, attachments []DiscordAttachment) ([]loadedImageAttachment, error) {
+func (s *Service) downloadImageOriginals(ctx context.Context, attachments []DiscordAttachment) []loadedImageAttachment {
 	if len(attachments) == 0 {
-		return nil, nil
+		return nil
 	}
 	client := s.imageHTTPClient()
 	loaded := make([]loadedImageAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
 		original, err := fetchImageBytes(ctx, client, attachment.URL)
 		if err != nil {
-			return nil, fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)
+			continue
 		}
 		loaded = append(loaded, loadedImageAttachment{Attachment: attachment, Original: original})
 	}
-	return loaded, nil
+	return loaded
 }
 
 func (s *Service) loadImageAttachments(ctx context.Context, attachments []DiscordAttachment) ([]loadedImageAttachment, error) {
@@ -110,21 +110,15 @@ func (s *Service) loadImageAttachments(ctx context.Context, attachments []Discor
 	for _, attachment := range attachments {
 		original, err := fetchImageBytes(ctx, client, attachment.URL)
 		if err != nil {
-			return nil, fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)
+			continue
 		}
+		item := loadedImageAttachment{Attachment: attachment, Original: original}
 		jpegBytes, err := resizeImageForVision(original)
-		if err != nil {
-			return nil, fmt.Errorf("attachment %q: %w", attachmentFileName(attachment), err)
+		if err == nil && totalVisionBytes+len(jpegBytes) <= visionMaxTotalBytes {
+			totalVisionBytes += len(jpegBytes)
+			item.Vision = visionImage{DataURL: jpegDataURL(jpegBytes)}
 		}
-		totalVisionBytes += len(jpegBytes)
-		if totalVisionBytes > visionMaxTotalBytes {
-			return nil, fmt.Errorf("resized image attachments exceed %d bytes", visionMaxTotalBytes)
-		}
-		loaded = append(loaded, loadedImageAttachment{
-			Attachment: attachment,
-			Original:   original,
-			Vision:     visionImage{DataURL: jpegDataURL(jpegBytes)},
-		})
+		loaded = append(loaded, item)
 	}
 	return loaded, nil
 }
@@ -452,16 +446,29 @@ func translationAttachmentsFromLoaded(loaded []loadedImageAttachment) []Translat
 	return out
 }
 
-func sourceImageDescriptions(attachments []DiscordAttachment) []string {
-	images := imageAttachmentsOnly(attachments)
-	if len(images) == 0 {
-		return nil
+func imagesNotReuploaded(attachments []DiscordAttachment, loaded []loadedImageAttachment) []DiscordAttachment {
+	ok := make(map[string]struct{}, len(loaded))
+	for _, item := range loaded {
+		if url := strings.TrimSpace(item.Attachment.URL); url != "" {
+			ok[url] = struct{}{}
+		}
 	}
-	out := make([]string, len(images))
-	for i, attachment := range images {
-		out[i] = strings.TrimSpace(attachment.Description)
+	skipped := make([]DiscordAttachment, 0)
+	for _, attachment := range imageAttachmentsOnly(attachments) {
+		if _, have := ok[strings.TrimSpace(attachment.URL)]; have {
+			continue
+		}
+		skipped = append(skipped, attachment)
 	}
-	return out
+	return skipped
+}
+
+func messageContentWithLoadedImages(content string, attachments []DiscordAttachment, stickers []DiscordSticker, loaded []loadedImageAttachment) (string, error) {
+	content, err := messageContentWithAssetURLs(content, attachments, stickers)
+	if err != nil {
+		return "", err
+	}
+	return messageContentWithAllAssetURLs(content, imagesNotReuploaded(attachments, loaded), nil)
 }
 
 func attachmentsFromLoaded(loaded []loadedImageAttachment) []DiscordAttachment {

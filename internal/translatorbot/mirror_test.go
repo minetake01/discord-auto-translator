@@ -207,6 +207,38 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 }
 
 // SPEC 3.2 message mirroring
+func TestHandleMessageCreateSkipsFailedImageFetchWithoutNotice(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	service.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusBadGateway, Body: http.NoBody}, nil
+	})}
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "画像です",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", Filename: "image.png", ContentType: "image/png"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.channelMessages) != 0 {
+		t.Fatalf("image fetch failure must not notify: %#v", discord.channelMessages)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if got := discord.sent[0].Content; got != "[en] 画像です\nhttps://cdn.discordapp.com/attachments/1/2/image.png" {
+		t.Fatalf("content = %q", got)
+	}
+	if len(discord.sent[0].Files) != 0 {
+		t.Fatalf("failed image fetch must not reupload: %#v", discord.sent[0].Files)
+	}
+}
+
+// SPEC 3.2 message mirroring
 func TestHandleMessageCreateTranslatesExistingImageAltText(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
