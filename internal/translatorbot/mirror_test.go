@@ -679,6 +679,9 @@ func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	if !strings.Contains(notice.content, "レート制限") {
 		t.Fatalf("unexpected notification: %#v", notice)
 	}
+	if !strings.Contains(notice.content, "制限が解除されるまで") {
+		t.Fatalf("rate-limit notice should warn that later messages may stay untranslated: %#v", notice)
+	}
 	if len(discord.sent) != 0 {
 		t.Fatalf("unexpected webhook sends: %#v", discord.sent)
 	}
@@ -709,6 +712,9 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	if !strings.Contains(notice.content, "翻訳に失敗") {
 		t.Fatalf("unexpected notification: %#v", notice)
 	}
+	if strings.Contains(notice.content, "しばらくメッセージが翻訳されない") {
+		t.Fatalf("per-message failures must not warn about later untranslated messages: %#v", notice)
+	}
 	if len(discord.sent) != 0 {
 		t.Fatalf("unexpected webhook sends: %#v", discord.sent)
 	}
@@ -718,6 +724,177 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	}
 	if len(links) != 0 {
 		t.Fatalf("unexpected links: %#v", links)
+	}
+}
+
+func postSourceMessage(t *testing.T, service *Service, channelID, messageID, content string) error {
+	t.Helper()
+	return service.HandleMessageCreate(context.Background(), DiscordMessage{
+		ID: messageID, ChannelID: channelID, GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: content,
+	})
+}
+
+func noticeReplyIDs(calls []channelMessageCall) []string {
+	ids := make([]string, 0, len(calls))
+	for _, call := range calls {
+		ids = append(ids, call.replyToMessageID)
+	}
+	return ids
+}
+
+// SPEC 3.2 message mirroring
+func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &stickyErrorTranslator{err: errTranslationProvider}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	if err := postSourceMessage(t, service, "ja", "100000000000000001", "hello"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if err := postSourceMessage(t, service, "ja", "100000000000000002", "again"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 1 || got[0] != "100000000000000001" {
+		t.Fatalf("same-channel notices = %#v, want first message only", discord.channelMessages)
+	}
+	if !strings.Contains(discord.channelMessages[0].content, "外部のサーバーが復旧するまで") {
+		t.Fatalf("provider notice should warn that later messages may stay untranslated: %#v", discord.channelMessages[0])
+	}
+
+	if err := postSourceMessage(t, service, "en", "100000000000000003", "hello from en"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 2 || got[1] != "100000000000000003" {
+		t.Fatalf("peer-channel notices = %#v, want one per source channel", discord.channelMessages)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "https://example.com/page",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.channelMessages) != 2 {
+		t.Fatalf("URL-only skip must not notify: %#v", discord.channelMessages)
+	}
+
+	if err := postSourceMessage(t, service, "ja", "100000000000000005", "still down"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if len(discord.channelMessages) != 2 {
+		t.Fatalf("skip-translation success must not reset outage notices: %#v", discord.channelMessages)
+	}
+
+	translator.setErr(nil)
+	sentBefore := len(discord.sent)
+	if err := postSourceMessage(t, service, "ja", "100000000000000006", "recovered"); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) == sentBefore {
+		t.Fatal("expected mirrored message after recovery")
+	}
+
+	translator.setErr(errTranslationProvider)
+	if err := postSourceMessage(t, service, "ja", "100000000000000007", "down again"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 3 || got[2] != "100000000000000007" {
+		t.Fatalf("after recovery notices = %#v, want a new notice", discord.channelMessages)
+	}
+}
+
+// SPEC 3.2 message mirroring
+func TestHandleMessageCreateKeepsPerMessageNoticesForNonProviderFailures(t *testing.T) {
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &stickyErrorTranslator{err: errors.New("translation failed")})
+	seedGroup(t, store)
+
+	if err := postSourceMessage(t, service, "ja", "100000000000000001", "hello"); err == nil {
+		t.Fatal("expected translation error")
+	}
+	if err := postSourceMessage(t, service, "ja", "100000000000000002", "again"); err == nil {
+		t.Fatal("expected translation error")
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 2 {
+		t.Fatalf("non-provider failures must notify every message, got %#v", discord.channelMessages)
+	}
+	if strings.Contains(discord.channelMessages[0].content, "しばらくメッセージが翻訳されない") {
+		t.Fatalf("per-message failures must not warn about later untranslated messages: %#v", discord.channelMessages[0])
+	}
+}
+
+const rateLimitOversizeContent = "this message should exceed the tiny rate limit"
+
+// SPEC 3.2 message mirroring
+func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	service.SetRateLimiter(NewTokenRateLimiter(10))
+	seedGroup(t, store)
+
+	if err := postSourceMessage(t, service, "ja", "100000000000000001", rateLimitOversizeContent); err != nil {
+		t.Fatal(err)
+	}
+	if err := postSourceMessage(t, service, "ja", "100000000000000002", rateLimitOversizeContent); err != nil {
+		t.Fatal(err)
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 1 || got[0] != "100000000000000001" {
+		t.Fatalf("same-channel notices = %#v, want first message only", discord.channelMessages)
+	}
+	notice := discord.channelMessages[0]
+	if !strings.Contains(notice.content, "レート制限") {
+		t.Fatalf("unexpected notification: %#v", notice)
+	}
+	if !strings.Contains(notice.content, "制限が解除されるまで") {
+		t.Fatalf("rate-limit notice should warn that later messages may stay untranslated: %#v", notice)
+	}
+
+	if err := postSourceMessage(t, service, "en", "100000000000000003", rateLimitOversizeContent); err != nil {
+		t.Fatal(err)
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 2 || got[1] != "100000000000000003" {
+		t.Fatalf("peer-channel notices = %#v, want one per source channel", discord.channelMessages)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "https://example.com/page",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.channelMessages) != 2 {
+		t.Fatalf("URL-only skip must not notify: %#v", discord.channelMessages)
+	}
+
+	if err := postSourceMessage(t, service, "ja", "100000000000000005", rateLimitOversizeContent); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.channelMessages) != 2 {
+		t.Fatalf("skip-translation success must not reset rate-limit notices: %#v", discord.channelMessages)
+	}
+
+	service.SetRateLimiter(NewTokenRateLimiter(100000))
+	sentBefore := len(discord.sent)
+	if err := postSourceMessage(t, service, "ja", "100000000000000006", "recovered"); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) == sentBefore {
+		t.Fatal("expected mirrored message after rate limit recovered")
+	}
+
+	service.SetRateLimiter(NewTokenRateLimiter(10))
+	if err := postSourceMessage(t, service, "ja", "100000000000000007", rateLimitOversizeContent); err != nil {
+		t.Fatal(err)
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 3 || got[2] != "100000000000000007" {
+		t.Fatalf("after recovery notices = %#v, want a new notice", discord.channelMessages)
 	}
 }
 

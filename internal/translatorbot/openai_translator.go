@@ -506,7 +506,7 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 		}
 		lastErr = err
 		if attempt == openaiRetryAttempts-1 || !isOpenAIRetryable(err) || ctx.Err() != nil {
-			return "", 0, 0, lastErr
+			return "", 0, 0, wrapProviderIssue(lastErr)
 		}
 		timer := time.NewTimer(openaiRetryBackoff)
 		select {
@@ -516,7 +516,21 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 		case <-timer.C:
 		}
 	}
-	return "", 0, 0, lastErr
+	return "", 0, 0, wrapProviderIssue(lastErr)
+}
+
+// errTranslationProvider marks a translation API outage (timeout, transport, or
+// HTTP 429/5xx after retry). Channel notices are shown once per outage.
+var errTranslationProvider = errors.New("translation provider unavailable")
+
+func wrapProviderIssue(err error) error {
+	if err == nil || errors.Is(err, errTranslationProvider) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	if isOpenAIRetryable(err) {
+		return fmt.Errorf("%w: %w", errTranslationProvider, err)
+	}
+	return err
 }
 
 func isOpenAIRetryable(err error) bool {

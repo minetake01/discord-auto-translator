@@ -385,6 +385,45 @@ func (s *selectiveFailTranslator) TranslateThreadCreateMulti(ctx context.Context
 	}
 	return ThreadCreateMultiTranslationResult{Translations: out}, nil
 }
+
+type stickyErrorTranslator struct {
+	echoTranslator
+	mu  sync.Mutex
+	err error
+}
+
+func (s *stickyErrorTranslator) setErr(err error) {
+	s.mu.Lock()
+	s.err = err
+	s.mu.Unlock()
+}
+
+func (s *stickyErrorTranslator) currentErr() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
+}
+
+func (s *stickyErrorTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+	if err := s.currentErr(); err != nil {
+		return MultiTranslationResult{}, err
+	}
+	return s.echoTranslator.TranslateMulti(ctx, prepared)
+}
+
+func (s *stickyErrorTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
+	if err := s.currentErr(); err != nil {
+		return PollMultiTranslationResult{}, err
+	}
+	return s.echoTranslator.TranslatePollMulti(ctx, prepared)
+}
+
+func (s *stickyErrorTranslator) TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error) {
+	if err := s.currentErr(); err != nil {
+		return ThreadCreateMultiTranslationResult{}, err
+	}
+	return s.echoTranslator.TranslateThreadCreateMulti(ctx, prepared)
+}
 func seedThreeChannelGroup(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
