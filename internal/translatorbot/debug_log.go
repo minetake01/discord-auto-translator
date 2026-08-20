@@ -13,9 +13,10 @@ import (
 // prompts and responses, so an unbounded file would fill the deployment disk.
 const debugLogMaxBytes = 64 << 20
 
-// DebugLog appends one JSON object per line to a file for failure diagnosis.
-// It is opt-in: nothing is written unless the operator configures a path.
-// Entries contain message content, so the file is created with 0600.
+// DebugLog appends one JSON object per line to a file for diagnosis and
+// measurement. It is opt-in: nothing is written unless the operator
+// configures a path. Entries contain message content, so the file is created
+// with 0600.
 type DebugLog struct {
 	mu   sync.Mutex
 	path string

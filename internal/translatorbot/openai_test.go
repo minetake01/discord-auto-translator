@@ -775,6 +775,113 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 	if string(entry.Response) != response || entry.ResponseText != "" {
 		t.Fatalf("logged response = %s", entry.Response)
 	}
+	if entry.Model != testOpenAIModel || entry.SchemaName != openaiMessageTranslationSchemaName {
+		t.Fatalf("model/schema = %q %q", entry.Model, entry.SchemaName)
+	}
+	if entry.SystemInstruction == "" || !strings.Contains(entry.UserPromptVariable, "<final_message>こんにちは [USER:Alice]</final_message>") {
+		t.Fatalf("logged synthesized prompts system=%q frozen=%q variable=%q", entry.SystemInstruction, entry.UserPromptFrozen, entry.UserPromptVariable)
+	}
+	if entry.Usage == nil || entry.Usage.PromptTokens != 1 || entry.Usage.CompletionTokens != 2 {
+		t.Fatalf("logged usage = %#v", entry.Usage)
+	}
+	if entry.Usage.ReasoningTokens == nil || *entry.Usage.ReasoningTokens != 7 {
+		t.Fatalf("logged reasoning tokens = %#v", entry.Usage.ReasoningTokens)
+	}
+	if entry.PromptCacheHit != nil {
+		t.Fatalf("cache hit should be unknown without cached_tokens: %#v", entry.PromptCacheHit)
+	}
+}
+
+func TestOpenAITranslatorDebugLogRecordsCacheHitAndCost(t *testing.T) {
+	response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}"}}],"usage":{"prompt_tokens":1200,"completion_tokens":40,"total_tokens":1240,"cost":0.00014,"prompt_tokens_details":{"cached_tokens":800},"completion_tokens_details":{"reasoning_tokens":5}}}`
+	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
+	})
+	translator, path := debugLoggingTranslator(t, client)
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{
+		GuildID: "guild-1", MessageID: "message-2", PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "start1",
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := singleDebugLogEntry(t, path)
+	if !entry.PromptCacheTTLSent {
+		t.Fatal("first use of a cache key should send ttl")
+	}
+	if entry.PromptCacheKey != "guild:g:group:start1" {
+		t.Fatalf("cache key = %q", entry.PromptCacheKey)
+	}
+	if entry.Usage == nil || entry.Usage.CachedTokens == nil || *entry.Usage.CachedTokens != 800 {
+		t.Fatalf("cached tokens = %#v", entry.Usage)
+	}
+	if entry.PromptCacheHit == nil || !*entry.PromptCacheHit {
+		t.Fatalf("prompt_cache_hit = %#v", entry.PromptCacheHit)
+	}
+	if entry.Usage.CostUSD == nil || strconv.FormatFloat(*entry.Usage.CostUSD, 'f', 8, 64) != strconv.FormatFloat(0.00014, 'f', 8, 64) {
+		t.Fatalf("cost = %#v", entry.Usage.CostUSD)
+	}
+}
+
+func TestExtractLoggedUsageFromProviderShapes(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want openaiLoggedUsage
+	}{
+		{
+			name: "openai cached_tokens in details",
+			body: `{"usage":{"prompt_tokens":100,"completion_tokens":20,"prompt_tokens_details":{"cached_tokens":80}}}`,
+			want: openaiLoggedUsage{PromptTokens: 100, CompletionTokens: 20, CachedTokens: intPtr(80)},
+		},
+		{
+			name: "openrouter cost and cache miss",
+			body: `{"usage":{"prompt_tokens":50,"completion_tokens":10,"total_tokens":60,"cost":0.0002,"prompt_tokens_details":{"cached_tokens":0}}}`,
+			want: openaiLoggedUsage{PromptTokens: 50, CompletionTokens: 10, TotalTokens: 60, CachedTokens: intPtr(0), CostUSD: floatPtr(0.0002)},
+		},
+		{
+			name: "top-level cached_tokens fallback",
+			body: `{"usage":{"prompt_tokens":10,"completion_tokens":2,"cached_tokens":4}}`,
+			want: openaiLoggedUsage{PromptTokens: 10, CompletionTokens: 2, CachedTokens: intPtr(4)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractLoggedUsage([]byte(tt.body))
+			if got == nil {
+				t.Fatal("usage is nil")
+			}
+			if got.PromptTokens != tt.want.PromptTokens || got.CompletionTokens != tt.want.CompletionTokens || got.TotalTokens != tt.want.TotalTokens {
+				t.Fatalf("tokens = %#v, want %#v", got, tt.want)
+			}
+			if !intPtrEqual(got.CachedTokens, tt.want.CachedTokens) {
+				t.Fatalf("cached = %#v, want %#v", got.CachedTokens, tt.want.CachedTokens)
+			}
+			if !floatPtrEqual(got.CostUSD, tt.want.CostUSD) {
+				t.Fatalf("cost = %#v, want %#v", got.CostUSD, tt.want.CostUSD)
+			}
+		})
+	}
+	if usage := extractLoggedUsage([]byte(`{"choices":[]}`)); usage != nil {
+		t.Fatalf("missing usage should be nil, got %#v", usage)
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+func floatPtr(v float64) *float64 { return &v }
+
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func floatPtrEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func TestOpenAITranslatorDebugLogRecordsProviderErrorBody(t *testing.T) {
