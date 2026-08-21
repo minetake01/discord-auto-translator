@@ -790,6 +790,57 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 	if entry.PromptCacheHit != nil {
 		t.Fatalf("cache hit should be unknown without cached_tokens: %#v", entry.PromptCacheHit)
 	}
+	if entry.Attempt != 1 || entry.Ended == nil || entry.WaitMS == nil || entry.ReadMS == nil {
+		t.Fatalf("timing fields = attempt=%d ended=%v wait=%v read=%v", entry.Attempt, entry.Ended, entry.WaitMS, entry.ReadMS)
+	}
+}
+
+func TestOpenAITranslatorDebugLogRecordsTimingFromSameRoundTrip(t *testing.T) {
+	response := `{"id":"chatcmpl-1","created":1700000000,"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_time":0.53,"queue_time":0.01}}`
+	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		time.Sleep(25 * time.Millisecond)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Openai-Processing-Ms": []string{"790"},
+				"Server-Timing":        []string{"total;dur=800"},
+			},
+			Body: io.NopCloser(strings.NewReader(response)),
+		}, nil
+	})
+	translator, path := debugLoggingTranslator(t, client)
+	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	entry := singleDebugLogEntry(t, path)
+	if entry.Attempt != 1 {
+		t.Fatalf("attempt = %d", entry.Attempt)
+	}
+	if entry.WaitMS == nil || *entry.WaitMS < 20 {
+		t.Fatalf("wait_ms = %#v, want at least 20ms of HTTP wait", entry.WaitMS)
+	}
+	if entry.ReadMS == nil {
+		t.Fatal("read_ms missing")
+	}
+	if entry.DurationMS < *entry.WaitMS {
+		t.Fatalf("duration_ms=%d wait_ms=%d", entry.DurationMS, *entry.WaitMS)
+	}
+	if entry.Ended == nil || entry.Ended.Before(entry.Time) {
+		t.Fatalf("ended=%v time=%v", entry.Ended, entry.Time)
+	}
+	if entry.ResponseCreated == nil || *entry.ResponseCreated != 1700000000 {
+		t.Fatalf("response_created = %#v", entry.ResponseCreated)
+	}
+	if entry.ProcessingMS == nil || *entry.ProcessingMS != 790 {
+		t.Fatalf("processing_ms = %#v", entry.ProcessingMS)
+	}
+	if entry.ServerTiming != "total;dur=800" {
+		t.Fatalf("server_timing = %q", entry.ServerTiming)
+	}
+	if entry.Usage == nil || !floatPtrEqual(entry.Usage.TotalTime, floatPtr(0.53)) {
+		t.Fatalf("usage total_time = %#v", entry.Usage)
+	}
 }
 
 func TestOpenAITranslatorDebugLogRecordsCacheHitAndCost(t *testing.T) {
@@ -863,6 +914,13 @@ func TestExtractLoggedUsageFromProviderShapes(t *testing.T) {
 	}
 	if usage := extractLoggedUsage([]byte(`{"choices":[]}`)); usage != nil {
 		t.Fatalf("missing usage should be nil, got %#v", usage)
+	}
+	got := extractLoggedUsage([]byte(`{"usage":{"prompt_tokens":1,"completion_tokens":1,"queue_time":0.01,"prompt_time":0.02,"completion_time":0.5,"total_time":0.53}}`))
+	if got == nil || !floatPtrEqual(got.TotalTime, floatPtr(0.53)) || !floatPtrEqual(got.QueueTime, floatPtr(0.01)) {
+		t.Fatalf("provider timing = %#v", got)
+	}
+	if created := extractResponseCreated([]byte(`{"created":1700000000,"choices":[]}`)); created == nil || *created != 1700000000 {
+		t.Fatalf("created = %#v", created)
 	}
 }
 
