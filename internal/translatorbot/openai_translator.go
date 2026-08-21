@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,6 +68,13 @@ type openaiDebugEntry struct {
 	SchemaName         string             `json:"schema_name,omitempty"`
 	TargetLanguages    []string           `json:"target_languages"`
 	DurationMS         int64              `json:"duration_ms"`
+	WaitMS             *int64             `json:"wait_ms,omitempty"`
+	ReadMS             *int64             `json:"read_ms,omitempty"`
+	Ended              *time.Time         `json:"ended,omitempty"`
+	Attempt            int                `json:"attempt,omitempty"`
+	ResponseCreated    *int64             `json:"response_created,omitempty"`
+	ProcessingMS       *int64             `json:"processing_ms,omitempty"`
+	ServerTiming       string             `json:"server_timing,omitempty"`
 	PromptCacheKey     string             `json:"prompt_cache_key,omitempty"`
 	PromptCacheTTLSent bool               `json:"prompt_cache_ttl_sent"`
 	PromptCacheHit     *bool              `json:"prompt_cache_hit,omitempty"`
@@ -93,6 +101,10 @@ type openaiLoggedUsage struct {
 	CacheWriteTokens *int     `json:"cache_write_tokens,omitempty"`
 	ReasoningTokens  *int     `json:"reasoning_tokens,omitempty"`
 	CostUSD          *float64 `json:"cost_usd,omitempty"`
+	QueueTime        *float64 `json:"queue_time,omitempty"`
+	PromptTime       *float64 `json:"prompt_time,omitempty"`
+	CompletionTime   *float64 `json:"completion_time,omitempty"`
+	TotalTime        *float64 `json:"total_time,omitempty"`
 }
 
 type openaiChatCompletionRequest struct {
@@ -499,7 +511,7 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 	var lastErr error
 	for attempt := 0; attempt < openaiRetryAttempts; attempt++ {
 		attemptCtx, cancel := context.WithTimeout(ctx, openaiRequestTimeout)
-		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, schemaName, jsonSchema)
+		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, schemaName, jsonSchema, attempt+1)
 		cancel()
 		if err == nil {
 			return text, inputTokens, outputTokens, nil
@@ -579,7 +591,7 @@ func openaiUserContent(images []visionImage, frozen, variable string) json.RawMe
 	return encoded
 }
 
-func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage) (text string, inputTokens, outputTokens int, err error) {
+func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage, attempt int) (text string, inputTokens, outputTokens int, err error) {
 	payload := openaiChatCompletionRequest{
 		Model: t.model,
 		Messages: []openaiChatMessage{
@@ -606,7 +618,7 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		payload.PromptCacheOptions = &openaiPromptCacheOptions{Mode: "explicit", TTL: promptCacheTTLText}
 		wroteTTL = true
 	}
-	start := t.now()
+	start := time.Now()
 	entry := openaiDebugEntry{
 		Time:               start,
 		GuildID:            prepared.guildID,
@@ -614,6 +626,7 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		Model:              t.model,
 		SchemaName:         schemaName,
 		TargetLanguages:    prepared.targetLanguages,
+		Attempt:            attempt,
 		PromptCacheKey:     prepared.promptCacheKey,
 		PromptCacheTTLSent: wroteTTL,
 		SystemInstruction:  prepared.systemInstruction,
@@ -622,7 +635,9 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		VisionImageCount:   len(prepared.visionImages),
 	}
 	defer func() {
-		entry.DurationMS = t.now().Sub(start).Milliseconds()
+		end := time.Now()
+		entry.Ended = &end
+		entry.DurationMS = elapsedMS(start)
 		if err != nil {
 			entry.Error = err.Error()
 		}
@@ -641,7 +656,10 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+t.apiKey)
+	waitStart := time.Now()
 	response, err := t.client.Do(req)
+	waitMS := elapsedMS(waitStart)
+	entry.WaitMS = &waitMS
 	if err != nil {
 		return "", 0, 0, fmt.Errorf("OpenAI translation request: %w", err)
 	}
@@ -650,12 +668,18 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	}
 	defer response.Body.Close()
 	entry.HTTPStatus = response.StatusCode
+	entry.ProcessingMS = headerInt64(response.Header, "openai-processing-ms", "x-openai-processing-ms")
+	entry.ServerTiming = strings.TrimSpace(response.Header.Get("Server-Timing"))
+	readStart := time.Now()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, 8<<20))
+	readMS := elapsedMS(readStart)
+	entry.ReadMS = &readMS
 	if err != nil {
 		return "", 0, 0, errors.New("read OpenAI translation response")
 	}
 	entry.recordResponse(responseBody)
 	entry.Usage = extractLoggedUsage(responseBody)
+	entry.ResponseCreated = extractResponseCreated(responseBody)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", 0, 0, openaiHTTPError(response, responseBody)
 	}
@@ -720,6 +744,10 @@ func extractLoggedUsage(body []byte) *openaiLoggedUsage {
 			CachedTokens        *int     `json:"cached_tokens"`
 			CacheWriteTokens    *int     `json:"cache_write_tokens"`
 			Cost                *float64 `json:"cost"`
+			QueueTime           *float64 `json:"queue_time"`
+			PromptTime          *float64 `json:"prompt_time"`
+			CompletionTime      *float64 `json:"completion_time"`
+			TotalTime           *float64 `json:"total_time"`
 			PromptTokensDetails *struct {
 				CachedTokens     *int `json:"cached_tokens"`
 				CacheWriteTokens *int `json:"cache_write_tokens"`
@@ -740,6 +768,10 @@ func extractLoggedUsage(body []byte) *openaiLoggedUsage {
 		CostUSD:          u.Cost,
 		CachedTokens:     u.CachedTokens,
 		CacheWriteTokens: u.CacheWriteTokens,
+		QueueTime:        u.QueueTime,
+		PromptTime:       u.PromptTime,
+		CompletionTime:   u.CompletionTime,
+		TotalTime:        u.TotalTime,
 	}
 	if details := u.PromptTokensDetails; details != nil {
 		if details.CachedTokens != nil {
@@ -761,6 +793,45 @@ func promptCacheHit(usage *openaiLoggedUsage) *bool {
 	}
 	hit := *usage.CachedTokens > 0
 	return &hit
+}
+
+func extractResponseCreated(body []byte) *int64 {
+	if !json.Valid(body) {
+		return nil
+	}
+	var payload struct {
+		Created *int64 `json:"created"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.Created == nil {
+		return nil
+	}
+	return payload.Created
+}
+
+func elapsedMS(start time.Time) int64 {
+	ms := time.Since(start).Milliseconds()
+	if ms < 0 {
+		return 0
+	}
+	return ms
+}
+
+func headerInt64(h http.Header, names ...string) *int64 {
+	if h == nil {
+		return nil
+	}
+	for _, name := range names {
+		raw := strings.TrimSpace(h.Get(name))
+		if raw == "" {
+			continue
+		}
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			continue
+		}
+		return &v
+	}
+	return nil
 }
 
 func openaiHTTPError(response *http.Response, body []byte) error {

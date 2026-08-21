@@ -79,6 +79,11 @@ func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 		PromptCacheKey:     "guild:g:group:start1",
 		PromptCacheTTLSent: &ttl,
 		PromptCacheHit:     &hit,
+		DurationMS:         812,
+		WaitMS:             int64Ptr(800),
+		ReadMS:             int64Ptr(5),
+		Attempt:            1,
+		ProcessingMS:       int64Ptr(790),
 		SystemInstruction:  "Translate faithfully.",
 		UserPromptFrozen:   "<translation_request><target_languages>en</target_languages>",
 		UserPromptVariable: "<final_message>こんにちは</final_message></translation_request>",
@@ -96,6 +101,7 @@ func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 		"model: qwen/qwen3.6-35b-a3b",
 		"cache_key: guild:g:group:start1",
 		"cache: hit  cached=800/1200  ttl_sent=false",
+		"timing: duration=812ms  wait=800ms  read=5ms  attempt=1  processing=790ms",
 		"cost_usd: $0.00014",
 		"tokens: in=1200 cached=800 out=40",
 		"source: こんにちは",
@@ -133,9 +139,9 @@ func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
 	cost1, cost2 := 0.0002, 0.0001
 	ttlTrue, ttlFalse := true, false
 	entries := []logEntry{
-		{PromptCacheHit: &hit, PromptCacheTTLSent: &ttlTrue, Usage: &loggedUsage{PromptTokens: 1000, CachedTokens: &cachedHit, CompletionTokens: 10, CostUSD: &cost1}},
-		{PromptCacheHit: &miss, PromptCacheTTLSent: &ttlFalse, Usage: &loggedUsage{PromptTokens: 200, CachedTokens: &cachedMiss, CompletionTokens: 5, CostUSD: &cost2}},
-		{Usage: &loggedUsage{PromptTokens: 50, CompletionTokens: 2}},
+		{DurationMS: 100, WaitMS: int64Ptr(90), PromptCacheHit: &hit, PromptCacheTTLSent: &ttlTrue, Usage: &loggedUsage{PromptTokens: 1000, CachedTokens: &cachedHit, CompletionTokens: 10, CostUSD: &cost1}},
+		{DurationMS: 300, WaitMS: int64Ptr(280), PromptCacheHit: &miss, PromptCacheTTLSent: &ttlFalse, Usage: &loggedUsage{PromptTokens: 200, CachedTokens: &cachedMiss, CompletionTokens: 5, CostUSD: &cost2}},
+		{DurationMS: 200, Usage: &loggedUsage{PromptTokens: 50, CompletionTokens: 2}},
 	}
 
 	output := captureStdout(t, func() { printStats(entries) })
@@ -144,6 +150,8 @@ func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
 		"cost_usd=$0.0003 (2/3 reported)",
 		"tokens: prompt=1250 cached=800 (64.0%) completion=17",
 		"cache: hit=1 miss=1 unknown=1 hit_rate=50.0% ttl_writes=1",
+		"duration_ms: avg=200 min=100 max=300 n=3",
+		"wait_ms: avg=185 min=90 max=280 n=2",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stats output missing %q\n%s", want, output)
@@ -186,3 +194,5 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	return buf.String()
 }
+
+func int64Ptr(v int64) *int64 { return &v }

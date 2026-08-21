@@ -23,9 +23,9 @@ func main() {
 	guildID := flag.String("guild-id", "", "filter by guild_id")
 	messageID := flag.String("message-id", "", "filter by message_id")
 	limit := flag.Int("limit", 50, "max entries to print after filtering (0 = all; most recent)")
-	detail := flag.Bool("detail", false, "print source excerpt, translations, cache, cost, usage, reasoning, synthesized prompts, and error text")
+	detail := flag.Bool("detail", false, "print source excerpt, translations, cache, cost, timing, usage, reasoning, synthesized prompts, and error text")
 	prompt := flag.Bool("prompt", false, "print the full synthesized system and user prompts")
-	stats := flag.Bool("stats", false, "print cache-hit and cost aggregates for the filtered entries")
+	stats := flag.Bool("stats", false, "print cache-hit, cost, and duration aggregates for the filtered entries")
 	raw := flag.Bool("raw", false, "print the full JSON object for each matching entry")
 	flag.Parse()
 
@@ -112,6 +112,13 @@ type logEntry struct {
 	SchemaName         string
 	TargetLanguages    []string
 	DurationMS         int64
+	WaitMS             *int64
+	ReadMS             *int64
+	Ended              time.Time
+	Attempt            int
+	ResponseCreated    *int64
+	ProcessingMS       *int64
+	ServerTiming       string
 	HTTPStatus         int
 	Error              string
 	PromptCacheKey     string
@@ -136,6 +143,10 @@ type loggedUsage struct {
 	CacheWriteTokens *int
 	ReasoningTokens  *int
 	CostUSD          *float64
+	QueueTime        *float64
+	PromptTime       *float64
+	CompletionTime   *float64
+	TotalTime        *float64
 }
 
 type requestPayload struct {
@@ -163,6 +174,10 @@ type responsePayload struct {
 		CachedTokens        *int     `json:"cached_tokens"`
 		CacheWriteTokens    *int     `json:"cache_write_tokens"`
 		Cost                *float64 `json:"cost"`
+		QueueTime           *float64 `json:"queue_time"`
+		PromptTime          *float64 `json:"prompt_time"`
+		CompletionTime      *float64 `json:"completion_time"`
+		TotalTime           *float64 `json:"total_time"`
 		PromptTokensDetails *struct {
 			CachedTokens     *int `json:"cached_tokens"`
 			CacheWriteTokens *int `json:"cache_write_tokens"`
@@ -319,6 +334,47 @@ func parseEntry(line []byte) (logEntry, error) {
 			return logEntry{}, fmt.Errorf("duration_ms: %w", err)
 		}
 	}
+	if v, ok := raw["wait_ms"]; ok {
+		var wait int64
+		if err := json.Unmarshal(v, &wait); err != nil {
+			return logEntry{}, fmt.Errorf("wait_ms: %w", err)
+		}
+		entry.WaitMS = &wait
+	}
+	if v, ok := raw["read_ms"]; ok {
+		var read int64
+		if err := json.Unmarshal(v, &read); err != nil {
+			return logEntry{}, fmt.Errorf("read_ms: %w", err)
+		}
+		entry.ReadMS = &read
+	}
+	if v, ok := raw["ended"]; ok {
+		var ended time.Time
+		if err := json.Unmarshal(v, &ended); err != nil {
+			return logEntry{}, fmt.Errorf("ended: %w", err)
+		}
+		entry.Ended = ended
+	}
+	if v, ok := raw["attempt"]; ok {
+		if err := json.Unmarshal(v, &entry.Attempt); err != nil {
+			return logEntry{}, fmt.Errorf("attempt: %w", err)
+		}
+	}
+	if v, ok := raw["response_created"]; ok {
+		var created int64
+		if err := json.Unmarshal(v, &created); err != nil {
+			return logEntry{}, fmt.Errorf("response_created: %w", err)
+		}
+		entry.ResponseCreated = &created
+	}
+	if v, ok := raw["processing_ms"]; ok {
+		var processing int64
+		if err := json.Unmarshal(v, &processing); err != nil {
+			return logEntry{}, fmt.Errorf("processing_ms: %w", err)
+		}
+		entry.ProcessingMS = &processing
+	}
+	entry.ServerTiming = decodeString(raw["server_timing"])
 	if v, ok := raw["http_status"]; ok {
 		if err := json.Unmarshal(v, &entry.HTTPStatus); err != nil {
 			return logEntry{}, fmt.Errorf("http_status: %w", err)
@@ -373,6 +429,10 @@ func decodeLoggedUsage(raw json.RawMessage) (*loggedUsage, error) {
 		ReasoningTokens  *int     `json:"reasoning_tokens"`
 		CostUSD          *float64 `json:"cost_usd"`
 		Cost             *float64 `json:"cost"`
+		QueueTime        *float64 `json:"queue_time"`
+		PromptTime       *float64 `json:"prompt_time"`
+		CompletionTime   *float64 `json:"completion_time"`
+		TotalTime        *float64 `json:"total_time"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, err
@@ -389,6 +449,10 @@ func decodeLoggedUsage(raw json.RawMessage) (*loggedUsage, error) {
 		CacheWriteTokens: parsed.CacheWriteTokens,
 		ReasoningTokens:  parsed.ReasoningTokens,
 		CostUSD:          cost,
+		QueueTime:        parsed.QueueTime,
+		PromptTime:       parsed.PromptTime,
+		CompletionTime:   parsed.CompletionTime,
+		TotalTime:        parsed.TotalTime,
 	}, nil
 }
 
@@ -447,6 +511,9 @@ func printDetail(entry logEntry) {
 		fmt.Printf("  cache_key: %s\n", key)
 	}
 	fmt.Printf("  cache: %s\n", formatCacheDetail(entry, usage))
+	if timing := formatTimingDetail(entry, usage); timing != "" {
+		fmt.Printf("  timing: %s\n", timing)
+	}
 	if usage.CostUSD != nil {
 		fmt.Printf("  cost_usd: %s\n", formatUSD(*usage.CostUSD))
 	}
@@ -566,6 +633,13 @@ func printStats(entries []logEntry) {
 	}
 	fmt.Printf("  cache: hit=%d miss=%d unknown=%d hit_rate=%s ttl_writes=%d\n",
 		hits, misses, unknown, hitRate, ttlWrites)
+	printDurationStats("duration_ms", collectInt64(entries, func(e logEntry) (int64, bool) { return e.DurationMS, true }))
+	printDurationStats("wait_ms", collectInt64(entries, func(e logEntry) (int64, bool) {
+		if e.WaitMS == nil {
+			return 0, false
+		}
+		return *e.WaitMS, true
+	}))
 }
 
 func extractFinalMessage(entry logEntry) string {
@@ -661,6 +735,10 @@ func usageFromResponse(raw json.RawMessage) loggedUsage {
 		CachedTokens:     u.CachedTokens,
 		CacheWriteTokens: u.CacheWriteTokens,
 		CostUSD:          u.Cost,
+		QueueTime:        u.QueueTime,
+		PromptTime:       u.PromptTime,
+		CompletionTime:   u.CompletionTime,
+		TotalTime:        u.TotalTime,
 	}
 	if details := u.PromptTokensDetails; details != nil {
 		if details.CachedTokens != nil {
@@ -739,6 +817,99 @@ func formatCacheDetail(entry logEntry, usage loggedUsage) string {
 		parts = append(parts, fmt.Sprintf("ttl_sent=%t", *sent))
 	}
 	return strings.Join(parts, "  ")
+}
+
+func formatTimingDetail(entry logEntry, usage loggedUsage) string {
+	var parts []string
+	parts = append(parts, fmt.Sprintf("duration=%dms", entry.DurationMS))
+	if entry.WaitMS != nil {
+		parts = append(parts, fmt.Sprintf("wait=%dms", *entry.WaitMS))
+	}
+	if entry.ReadMS != nil {
+		parts = append(parts, fmt.Sprintf("read=%dms", *entry.ReadMS))
+	}
+	if entry.Attempt > 0 {
+		parts = append(parts, fmt.Sprintf("attempt=%d", entry.Attempt))
+	}
+	if entry.ProcessingMS != nil {
+		parts = append(parts, fmt.Sprintf("processing=%dms", *entry.ProcessingMS))
+	}
+	if usage.TotalTime != nil {
+		parts = append(parts, "provider_total="+formatSeconds(*usage.TotalTime))
+	}
+	if usage.QueueTime != nil {
+		parts = append(parts, "queue="+formatSeconds(*usage.QueueTime))
+	}
+	if usage.PromptTime != nil {
+		parts = append(parts, "prompt="+formatSeconds(*usage.PromptTime))
+	}
+	if usage.CompletionTime != nil {
+		parts = append(parts, "completion="+formatSeconds(*usage.CompletionTime))
+	}
+	if created := resolvedResponseCreated(entry); created != nil {
+		parts = append(parts, "created="+time.Unix(*created, 0).UTC().Format(time.RFC3339))
+	}
+	if !entry.Ended.IsZero() {
+		parts = append(parts, "ended="+entry.Ended.UTC().Format(time.RFC3339Nano))
+	}
+	if entry.ServerTiming != "" {
+		parts = append(parts, "server_timing="+entry.ServerTiming)
+	}
+	return strings.Join(parts, "  ")
+}
+
+func resolvedResponseCreated(entry logEntry) *int64 {
+	if entry.ResponseCreated != nil {
+		return entry.ResponseCreated
+	}
+	if len(entry.Response) == 0 {
+		return nil
+	}
+	var payload struct {
+		Created *int64 `json:"created"`
+	}
+	if err := json.Unmarshal(entry.Response, &payload); err != nil {
+		return nil
+	}
+	return payload.Created
+}
+
+func formatSeconds(v float64) string {
+	s := strconv.FormatFloat(v, 'f', 4, 64)
+	s = strings.TrimRight(s, "0")
+	s = strings.TrimRight(s, ".")
+	return s + "s"
+}
+
+func collectInt64(entries []logEntry, value func(logEntry) (int64, bool)) []int64 {
+	out := make([]int64, 0, len(entries))
+	for _, entry := range entries {
+		v, ok := value(entry)
+		if !ok {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+func printDurationStats(label string, values []int64) {
+	if len(values) == 0 {
+		return
+	}
+	sum := values[0]
+	min := values[0]
+	max := values[0]
+	for _, v := range values[1:] {
+		sum += v
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+	fmt.Printf("  %s: avg=%d min=%d max=%d n=%d\n", label, sum/int64(len(values)), min, max, len(values))
 }
 
 func formatTokenLine(usage loggedUsage) string {

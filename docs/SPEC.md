@@ -299,7 +299,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 - 話題要約は翻訳を待たせず、捨てた履歴枠だけを対象にする別リクエストである。出力は短い `summary` 文字列で、翻訳の `prompt_cache_key` は共有しない。トークンはギルドの翻訳レート制限に含める。失敗しても翻訳は継続する
 - `finish_reason=length`（`max_tokens`到達）、不正JSON、言語欠落等は全体を fail-closed とし、部分的な翻訳を投稿しない
 - Discord ID などの request metadata は送信しない。既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をアプリログへ出さず、失敗時は安全なtype、code、param、request IDだけを記録する
-- `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査および効果測定用に1往復1行のJSON Linesを指定ファイルへ追記する（リトライ時は最大2行）。合成した system / 凍結ユーザー / 可変ユーザープロンプト、`prompt_cache_key`、TTL write の有無、プロバイダーが報告した `cached_tokens` に基づくキャッシュヒット、usage（input / output / cached / reasoning / 報告されたUSD料金）、リクエストペイロード、生のレスポンス本文、HTTPステータス、所要時間、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、プロバイダーへ送るフィールドも変わらない。料金はプロバイダーが `usage.cost` を返したときだけ記録し、単価表からの推計はしない
+- `TRANSLATION_DEBUG_LOG_PATH` を設定した場合だけ、障害調査および効果測定用に1往復1行のJSON Linesを指定ファイルへ追記する（リトライ時は最大2行）。合成した system / 凍結ユーザー / 可変ユーザープロンプト、`prompt_cache_key`、TTL write の有無、プロバイダーが報告した `cached_tokens` に基づくキャッシュヒット、usage（input / output / cached / reasoning / 報告されたUSD料金）、クライアント実測の所要時間（全体・HTTP待ち・本文読み取り・試行番号・終了時刻）、同じ応答にある場合のみ `created` / `openai-processing-ms` / `Server-Timing` / usage の時間フィールド、リクエストペイロード、生のレスポンス本文、HTTPステータス、失敗理由、相関用のguild ID・message IDを記録する。認証情報は記録せず、プロバイダーへ送るフィールドも変わらない。料金・キャッシュヒット・プロバイダー側の生成時間は応答（およびそのHTTPヘッダ）に含まれているときだけ記録し、追加の generation API や単価表は使わない
 - デプロイ時は5分期限で認証情報・モデルアクセス・レスポンス契約をprewarm検証し、成功後だけバイナリとenvを置換する
 
 ---
