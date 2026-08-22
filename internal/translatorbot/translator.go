@@ -551,7 +551,7 @@ func translationPromptCacheKey(translationContext TranslationContext, kind strin
 	}
 	generation := strings.TrimSpace(translationContext.PromptCacheGeneration)
 	if generation == "" {
-		generation = historyGenerationID(translationContext.History, translationContext.HistoryFrozenCount)
+		generation = historyGenerationID(translationContext.History, "", "")
 	}
 	if strings.TrimSpace(translationContext.TopicSummary) != "" {
 		generation += ":sum"

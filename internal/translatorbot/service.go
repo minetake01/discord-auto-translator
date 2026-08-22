@@ -377,7 +377,7 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 func (s *Service) groupTranslationContext(ctx context.Context, guildID, groupID, contextChannelID, historyChannelID, sourceLanguage, excludeMessageID, replyChannelID, replyMessageID, author, threadName string) TranslationContext {
 	channelIDs, locationKey := s.conversationScope(ctx, guildID, groupID, historyChannelID)
 	replyChain, replyKeys := s.replyChainContext(ctx, replyChannelID, replyMessageID)
-	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, locationKey, excludeMessageID, replyKeys)
+	translationContext := s.translationContext(ctx, guildID, contextChannelID, channelIDs, locationKey, historyChannelID, excludeMessageID, replyKeys)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, guildID, groupID)
 	translationContext.Author = strings.TrimSpace(author)
@@ -463,7 +463,7 @@ func snowflakeIDLess(a, b string) bool {
 	return a < b
 }
 
-func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, locationKey, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
+func (s *Service) translationContext(ctx context.Context, guildID, channelID string, historyChannelIDs []string, locationKey, sourceChannelID, excludeMessageID string, excludeReplyKeys map[string]bool) TranslationContext {
 	translationContext := TranslationContext{
 		GuildID:   guildID,
 		MessageID: excludeMessageID,
@@ -481,18 +481,18 @@ func (s *Service) translationContext(ctx context.Context, guildID, channelID str
 		}),
 	}
 	if len(historyChannelIDs) == 0 {
-		translationContext.PromptCacheGeneration = historyGenerationID(nil, 0)
+		translationContext.PromptCacheGeneration = historyGenerationID(nil, sourceChannelID, excludeMessageID)
 		return translationContext
 	}
 	links, err := s.store.RecentMessageHistory(ctx, historyChannelIDs, excludeMessageID, historyFetchLimit)
 	if err != nil {
-		translationContext.PromptCacheGeneration = historyGenerationID(nil, 0)
+		translationContext.PromptCacheGeneration = historyGenerationID(nil, sourceChannelID, excludeMessageID)
 		return translationContext
 	}
 	history, frozenCount, discarded := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
 	translationContext.History = history
 	translationContext.HistoryFrozenCount = frozenCount
-	translationContext.PromptCacheGeneration = historyGenerationID(history, frozenCount)
+	translationContext.PromptCacheGeneration = historyGenerationID(history, sourceChannelID, excludeMessageID)
 	if summary, err := s.store.TopicSummary(ctx, locationKey, translationContext.PromptCacheGeneration); err == nil {
 		translationContext.TopicSummary = summary
 	}
@@ -702,12 +702,17 @@ func historyLinkHasContext(link MessageLink) bool {
 	return strings.TrimSpace(link.SourceContentSnapshot) != "" || len(imageAttachmentsOnly(link.SourceImageAttachments)) > 0
 }
 
-func historyGenerationID(history []ChatContextMessage, frozenCount int) string {
-	if frozenCount > 0 && len(history) > 0 {
-		return history[0].SourceChannelID + history[0].SourceMessageID
-	}
+func historyGenerationID(history []ChatContextMessage, currentChannelID, currentMessageID string) string {
 	if len(history) > 0 {
 		return history[0].SourceChannelID + history[0].SourceMessageID
+	}
+	channelID := strings.TrimSpace(currentChannelID)
+	messageID := strings.TrimSpace(currentMessageID)
+	if channelID != "" && messageID != "" {
+		return channelID + messageID
+	}
+	if messageID != "" {
+		return messageID
 	}
 	return "empty"
 }

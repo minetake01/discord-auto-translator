@@ -419,6 +419,13 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 	if len(translator.contexts) != 1 {
 		t.Fatalf("expected one batched translation call, got %#v", translator.contexts)
 	}
+	tc := translator.contexts[0]
+	if !strings.HasPrefix(tc.PromptCacheLocation, "guild:g:thread:") {
+		t.Fatalf("thread rename cache location = %q", tc.PromptCacheLocation)
+	}
+	if tc.PromptCacheGeneration != "100000000000000005" {
+		t.Fatalf("thread rename generation = %q, want source thread id", tc.PromptCacheGeneration)
+	}
 	if len(discord.edits) != 2 {
 		t.Fatalf("expected two thread edits, got %#v", discord.edits)
 	}

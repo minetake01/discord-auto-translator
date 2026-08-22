@@ -174,6 +174,80 @@ func TestHandleMessageCreateTagsLoadedOGPImagesAndDoesNotApplyTheirAlts(t *testi
 }
 
 // SPEC 3.8
+func TestHandleMessageCreateReusesPromptCacheGenerationAcrossBurst(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	translator := &echoTranslator{}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	seedGroup(t, store)
+
+	firstID := "100000000000000001"
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: firstID, ChannelID: "ja", GuildID: "guild", AuthorID: "alice",
+		AuthorDisplayName: "alice", Content: "はじめ",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "en", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "続き",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 2 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	first := translator.contexts[0]
+	follow := translator.contexts[1]
+	wantGeneration := "ja" + firstID
+	if first.PromptCacheGeneration != wantGeneration {
+		t.Fatalf("burst start generation = %q, want %q", first.PromptCacheGeneration, wantGeneration)
+	}
+	if follow.PromptCacheGeneration != wantGeneration {
+		t.Fatalf("follow-up generation = %q, want %q", follow.PromptCacheGeneration, wantGeneration)
+	}
+	if first.PromptCacheLocation != "guild:g:group" || follow.PromptCacheLocation != first.PromptCacheLocation {
+		t.Fatalf("location first=%q follow=%q", first.PromptCacheLocation, follow.PromptCacheLocation)
+	}
+}
+
+// SPEC 3.8
+func TestHandleMessageCreateStartsNewPromptCacheGenerationAfterIdleGap(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	translator := &echoTranslator{}
+	service := NewService(store, &fakeDiscordAPI{}, translator)
+	seedGroup(t, store)
+	now := time.Now().UTC()
+	old := snowflakeForTime(now.Add(-21*time.Minute), 1)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: old, SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	current := snowflakeForTime(now, 3)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: current, ChannelID: "ja", GuildID: "guild", AuthorID: "bob",
+		AuthorDisplayName: "bob", Content: "新しい話",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(translator.contexts) != 1 {
+		t.Fatalf("contexts: %#v", translator.contexts)
+	}
+	got := translator.contexts[0]
+	if len(got.History) != 0 {
+		t.Fatalf("idle gap should drop history: %#v", got.History)
+	}
+	want := "ja" + current
+	if got.PromptCacheGeneration != want {
+		t.Fatalf("generation = %q, want current message %q (not empty or previous burst)", got.PromptCacheGeneration, want)
+	}
+}
+
+// SPEC 3.8
 func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
