@@ -94,7 +94,7 @@ func TestIsImageAttachmentUsesContentTypeAndExtension(t *testing.T) {
 func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	texts, alts, err := parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Warning: doors closing",""]}]}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":["Warning: doors closing",""]}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -111,7 +111,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	}
 
 	texts, alts, err = parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Warning: doors closing","","og image caption"]}]}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":["Warning: doors closing","","og image caption"]}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -125,7 +125,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	}
 
 	texts, alts, err = parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["og image caption"]}]}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":["og image caption"]}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -139,7 +139,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	}
 
 	if _, _, err := parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["only one"]}]}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":["only one"]}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -149,7 +149,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	}
 
 	if _, _, err := parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
+		`{"en":{"translated_text":"Hello"}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -159,7 +159,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 	}
 
 	texts, alts, err = parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":[]}]}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":[]}}`,
 		[]string{"en"},
 		p,
 		"こんにちは",
@@ -176,7 +176,7 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 func TestParseMultiTranslationResponseAllowsEmptyTextForImageOnly(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	texts, alts, err := parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"","attachment_descriptions":["Exit"]}]}`,
+		`{"en":{"translated_text":"","attachment_descriptions":["Exit"]}}`,
 		[]string{"en"},
 		p,
 		"",

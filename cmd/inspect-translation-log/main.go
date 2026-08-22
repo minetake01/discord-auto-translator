@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -186,13 +187,6 @@ type responsePayload struct {
 			ReasoningTokens *int `json:"reasoning_tokens"`
 		} `json:"completion_tokens_details"`
 	} `json:"usage"`
-}
-
-type translationPayload struct {
-	Translations []struct {
-		Language       string `json:"language"`
-		TranslatedText string `json:"translated_text"`
-	} `json:"translations"`
 }
 
 var finalMessageRE = regexp.MustCompile(`(?s)<final_message[^>]*>(.*?)</final_message>`)
@@ -1036,19 +1030,35 @@ func parseTranslations(text string) []struct {
 	trimmed = strings.TrimSuffix(trimmed, "```")
 	trimmed = strings.TrimSpace(trimmed)
 
-	var payload translationPayload
-	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil || len(payload) == 0 {
 		return nil
 	}
+	languages := make([]string, 0, len(payload))
+	texts := make(map[string]string, len(payload))
+	for language, raw := range payload {
+		var item struct {
+			TranslatedText *string `json:"translated_text"`
+		}
+		if json.Unmarshal(raw, &item) != nil || item.TranslatedText == nil {
+			continue
+		}
+		languages = append(languages, language)
+		texts[language] = *item.TranslatedText
+	}
+	if len(languages) == 0 {
+		return nil
+	}
+	sort.Strings(languages)
 	out := make([]struct {
 		Language       string
 		TranslatedText string
-	}, 0, len(payload.Translations))
-	for _, item := range payload.Translations {
+	}, 0, len(languages))
+	for _, language := range languages {
 		out = append(out, struct {
 			Language       string
 			TranslatedText string
-		}{Language: item.Language, TranslatedText: item.TranslatedText})
+		}{Language: language, TranslatedText: texts[language]})
 	}
 	return out
 }

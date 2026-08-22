@@ -601,9 +601,9 @@ func TestPrepareTranslationSystemInstructionIsStableAcrossRequestFeatures(t *tes
 	}
 }
 
-func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testing.T) {
+func TestParseMultiTranslationResponseRequiresExactLanguageKeys(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	got, _, err := parseMultiTranslationResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`, []string{"en", "ja"}, p, "Hello", 0)
+	got, _, err := parseMultiTranslationResponse(`{"ja":{"translated_text":"こんにちは"},"en":{"translated_text":"Hello"}}`, []string{"en", "ja"}, p, "Hello", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -612,11 +612,10 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 	}
 
 	for _, raw := range []string{
-		`{"translations":[{"language":"English","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`,
-		`{"translations":[{"language":"en-US","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`,
-		`{"translations":[{"language":"ja","translated_text":"こんにちは"},{"language":"en","translated_text":"Hello"}]}`,
-		`{"translations":[{"language":"en","translated_text":"Hello"}]}`,
-		`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは","extra":true}]}`,
+		`{"English":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは"}}`,
+		`{"en-US":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは"}}`,
+		`{"en":{"translated_text":"Hello"}}`,
+		`{"en":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは","extra":true}}`,
 	} {
 		if _, _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p, "Hello", 0); err == nil {
 			t.Fatalf("expected strict validation error for %s", raw)
@@ -627,7 +626,7 @@ func TestParseMultiTranslationResponseRequiresExactLanguageTagsAndOrder(t *testi
 func TestParseMultiTranslationResponseUnescapesHTMLEntities(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	got, _, err := parseMultiTranslationResponse(
-		`{"translations":[{"language":"en","translated_text":"Working now~&#xA;&gt; Also fixed failures."}]}`,
+		`{"en":{"translated_text":"Working now~&#xA;&gt; Also fixed failures."}}`,
 		[]string{"en"},
 		p,
 		"Working now~\n> Also fixed failures.",
@@ -683,7 +682,7 @@ func TestPrepareThreadCreateTranslationIncludesMessage(t *testing.T) {
 func TestParseThreadCreateTranslationResponse(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	got, err := parseThreadCreateTranslationResponse(
-		`{"translations":[{"language":"en","name":"Topic","message":"Hello"},{"language":"ja","name":"議題","message":"こんにちは"}]}`,
+		`{"ja":{"name":"議題","message":"こんにちは"},"en":{"name":"Topic","message":"Hello"}}`,
 		[]string{"en", "ja"},
 		true,
 		p,
@@ -699,7 +698,7 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 	}
 
 	emptyMessage, err := parseThreadCreateTranslationResponse(
-		`{"translations":[{"language":"en","name":"Topic","message":""}]}`,
+		`{"en":{"name":"Topic","message":""}}`,
 		[]string{"en"},
 		false,
 		p,
@@ -712,7 +711,7 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 	}
 
 	ignoredExtra, err := parseThreadCreateTranslationResponse(
-		`{"translations":[{"language":"en","name":"Topic","message":"ignored"}]}`,
+		`{"en":{"name":"Topic","message":"ignored"}}`,
 		[]string{"en"},
 		false,
 		p,
@@ -731,19 +730,19 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 		wantErrSubstring string
 	}{
 		{
-			raw:              `{"translations":[{"language":"ja","name":"議題","message":"こんにちは"},{"language":"en","name":"Topic","message":"Hello"}]}`,
+			raw:              `{"en":{"name":"Topic","message":"Hello"}}`,
 			langs:            []string{"en", "ja"},
 			messageRequired:  true,
-			wantErrSubstring: "language",
+			wantErrSubstring: "missing language",
 		},
 		{
-			raw:              `{"translations":[{"language":"en","name":"Topic","message":""}]}`,
+			raw:              `{"en":{"name":"Topic","message":""}}`,
 			langs:            []string{"en"},
 			messageRequired:  true,
 			wantErrSubstring: "empty message",
 		},
 		{
-			raw:              `{"translations":[{"language":"en","name":"","message":"Hello"}]}`,
+			raw:              `{"en":{"name":"","message":"Hello"}}`,
 			langs:            []string{"en"},
 			messageRequired:  true,
 			wantErrSubstring: "empty name",

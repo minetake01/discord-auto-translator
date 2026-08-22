@@ -78,9 +78,9 @@ internal/translatorbot/
 
 `OPENAI_BASE_URL`（例: `https://api.openai.com/v1`）に対して非ストリーミング Chat Completions へ HTTP リクエストを送り、`Authorization: Bearer {OPENAI_API_KEY}` で認証します。モデルは `OPENAI_MODEL` をそのまま送ります。`OPENAI_REASONING_EFFORT` を設定したときだけ Chat Completions の `reasoning_effort` を送ります（未設定は省略）。ハイブリッド推論モデルでは `none` で思考トークンを省略できます。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。Discord ID は送らず、既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
-Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の固定JSON Schemaで制約付きデコードします。`language` は当該リクエストの target languages の BCP-47 enum です。system instructionへschemaは複製しません。レスポンスは単一 choice、非空の assistant content、usage、JSON件数・順序・言語タグ・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。OpenRouter（`openrouter.ai`）では `provider.require_parameters=true` を付け、Structured Outputs非対応エンドポイントへは送りません。
+Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の固定JSON Schemaで制約付きデコードします。翻訳用途のルートは当該リクエストの target languages をキーとするオブジェクトです。system instructionへschemaは複製しません。レスポンスは単一 choice、非空の assistant content、usage、JSONキー集合・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。OpenRouter（`openrouter.ai`）では `provider.require_parameters=true` を付け、Structured Outputs非対応エンドポイントへは送りません。
 
-全対象言語を1リクエストで生成します。schema の構造は用途ごとに固定し、`language` enum だけ対象言語に合わせます。件数・順序・言語タグ・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常finish reasonはfail-closedです。分割や別providerへのfallbackはありません。
+全対象言語を1リクエストで生成します。schema の構造は用途ごとに固定し、翻訳用途では対象言語をルートのオブジェクトキーにします。キー集合・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常finish reasonはfail-closedです。分割や別providerへのfallbackはありません。
 
 `--model-prewarm` はDiscord・SQLite・HTTPサーバーを起動せず、認証情報・モデルアクセス・レスポンス契約を最大5分で検証して終了します。デプロイスクリプトはprewarm成功後だけ稼働バイナリを置換します。
 
@@ -229,7 +229,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - 履歴・リプライの `<message>` は `author`（表示名）と原文、任意の `<image>`。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / topic_summary / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は凍結ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
-- メッセージ翻訳の JSON Schema は画像の有無で変えず、`attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同順で少なくとも同数です。余剰要素は適用しません。`language` はリクエストの target languages の BCP-47 enum です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
+- メッセージ翻訳の JSON Schema は画像の有無で変えず、各言語オブジェクトで `attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同順で少なくとも同数です。余剰要素は適用しません。ルートのキーはリクエストの target languages です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
 - Chat Completions リクエストは `prompt_cache_key` を付けます。system と凍結ユーザーパートの推定トークンが 1024 以上のときだけ、凍結テキストパートに `prompt_cache_breakpoint` を置き、そのキーを未保持なら `prompt_cache_options.ttl=1h` を送ります。短いコンテキストでは明示キャッシュを付けず、プロバイダの暗黙キャッシュに任せます。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 

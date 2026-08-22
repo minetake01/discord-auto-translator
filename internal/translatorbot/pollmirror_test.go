@@ -203,7 +203,7 @@ func TestContentWithEmbedQuoteText(t *testing.T) {
 // SPEC 3.2 polls
 func TestParsePollTranslationResponse(t *testing.T) {
 	protector := NewProtector(NameMaps{})
-	raw := `{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`
+	raw := `{"en":{"question":"Favorite?","answers":["Red","Blue"]}}`
 	got, err := parsePollTranslationResponse(raw, []string{"en"}, 2, protector)
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +211,7 @@ func TestParsePollTranslationResponse(t *testing.T) {
 	if got["en"].Question != "Favorite?" || len(got["en"].Answers) != 2 || got["en"].Answers[0] != "Red" {
 		t.Fatalf("got %#v", got)
 	}
-	_, err = parsePollTranslationResponse(`{"translations":[{"language":"en","question":"Q","answers":["only-one"]}]}`, []string{"en"}, 2, protector)
+	_, err = parsePollTranslationResponse(`{"en":{"question":"Q","answers":["only-one"]}}`, []string{"en"}, 2, protector)
 	if err == nil {
 		t.Fatal("expected answer count mismatch")
 	}

@@ -24,7 +24,7 @@ func TestPrintDetailReadsChatCompletionsRoundTrip(t *testing.T) {
 				"finish_reason":"stop",
 				"message":{
 					"role":"assistant",
-					"content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}",
+					"content":"{\"en\":{\"translated_text\":\"Hello\"}}",
 					"reasoning":"keep [USER:Alice] verbatim"
 				}
 			}],
@@ -53,7 +53,7 @@ func TestPrintDetailOmitsReasoningWhenAbsent(t *testing.T) {
 		Response: []byte(`{
 			"choices":[{
 				"finish_reason":"stop",
-				"message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hi\"}]}"}
+				"message":{"role":"assistant","content":"{\"en\":{\"translated_text\":\"Hi\"}}"}
 			}],
 			"usage":{"prompt_tokens":1,"completion_tokens":2}
 		}`),
