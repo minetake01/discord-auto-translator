@@ -309,7 +309,14 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 		var translations MultiTranslationResult
 		if nameChanged && strings.TrimSpace(name) != "" {
 			contextFn := func() TranslationContext {
-				return TranslationContext{GuildID: guildID, MessageID: sourceThreadID, StyleInstructions: s.groupStyleInstructions(ctx, guildID, groupID)}
+				_, locationKey := s.conversationScope(ctx, guildID, groupID, sourceThreadID)
+				return TranslationContext{
+					GuildID:               guildID,
+					MessageID:             sourceThreadID,
+					StyleInstructions:     s.groupStyleInstructions(ctx, guildID, groupID),
+					PromptCacheLocation:   locationKey,
+					PromptCacheGeneration: sourceThreadID,
+				}
 			}
 			languages := make([]string, 0, len(pending))
 			for _, p := range pending {
