@@ -308,16 +308,6 @@ func (t *OpenAITranslator) SetDebugLog(debugLog *DebugLog) {
 	t.debugLog = debugLog
 }
 
-func openaiLanguageSchema(targetLanguages []string) map[string]any {
-	langs := make([]string, len(targetLanguages))
-	copy(langs, targetLanguages)
-	return map[string]any{
-		"type":        "string",
-		"enum":        langs,
-		"description": "BCP-47 language tag from <target_languages>, copied character-for-character.",
-	}
-}
-
 func openaiObjectSchema(required []string, properties map[string]any) map[string]any {
 	return map[string]any{
 		"type":                 "object",
@@ -347,65 +337,57 @@ func marshalOpenAIJSONSchema(schema map[string]any) (json.RawMessage, error) {
 	return encoded, nil
 }
 
-func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+func openaiLanguageKeyedSchema(targetLanguages []string, item map[string]any) (json.RawMessage, error) {
 	if err := requireSchemaLanguages(targetLanguages); err != nil {
 		return nil, err
 	}
-	item := openaiObjectSchema([]string{"language", "translated_text", "attachment_descriptions"}, map[string]any{
-		"language": openaiLanguageSchema(targetLanguages),
+	properties := make(map[string]any, len(targetLanguages))
+	required := make([]string, len(targetLanguages))
+	for i, lang := range targetLanguages {
+		properties[lang] = item
+		required[i] = lang
+	}
+	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
+}
+
+func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"translated_text", "attachment_descriptions"}, map[string]any{
 		"translated_text": map[string]any{
 			"type":        "string",
-			"description": "The <final_message> translated into this item's language. Empty when <final_message> is empty.",
+			"description": "The <final_message> translated into this language. Empty when <final_message> is empty.",
 		},
 		"attachment_descriptions": map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
 			"description": "Exactly as many strings as <attachment> elements, in source order. Translate existing non-empty alt text. If an attachment has no alt, return an empty string. Never invent alt text. Empty array when <attachments> is absent. Do not describe background images from history, replies, or linked pages.",
 		},
-	})
-	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
-		"translations": map[string]any{"type": "array", "items": item},
 	}))
 }
 
 func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	if err := requireSchemaLanguages(targetLanguages); err != nil {
-		return nil, err
-	}
-	item := openaiObjectSchema([]string{"language", "question", "answers"}, map[string]any{
-		"language": openaiLanguageSchema(targetLanguages),
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"question", "answers"}, map[string]any{
 		"question": map[string]any{
 			"type":        "string",
-			"description": "The poll question translated into this item's language.",
+			"description": "The poll question translated into this language.",
 		},
 		"answers": map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
-			"description": "The poll answers translated into this item's language, in source order.",
+			"description": "The poll answers translated into this language, in source order.",
 		},
-	})
-	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
-		"translations": map[string]any{"type": "array", "items": item},
 	}))
 }
 
 func openaiThreadCreateTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	if err := requireSchemaLanguages(targetLanguages); err != nil {
-		return nil, err
-	}
-	item := openaiObjectSchema([]string{"language", "name", "message"}, map[string]any{
-		"language": openaiLanguageSchema(targetLanguages),
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"name", "message"}, map[string]any{
 		"name": map[string]any{
 			"type":        "string",
-			"description": "The thread <name> translated into this item's language.",
+			"description": "The thread <name> translated into this language.",
 		},
 		"message": map[string]any{
 			"type":        "string",
-			"description": "The initial thread <message> translated into this item's language. Empty when <message> was omitted.",
+			"description": "The initial thread <message> translated into this language. Empty when <message> was omitted.",
 		},
-	})
-	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"translations"}, map[string]any{
-		"translations": map[string]any{"type": "array", "items": item},
 	}))
 }
 

@@ -257,7 +257,7 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 		if schemaHasJSONSchemaDump(openaiContentText(t, input.Messages[0].Content)) {
 			t.Fatalf("schema must not be copied into the system instruction: %s", input.Messages[0].Content)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 2)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
 		ServerDescription: longPromptCacheOverview(),
@@ -278,7 +278,7 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 
 func TestOpenAITranslatorIgnoresOGPAltsWhenThereAreNoAttachments(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Linked page hero image"]}]}`, 1, 2)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Linked page hero image"]}}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "see this", TranslationContext{
 		Sites: []SiteContextEntry{{ID: "1", Title: "Article", Description: "About", HasVisionImage: true}},
@@ -324,7 +324,7 @@ func TestOpenAITranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<target_languages>en</target_languages>") {
 			t.Fatalf("prompt contract = %#v", input.Messages)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello [USER:Alice]"}]}`, 1, 2)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello [USER:Alice]"}}`, 1, 2)))}, nil
 	})
 	result, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "こんにちは <@42>", TranslationContext{
 		GuildID: "guild-1", MessageID: "message-2", MentionedUsers: map[string]string{"42": "Alice"},
@@ -342,17 +342,16 @@ func TestOpenAITranslatorRejectsInvalidResponses(t *testing.T) {
 		name string
 		body string
 	}{
-		{name: "truncated", body: `{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{\"translations\":[]}"}}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`},
+		{name: "truncated", body: `{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{}"}}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`},
 		{name: "no choices", body: `{"choices":[],"usage":{"prompt_tokens":1,"completion_tokens":1}}`},
 		{name: "two choices", body: `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"x"}},{"finish_reason":"stop","message":{"role":"assistant","content":"y"}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`},
 		{name: "empty content", body: `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":""}}],"usage":{"prompt_tokens":1,"completion_tokens":1}}`},
 		{name: "missing usage", body: `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"x"}}],"usage":null}`},
 		{name: "malformed JSON", body: successfulOpenAIResponse("not-json", 1, 1)},
-		{name: "missing language", body: successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)},
-		{name: "duplicate language", body: successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"en","translated_text":"Hi"}]}`, 1, 1)},
-		{name: "wrong order", body: successfulOpenAIResponse(`{"translations":[{"language":"ja","translated_text":"こんにちは"},{"language":"en","translated_text":"Hello"}]}`, 1, 1)},
-		{name: "empty translation", body: successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":" "}]}`, 1, 1)},
-		{name: "unknown translation field", body: successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは","extra":true}]}`, 1, 1)},
+		{name: "missing language", body: successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)},
+		{name: "extra language", body: successfulOpenAIResponse(`{"en":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは"},"fr":{"translated_text":"Bonjour"}}`, 1, 1)},
+		{name: "empty translation", body: successfulOpenAIResponse(`{"en":{"translated_text":"Hello"},"ja":{"translated_text":" "}}`, 1, 1)},
+		{name: "unknown translation field", body: successfulOpenAIResponse(`{"en":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは","extra":true}}`, 1, 1)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -418,7 +417,7 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 		if !strings.Contains(string(body), `"response_format"`) || !strings.Contains(string(body), `"json_schema"`) {
 			t.Fatalf("request missing structured outputs: %s", body)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
 	if err != nil {
@@ -435,13 +434,13 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 	}
 	for _, schema := range schemas {
 		assertStrictJSONSchema(t, schema, "root")
-		gotLangs := schemaLanguageEnum(t, schema)
+		gotLangs := schemaLanguageKeys(t, schema)
 		if len(gotLangs) != 2 || gotLangs[0] != "en" || gotLangs[1] != "ja" {
-			t.Fatalf("language enum = %#v, want [en ja]", gotLangs)
+			t.Fatalf("language keys = %#v, want [en ja]", gotLangs)
 		}
 		for _, lang := range gotLangs {
 			if lang == "English" || lang == "Japanese" {
-				t.Fatalf("language enum includes an English name: %#v", gotLangs)
+				t.Fatalf("language keys include an English name: %#v", gotLangs)
 			}
 		}
 	}
@@ -449,43 +448,46 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 
 func TestMessageTranslationSchemaRequiresAttachmentDescriptions(t *testing.T) {
 	required := schemaItemRequired(t, mustMessageSchema(t, []string{"en"}))
-	if !required["language"] || !required["translated_text"] || !required["attachment_descriptions"] {
+	if required["language"] || !required["translated_text"] || !required["attachment_descriptions"] {
 		t.Fatalf("required = %#v", required)
 	}
 }
 
-func TestOpenAITranslatorLanguageEnumMatchesTargetLanguages(t *testing.T) {
+func TestOpenAITranslatorLanguageKeysMatchTargetLanguages(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var input openaiChatCompletionRequest
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
 		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en", "ja"}))
-		got := schemaLanguageEnum(t, input.ResponseFormat.JSONSchema.Schema)
+		got := schemaLanguageKeys(t, input.ResponseFormat.JSONSchema.Schema)
 		if len(got) != 2 || got[0] != "en" || got[1] != "ja" {
-			t.Fatalf("language enum = %#v", got)
+			t.Fatalf("language keys = %#v", got)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"},{"language":"ja","translated_text":"こんにちは"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは"}}`, 1, 1)))}, nil
 	})
 	if _, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en", "ja"}, "hello", TranslationContext{}, nil); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func schemaLanguageEnum(t *testing.T, raw json.RawMessage) []string {
+func schemaLanguageKeys(t *testing.T, raw json.RawMessage) []string {
 	t.Helper()
-	lang, _ := schemaItemProperties(t, raw)["language"].(map[string]any)
-	enum, _ := lang["enum"].([]any)
-	out := make([]string, 0, len(enum))
-	for _, v := range enum {
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		t.Fatal(err)
+	}
+	required, _ := root["required"].([]any)
+	out := make([]string, 0, len(required))
+	for _, v := range required {
 		s, ok := v.(string)
 		if !ok {
-			t.Fatalf("language enum contains %#v", v)
+			t.Fatalf("language keys contain %#v", v)
 		}
 		out = append(out, s)
 	}
 	if len(out) == 0 {
-		t.Fatal("language enum is empty")
+		t.Fatal("language keys are empty")
 	}
 	return out
 }
@@ -505,15 +507,6 @@ func schemaItemRequired(t *testing.T, raw json.RawMessage) map[string]bool {
 	return out
 }
 
-func schemaItemProperties(t *testing.T, raw json.RawMessage) map[string]any {
-	t.Helper()
-	props, _ := schemaTranslationItem(t, raw)["properties"].(map[string]any)
-	if len(props) == 0 {
-		t.Fatal("translation item has no properties")
-	}
-	return props
-}
-
 func schemaTranslationItem(t *testing.T, raw json.RawMessage) map[string]any {
 	t.Helper()
 	var root map[string]any
@@ -521,10 +514,14 @@ func schemaTranslationItem(t *testing.T, raw json.RawMessage) map[string]any {
 		t.Fatal(err)
 	}
 	props, _ := root["properties"].(map[string]any)
-	translations, _ := props["translations"].(map[string]any)
-	item, _ := translations["items"].(map[string]any)
+	required, _ := root["required"].([]any)
+	if len(required) == 0 {
+		t.Fatalf("missing language keys: %s", raw)
+	}
+	lang, _ := required[0].(string)
+	item, _ := props[lang].(map[string]any)
 	if item == nil {
-		t.Fatalf("missing translations items: %s", raw)
+		t.Fatalf("missing language object %q: %s", lang, raw)
 	}
 	return item
 }
@@ -568,23 +565,13 @@ func assertStrictJSONSchema(t *testing.T, raw json.RawMessage, path string) {
 	if len(props) == 0 {
 		t.Fatalf("%s: object schema has no properties", path)
 	}
+	if len(req) != len(props) {
+		t.Fatalf("%s: required must list every property, required=%d properties=%d", path, len(req), len(props))
+	}
 	for name, prop := range props {
 		propJSON, err := json.Marshal(prop)
 		if err != nil {
 			t.Fatalf("%s.%s: %v", path, name, err)
-		}
-		if name == "language" {
-			var lang map[string]any
-			if err := json.Unmarshal(propJSON, &lang); err != nil {
-				t.Fatal(err)
-			}
-			enum, _ := lang["enum"].([]any)
-			if len(enum) == 0 {
-				t.Fatalf("%s.language: enum must be non-empty", path)
-			}
-			if !req["language"] {
-				t.Fatalf("%s: language must be required", path)
-			}
 		}
 		assertStrictJSONSchema(t, propJSON, path+"."+name)
 	}
@@ -600,7 +587,7 @@ func TestOpenAITranslatorOpenRouterRequiresStructuredOutputParameters(t *testing
 		if input.Provider == nil || !input.Provider.RequireParameters {
 			t.Fatalf("provider = %#v, want require_parameters=true", input.Provider)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL("https://openrouter.ai/api/v1"), "")
 	translator.now = func() time.Time { return time.Unix(123, 0) }
@@ -618,7 +605,7 @@ func TestOpenAITranslatorSendsConfiguredReasoningEffort(t *testing.T) {
 		if input.ReasoningEffort != "none" {
 			t.Fatalf("reasoning_effort = %q, want none", input.ReasoningEffort)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL), "none")
 	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
@@ -640,9 +627,9 @@ func TestOpenAITranslatorMessageSystemInstructionIgnoresAttachments(t *testing.T
 			t.Fatal(err)
 		}
 		systems = append(systems, openaiContentText(t, input.Messages[0].Content))
-		body := successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)
+		body := successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)
 		if len(systems) == 2 {
-			body = successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello","attachment_descriptions":["Exit"]}]}`, 1, 1)
+			body = successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`, 1, 1)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
@@ -676,7 +663,7 @@ func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
 			t.Fatal(err)
 		}
 		bodies = append(bodies, string(body))
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	now := time.Unix(123, 0)
 	translator := testTranslator(client)
@@ -728,7 +715,7 @@ func TestOpenAITranslatorOmitsExplicitCacheForShortPrefix(t *testing.T) {
 		if strings.Contains(string(body), `"prompt_cache_breakpoint"`) || strings.Contains(string(body), `"prompt_cache_options"`) {
 			t.Fatalf("short prefix must not send explicit cache markers: %s", body)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	translator := testTranslator(client)
 	translator.now = func() time.Time { return time.Unix(123, 0) }
@@ -747,9 +734,9 @@ func TestOpenAITranslatorSeparatesPollPromptCacheKey(t *testing.T) {
 		}
 		keys = append(keys, input.PromptCacheKey)
 		if len(keys) == 2 {
-			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","question":"Q","answers":["A"]}]}`, 1, 1)))}, nil
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"question":"Q","answers":["A"]}}`, 1, 1)))}, nil
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	translator := testTranslator(client)
 	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "empty"}
@@ -768,7 +755,7 @@ func TestOpenAITranslatorSeparatesPollPromptCacheKey(t *testing.T) {
 }
 
 func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
-	response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello [USER:Alice]\"}]}"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"completion_tokens_details":{"reasoning_tokens":7}}}`
+	response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"en\":{\"translated_text\":\"Hello [USER:Alice]\"}}"}}],"usage":{"prompt_tokens":1,"completion_tokens":2,"completion_tokens_details":{"reasoning_tokens":7}}}`
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
 	})
@@ -827,7 +814,7 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 }
 
 func TestOpenAITranslatorDebugLogRecordsTimingFromSameRoundTrip(t *testing.T) {
-	response := `{"id":"chatcmpl-1","created":1700000000,"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_time":0.53,"queue_time":0.01}}`
+	response := `{"id":"chatcmpl-1","created":1700000000,"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"en\":{\"translated_text\":\"Hello\"}}"}}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_time":0.53,"queue_time":0.01}}`
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		time.Sleep(25 * time.Millisecond)
 		return &http.Response{
@@ -875,7 +862,7 @@ func TestOpenAITranslatorDebugLogRecordsTimingFromSameRoundTrip(t *testing.T) {
 }
 
 func TestOpenAITranslatorDebugLogRecordsCacheHitAndCost(t *testing.T) {
-	response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"translations\":[{\"language\":\"en\",\"translated_text\":\"Hello\"}]}"}}],"usage":{"prompt_tokens":1200,"completion_tokens":40,"total_tokens":1240,"cost":0.00014,"prompt_tokens_details":{"cached_tokens":800},"completion_tokens_details":{"reasoning_tokens":5}}}`
+	response := `{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{\"en\":{\"translated_text\":\"Hello\"}}"}}],"usage":{"prompt_tokens":1200,"completion_tokens":40,"total_tokens":1240,"cost":0.00014,"prompt_tokens_details":{"cached_tokens":800},"completion_tokens_details":{"reasoning_tokens":5}}}`
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(response))}, nil
 	})
@@ -1021,7 +1008,7 @@ func TestOpenAITranslatorDebugLogRecordsTransportFailure(t *testing.T) {
 func TestOpenAITranslatorWithoutDebugLogWritesNoFile(t *testing.T) {
 	dir := t.TempDir()
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	if _, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1"}, nil); err != nil {
 		t.Fatal(err)
@@ -1074,7 +1061,7 @@ func TestOpenAITranslatorRetriesTransientHTTPErrorOnce(t *testing.T) {
 				Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"service_unavailable","code":"unavailable"}}`)),
 			}, nil
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	result, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err != nil {
@@ -1094,7 +1081,7 @@ func TestOpenAITranslatorRetriesDeadlineExceededOnce(t *testing.T) {
 		if calls.Add(1) == 1 {
 			return nil, context.DeadlineExceeded
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"Hello"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	result, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err != nil {
@@ -1131,7 +1118,7 @@ func TestOpenAITranslatorDoesNotRetryContractViolation(t *testing.T) {
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
-			`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{\"translations\":[]}"}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`,
+			`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{}"}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`,
 		))}, nil
 	})
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
@@ -1177,7 +1164,7 @@ func TestOpenAIWarmUpUsesAttemptTimeout(t *testing.T) {
 		if remaining < 59*time.Second || remaining > openaiRequestTimeout {
 			t.Fatalf("remaining = %s, want ~%s", remaining, openaiRequestTimeout)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"translations":[{"language":"en","translated_text":"warmup"}]}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"warmup"}}`, 1, 1)))}, nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -1199,7 +1186,7 @@ func TestOpenAITranslatorTranslatePollMulti(t *testing.T) {
 		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<poll>") {
 			t.Fatalf("unexpected request: %#v", input.Messages)
 		}
-		body := successfulOpenAIResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red","Blue"]}]}`, 3, 4)
+		body := successfulOpenAIResponse(`{"en":{"question":"Favorite?","answers":["Red","Blue"]}}`, 3, 4)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	result, err := translatePollMulti(t, testTranslator(client), []string{"en"}, "好き？", []string{"赤", "青"}, TranslationContext{}, nil)
@@ -1217,7 +1204,7 @@ func TestOpenAITranslatorTranslatePollMulti(t *testing.T) {
 
 func TestOpenAITranslatorTranslatePollMultiRejectsAnswerCountMismatch(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := successfulOpenAIResponse(`{"translations":[{"language":"en","question":"Favorite?","answers":["Red"]}]}`, 1, 1)
+		body := successfulOpenAIResponse(`{"en":{"question":"Favorite?","answers":["Red"]}}`, 1, 1)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	_, err := translatePollMulti(t, testTranslator(client), []string{"en"}, "好き？", []string{"赤", "青"}, TranslationContext{}, nil)
@@ -1243,7 +1230,7 @@ func TestOpenAITranslatorTranslateThreadCreateMulti(t *testing.T) {
 		if !strings.Contains(userPrompt, "<name>議題</name>") || !strings.Contains(userPrompt, `<message author="alice">本文</message>`) {
 			t.Fatalf("unexpected user prompt: %s", userPrompt)
 		}
-		body := successfulOpenAIResponse(`{"translations":[{"language":"en","name":"Topic","message":"Body"}]}`, 3, 4)
+		body := successfulOpenAIResponse(`{"en":{"name":"Topic","message":"Body"}}`, 3, 4)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	result, err := translateThreadCreateMulti(t, testTranslator(client), []string{"en"}, "議題", "本文", TranslationContext{Author: "alice"}, nil)
@@ -1261,7 +1248,7 @@ func TestOpenAITranslatorTranslateThreadCreateMulti(t *testing.T) {
 
 func TestOpenAITranslatorTranslateThreadCreateMultiRejectsEmptyMessage(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body := successfulOpenAIResponse(`{"translations":[{"language":"en","name":"Topic","message":""}]}`, 1, 1)
+		body := successfulOpenAIResponse(`{"en":{"name":"Topic","message":""}}`, 1, 1)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	_, err := translateThreadCreateMulti(t, testTranslator(client), []string{"en"}, "議題", "本文", TranslationContext{}, nil)
