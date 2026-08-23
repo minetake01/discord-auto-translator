@@ -29,7 +29,6 @@ type TranslationContext struct {
 	ChannelTopic          string
 	ThreadName            string
 	History               []ChatContextMessage
-	HistoryFrozenCount    int
 	ReplyChain            []ChatContextMessage
 	StyleInstructions     string
 	Author                string
@@ -96,7 +95,8 @@ type TopicSummarizer interface {
 type preparedTranslation struct {
 	targetLanguages    []string
 	systemInstruction  string
-	userPromptFrozen   string
+	userPromptStable   string
+	userPromptHistory  string
 	userPromptVariable string
 	protector          *Protector
 	guildID            string
@@ -118,15 +118,16 @@ type preparedTranslation struct {
 }
 
 func (p preparedTranslation) userPrompt() string {
-	return p.userPromptFrozen + p.userPromptVariable
+	return p.userPromptStable + p.userPromptHistory + p.userPromptVariable
 }
 
 func (p *preparedTranslation) buildUserPrompt() {
 	if p.writeSource == nil {
 		return
 	}
-	frozen, variable := buildTranslationUserPromptParts(p.targetLanguages, p.translationContext, p.alwaysGlossary, p.matchedGlossary, p.writeSource)
-	p.userPromptFrozen = frozen
+	stable, history, variable := buildTranslationUserPromptParts(p.targetLanguages, p.translationContext, p.alwaysGlossary, p.matchedGlossary, p.writeSource)
+	p.userPromptStable = stable
+	p.userPromptHistory = history
 	p.userPromptVariable = variable
 }
 

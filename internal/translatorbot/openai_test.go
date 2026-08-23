@@ -51,6 +51,20 @@ func openaiContentText(t *testing.T, raw json.RawMessage) string {
 	return b.String()
 }
 
+func contentHasBreakpoint(t *testing.T, raw json.RawMessage) bool {
+	t.Helper()
+	var parts []map[string]any
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		t.Fatalf("content %s: %v", raw, err)
+	}
+	for _, part := range parts {
+		if _, ok := part["prompt_cache_breakpoint"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 func translateMulti(t testing.TB, ctx context.Context, translator *OpenAITranslator, targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (MultiTranslationResult, error) {
 	t.Helper()
 	prepared, err := prepareMultiTranslation(targetLanguages, content, translationContext, glossary)
@@ -207,7 +221,7 @@ func TestNewOpenAIHTTPClientUsesKeepAliveTransport(t *testing.T) {
 	}
 }
 
-func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
+func TestOpenAITranslatorSendsVisionImagesAfterCachedText(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		var input openaiChatCompletionRequest
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
@@ -216,6 +230,9 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 		if len(input.Messages) != 2 {
 			t.Fatalf("prompt shape = %#v", input.Messages)
 		}
+		if !contentHasBreakpoint(t, input.Messages[0].Content) {
+			t.Fatalf("system missing prompt_cache_breakpoint: %s", input.Messages[0].Content)
+		}
 		var parts []map[string]any
 		if err := json.Unmarshal(input.Messages[1].Content, &parts); err != nil {
 			t.Fatalf("user content = %s", input.Messages[1].Content)
@@ -223,24 +240,33 @@ func TestOpenAITranslatorSendsVisionImagesAfterFrozenText(t *testing.T) {
 		if len(parts) < 3 {
 			t.Fatalf("parts = %#v", parts)
 		}
-		breakpointIndex := -1
+		lastBreakpoint := -1
 		imageIndex := -1
+		variableHasBreakpoint := false
 		for i, part := range parts {
-			if _, ok := part["prompt_cache_breakpoint"]; ok {
-				breakpointIndex = i
+			_, hasBP := part["prompt_cache_breakpoint"]
+			if hasBP {
+				lastBreakpoint = i
 			}
 			if part["type"] == "image_url" {
 				imageIndex = i
 			}
+			text, _ := part["text"].(string)
+			if strings.Contains(text, "<attachments>") && hasBP {
+				variableHasBreakpoint = true
+			}
 		}
-		if breakpointIndex == -1 {
+		if lastBreakpoint == -1 {
 			t.Fatalf("missing prompt_cache_breakpoint: %#v", parts)
 		}
-		if imageIndex == -1 || imageIndex <= breakpointIndex {
+		if imageIndex == -1 || imageIndex <= lastBreakpoint {
 			t.Fatalf("image part must come after breakpoint: %#v", parts)
 		}
+		if variableHasBreakpoint {
+			t.Fatalf("target message text must not be a cache breakpoint: %#v", parts)
+		}
 		if parts[0]["type"] != "text" {
-			t.Fatalf("frozen text should be first: %#v", parts)
+			t.Fatalf("stable text should be first: %#v", parts)
 		}
 		imageURLObj, _ := parts[imageIndex]["image_url"].(map[string]any)
 		imageURL, _ := imageURLObj["url"].(string)
@@ -722,8 +748,11 @@ func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
 	if !strings.Contains(bodies[0], `"prompt_cache_breakpoint"`) {
 		t.Fatalf("first request should mark breakpoint: %s", bodies[0])
 	}
-	if strings.Contains(bodies[1], `"prompt_cache_options"`) || strings.Contains(bodies[1], `"ttl"`) {
+	if strings.Contains(bodies[1], `"ttl"`) {
 		t.Fatalf("reuse must not send ttl: %s", bodies[1])
+	}
+	if !strings.Contains(bodies[1], `"prompt_cache_options"`) || !strings.Contains(bodies[1], `"explicit"`) {
+		t.Fatalf("reuse must stay in explicit cache mode: %s", bodies[1])
 	}
 	if !strings.Contains(bodies[1], `"prompt_cache_key":"guild:g:group:start1"`) {
 		t.Fatalf("reuse must keep cache key: %s", bodies[1])
@@ -733,7 +762,7 @@ func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
 	}
 }
 
-func TestOpenAITranslatorOmitsExplicitCacheForShortPrefix(t *testing.T) {
+func TestOpenAITranslatorMarksBreakpointsWithoutTTLForShortPrefix(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body, err := io.ReadAll(req.Body)
 		if err != nil {
@@ -742,8 +771,14 @@ func TestOpenAITranslatorOmitsExplicitCacheForShortPrefix(t *testing.T) {
 		if !strings.Contains(string(body), `"prompt_cache_key":"guild:g:group:empty"`) {
 			t.Fatalf("short prompts still send a cache key for sticky routing: %s", body)
 		}
-		if strings.Contains(string(body), `"prompt_cache_breakpoint"`) || strings.Contains(string(body), `"prompt_cache_options"`) {
-			t.Fatalf("short prefix must not send explicit cache markers: %s", body)
+		if !strings.Contains(string(body), `"prompt_cache_breakpoint"`) {
+			t.Fatalf("short prompts still mark breakpoints: %s", body)
+		}
+		if !strings.Contains(string(body), `"mode":"explicit"`) {
+			t.Fatalf("short prompts must stay in explicit cache mode: %s", body)
+		}
+		if strings.Contains(string(body), `"ttl"`) {
+			t.Fatalf("short prefix must not send cache ttl: %s", body)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
@@ -751,6 +786,53 @@ func TestOpenAITranslatorOmitsExplicitCacheForShortPrefix(t *testing.T) {
 	translator.now = func() time.Time { return time.Unix(123, 0) }
 	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "empty"}
 	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenAITranslatorMarksSeparateHistoryBreakpoint(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		if !contentHasBreakpoint(t, input.Messages[0].Content) {
+			t.Fatalf("system missing prompt_cache_breakpoint: %s", input.Messages[0].Content)
+		}
+		var parts []map[string]any
+		if err := json.Unmarshal(input.Messages[1].Content, &parts); err != nil {
+			t.Fatalf("user content = %s", input.Messages[1].Content)
+		}
+		if len(parts) != 3 {
+			t.Fatalf("parts = %#v", parts)
+		}
+		if _, ok := parts[0]["prompt_cache_breakpoint"]; !ok {
+			t.Fatalf("stable part missing breakpoint: %#v", parts[0])
+		}
+		if _, ok := parts[1]["prompt_cache_breakpoint"]; !ok {
+			t.Fatalf("history part missing breakpoint: %#v", parts[1])
+		}
+		if _, ok := parts[2]["prompt_cache_breakpoint"]; ok {
+			t.Fatalf("target message must not have a breakpoint: %#v", parts[2])
+		}
+		stable, _ := parts[0]["text"].(string)
+		history, _ := parts[1]["text"].(string)
+		variable, _ := parts[2]["text"].(string)
+		if strings.Contains(stable, "<recent_context>") || strings.Contains(stable, "<topic_summary>") {
+			t.Fatalf("stable includes history: %s", stable)
+		}
+		if !strings.Contains(history, "<recent_context>") || !strings.Contains(history, "earlier") {
+			t.Fatalf("history missing recent_context: %s", history)
+		}
+		if !strings.Contains(variable, "<final_message") || strings.Contains(variable, "<recent_context>") {
+			t.Fatalf("variable should be the target message: %s", variable)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
+	})
+	tc := TranslationContext{
+		History: []ChatContextMessage{{Author: "alice", Content: "earlier"}},
+	}
+	if _, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", tc, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -827,7 +909,7 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 		t.Fatalf("model/schema = %q %q", entry.Model, entry.SchemaName)
 	}
 	if entry.SystemInstruction == "" || !strings.Contains(entry.UserPromptVariable, "<final_message>こんにちは [USER:Alice]</final_message>") {
-		t.Fatalf("logged synthesized prompts system=%q frozen=%q variable=%q", entry.SystemInstruction, entry.UserPromptFrozen, entry.UserPromptVariable)
+		t.Fatalf("logged synthesized prompts system=%q stable=%q variable=%q", entry.SystemInstruction, entry.UserPromptStable, entry.UserPromptVariable)
 	}
 	if entry.Usage == nil || entry.Usage.PromptTokens != 1 || entry.Usage.CompletionTokens != 2 {
 		t.Fatalf("logged usage = %#v", entry.Usage)

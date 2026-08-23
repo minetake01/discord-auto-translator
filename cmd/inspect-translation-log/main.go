@@ -126,8 +126,10 @@ type logEntry struct {
 	PromptCacheTTLSent *bool
 	PromptCacheHit     *bool
 	SystemInstruction  string
-	UserPromptFrozen   string
+	UserPromptStable   string
+	UserPromptHistory  string
 	UserPromptVariable string
+	UserPromptFrozen   string
 	VisionImageCount   int
 	Usage              *loggedUsage
 	Request            json.RawMessage
@@ -321,6 +323,8 @@ func parseEntry(line []byte) (logEntry, error) {
 	entry.ResponseText = decodeString(raw["response_text"])
 	entry.PromptCacheKey = decodeString(raw["prompt_cache_key"])
 	entry.SystemInstruction = decodeString(raw["system_instruction"])
+	entry.UserPromptStable = decodeString(raw["user_prompt_stable"])
+	entry.UserPromptHistory = decodeString(raw["user_prompt_history"])
 	entry.UserPromptFrozen = decodeString(raw["user_prompt_frozen"])
 	entry.UserPromptVariable = decodeString(raw["user_prompt_variable"])
 	if v, ok := raw["duration_ms"]; ok {
@@ -538,17 +542,18 @@ func printDetail(entry logEntry) {
 	if entry.Error != "" {
 		fmt.Printf("  error: %s\n", entry.Error)
 	}
-	system, frozen, variable := resolvedPrompts(entry)
-	if system != "" || frozen != "" || variable != "" {
-		fmt.Printf("  prompt: system=%dB frozen=%dB variable=%dB images=%d\n",
-			len(system), len(frozen), len(variable), entry.VisionImageCount)
+	system, stable, history, variable := resolvedPrompts(entry)
+	if system != "" || stable != "" || history != "" || variable != "" {
+		fmt.Printf("  prompt: system=%dB stable=%dB history=%dB variable=%dB images=%d\n",
+			len(system), len(stable), len(history), len(variable), entry.VisionImageCount)
 	}
 }
 
 func printPrompt(entry logEntry) {
-	system, frozen, variable := resolvedPrompts(entry)
+	system, stable, history, variable := resolvedPrompts(entry)
 	printPromptSection("system", system)
-	printPromptSection("user frozen", frozen)
+	printPromptSection("user stable", stable)
+	printPromptSection("user history", history)
 	printPromptSection("user variable", variable)
 }
 
@@ -637,8 +642,8 @@ func printStats(entries []logEntry) {
 }
 
 func extractFinalMessage(entry logEntry) string {
-	_, frozen, variable := resolvedPrompts(entry)
-	text := frozen + variable
+	_, stable, history, variable := resolvedPrompts(entry)
+	text := stable + history + variable
 	if text == "" {
 		text = userPromptText(entry.Request)
 	}
@@ -651,46 +656,50 @@ func extractFinalMessage(entry logEntry) string {
 	return strings.TrimSpace(text)
 }
 
-func resolvedPrompts(entry logEntry) (system, frozen, variable string) {
+func resolvedPrompts(entry logEntry) (system, stable, history, variable string) {
 	system = entry.SystemInstruction
-	frozen = entry.UserPromptFrozen
+	stable = entry.UserPromptStable
+	history = entry.UserPromptHistory
 	variable = entry.UserPromptVariable
-	if system != "" || frozen != "" || variable != "" {
-		return system, frozen, variable
+	if stable == "" && history == "" {
+		stable = entry.UserPromptFrozen
+	}
+	if system != "" || stable != "" || history != "" || variable != "" {
+		return system, stable, history, variable
 	}
 	return promptsFromRequest(entry.Request)
 }
 
-func promptsFromRequest(request json.RawMessage) (system, frozen, variable string) {
+func promptsFromRequest(request json.RawMessage) (system, stable, history, variable string) {
 	if len(request) == 0 {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	var payload requestPayload
 	if err := json.Unmarshal(request, &payload); err != nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	for _, msg := range payload.Messages {
 		switch msg.Role {
 		case "system":
 			system = messageText(msg.Content)
 		case "user":
-			frozen, variable = splitUserPromptParts(msg.Content)
+			stable, history, variable = splitUserPromptParts(msg.Content)
 		}
 	}
-	return system, frozen, variable
+	return system, stable, history, variable
 }
 
-func splitUserPromptParts(raw json.RawMessage) (frozen, variable string) {
+func splitUserPromptParts(raw json.RawMessage) (stable, history, variable string) {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
-		return text, ""
+		return text, "", ""
 	}
 	var parts []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(raw, &parts); err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	var texts []string
 	for _, part := range parts {
@@ -701,11 +710,13 @@ func splitUserPromptParts(raw json.RawMessage) (frozen, variable string) {
 	}
 	switch len(texts) {
 	case 0:
-		return "", ""
+		return "", "", ""
 	case 1:
-		return texts[0], ""
+		return texts[0], "", ""
+	case 2:
+		return texts[0], "", texts[1]
 	default:
-		return texts[0], strings.Join(texts[1:], "")
+		return texts[0], strings.Join(texts[1:len(texts)-1], ""), texts[len(texts)-1]
 	}
 }
 

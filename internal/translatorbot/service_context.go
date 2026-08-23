@@ -157,9 +157,8 @@ func (s *Service) loadConversationContext(ctx context.Context, guildID, channelI
 		translationContext.PromptCacheGeneration = historyGenerationID(nil, sourceChannelID, excludeMessageID)
 		return translationContext
 	}
-	history, frozenCount, discarded := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
+	history, _, discarded := selectRecentHistory(links, excludeMessageID, excludeReplyKeys)
 	translationContext.History = history
-	translationContext.HistoryFrozenCount = frozenCount
 	translationContext.PromptCacheGeneration = historyGenerationID(history, sourceChannelID, excludeMessageID)
 	if summary, err := s.store.TopicSummary(ctx, locationKey, translationContext.PromptCacheGeneration); err == nil {
 		translationContext.TopicSummary = summary
