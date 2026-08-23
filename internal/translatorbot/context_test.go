@@ -1089,7 +1089,7 @@ func TestHandleMessageCreateRollsPreviousTopicSummaryIntoNextGeneration(t *testi
 		t.Fatal(err)
 	}
 	reqs := translator.summaryRequests()
-	if len(reqs) != 1 || reqs[0].PreviousSummary != "earlier they discussed packing" {
+	if len(reqs) != 1 || !strings.Contains(reqs[0].userPrompt(), "<previous_summary>earlier they discussed packing</previous_summary>") {
 		t.Fatalf("previous summary not rolled forward: %#v", reqs)
 	}
 	if translator.contexts[0].TopicSummary != "" {

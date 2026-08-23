@@ -145,15 +145,6 @@ func (s *Service) loadOGPVisionImages(ctx context.Context, sites []SiteContextEn
 	return out
 }
 
-func hasSiteVisionImage(sites []SiteContextEntry) bool {
-	for _, site := range sites {
-		if site.HasVisionImage {
-			return true
-		}
-	}
-	return false
-}
-
 type contextImageLocation struct {
 	key        string
 	attachment DiscordAttachment
@@ -444,6 +435,16 @@ func translationAttachmentsFromLoaded(loaded []loadedImageAttachment) []Translat
 		}
 	}
 	return out
+}
+
+func translatableAttachmentCount(attachments []TranslationAttachment) int {
+	n := 0
+	for _, attachment := range attachments {
+		if hasTranslatableText(attachment.Description) {
+			n++
+		}
+	}
+	return n
 }
 
 func imagesNotReuploaded(attachments []DiscordAttachment, loaded []loadedImageAttachment) []DiscordAttachment {

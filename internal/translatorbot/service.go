@@ -283,12 +283,8 @@ func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText st
 	remainingSlots -= len(contextVision)
 	remainingBytes -= visionBytesTotal(contextVision)
 	ogpVision := s.loadOGPVisionImages(ctx, prepared.translationContext.Sites, remainingSlots, remainingBytes)
-	if hasSiteVisionImage(prepared.translationContext.Sites) {
-		translationContext.Sites = prepared.translationContext.Sites
-		prepared, err = prepare(languages, translationContext, glossary)
-		if err != nil {
-			return preparedTranslation{}, err
-		}
+	if len(ogpVision) > 0 {
+		prepared.buildUserPrompt()
 	}
 	prepared.visionImages = append(append(append([]visionImage{}, reservedVision...), contextVision...), ogpVision...)
 	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
@@ -298,7 +294,7 @@ func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText st
 }
 
 func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared preparedTranslation) error {
-	if s.rateLimiter == nil || len(prepared.targetLanguages) == 0 {
+	if s.rateLimiter == nil {
 		return nil
 	}
 	if !s.rateLimiter.Allow(guildID, estimatePreparedTokens(prepared)) {
@@ -318,6 +314,8 @@ func (s *Service) recordSuccessfulTranslation(guildID string, inputTokens, outpu
 	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, inputTokens, outputTokens)
 }
+
+const translationOutputTokenReserve = 200
 
 func estimatePreparedTokens(prepared preparedTranslation) int {
 	langs := len(prepared.targetLanguages)

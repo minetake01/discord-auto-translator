@@ -6,15 +6,14 @@ import (
 )
 
 const (
-	historyIdleGap             = 15 * time.Minute
-	historyCountHigh           = 16
-	historyCountLow            = 8
-	historySpanHigh            = 30 * time.Minute
-	historySpanLow             = 15 * time.Minute
-	historyTokenHigh           = 800
-	historyTokenLow            = 400
-	historyFetchLimit          = 512
-	translationReplyChainLimit = 3
+	historyIdleGap    = 15 * time.Minute
+	historyCountHigh  = 16
+	historyCountLow   = 8
+	historySpanHigh   = 30 * time.Minute
+	historySpanLow    = 15 * time.Minute
+	historyTokenHigh  = 800
+	historyTokenLow   = 400
+	historyFetchLimit = 512
 
 	mergeShortMessageMaxRunes = 60
 	mergeMaxCombinedRunes     = 150

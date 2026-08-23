@@ -1321,12 +1321,16 @@ func TestOpenAITranslatorSummarizeTopic(t *testing.T) {
 		body := successfulOpenAIResponse(`{"summary":"they are coordinating a delayed shipment"}`, 11, 6)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
-	result, err := testTranslator(client).SummarizeTopic(context.Background(), TopicSummaryRequest{
+	prepared, err := prepareTopicSummary(TopicSummaryRequest{
 		PreviousSummary: "packing",
 		Discarded:       []ChatContextMessage{{Author: "Alice", Content: "遅れるかも"}},
 		GuildID:         "guild",
 		MessageID:       "1",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := testTranslator(client).SummarizeTopic(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
