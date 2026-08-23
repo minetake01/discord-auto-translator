@@ -197,7 +197,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 		if _, ok := result.Translations[language]; !ok {
 			return MultiTranslationResult{}, fmt.Errorf("missing translation for %q", language)
 		}
-		if len(loaded) > 0 && len(result.AttachmentDescriptions[language]) != len(loaded) {
+		if translatableAttachmentCount(translationAttachmentsFromLoaded(loaded)) > 0 && len(result.AttachmentDescriptions[language]) != len(loaded) {
 			return MultiTranslationResult{}, fmt.Errorf("missing attachment descriptions for %q", language)
 		}
 	}

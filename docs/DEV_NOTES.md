@@ -213,8 +213,11 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
     <site id="1" title="Example Article">Page description from OGP</site>
   </site_context>
   <attachments>
-    <attachment index="1" filename="sign.png">既存の代替テキスト</attachment>
+    <attachment index="1" filename="sign.png"></attachment>
   </attachments>
+  <attachment_alts>
+    <alt index="1">既存の代替テキスト</alt>
+  </attachment_alts>
   <final_message author="Carol">How are you? [SITE:1]</final_message>
 </translation_request>
 ```
@@ -222,14 +225,14 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から、同一バーストの原文を束ね後枠として積み上げます。隣接間隔が 15 分を超えると古い側を切り、件数・時間幅・トークンのハイウォーターで世代を切り替えます。履歴 0 件のときはセクション自体を出しません。本文が空でも画像添付がある投稿は残し、含まれた画像は `<image index>` で示します。
 - 世代切替で捨てた枠は翻訳を待たせず裏で短く要約し、次のメッセージから凍結ユーザーパート先頭の `<topic_summary>` に載せます。要約が未完了なら履歴だけで翻訳します。沈黙 15 分でバーストが切れた要約は使いません。
-- ユーザープロンプトは凍結パート（`always_include` glossary、任意の `<topic_summary>`、`<recent_context>` の途中まで）と可変パート（末尾枠・閉じタグ・本文マッチ glossary・reply/site/attachments/final）に分かれます。凍結パートは世代内で追記だけします。要約が載った時点で `prompt_cache_key` を分けます。
+- ユーザープロンプトは凍結パート（`always_include` glossary、任意の `<topic_summary>`、`<recent_context>` の途中まで）と可変パート（末尾枠・閉じタグ・本文マッチ glossary・reply/site/attachments/attachment_alts/final）に分かれます。凍結パートは世代内で追記だけします。要約が載った時点で `prompt_cache_key` を分けます。
 - `<reply_context>` はリプライ先を最大 3 件遡った引用チェイン（古い順、時間制限なし）です。`<recent_context>` より優先して解釈に使います。凍結済み履歴枠はリプライ先と重複しても残し、可変末尾だけ同一投稿なら除外します。画像は履歴と同じ `<image>` で示し、同一投稿の画像は同じ index を共有します。
 - `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。読み込めた `og:image` は `<site>` 内の `<image>` として示し、ビジョン入力の文脈画像として渡します。
-- `<attachments>` は現在メッセージの画像添付です。ビジョン入力はテキストパートの後ろ（明示 breakpoint があるときはその後）に置き、現在メッセージの添付、履歴/リプライの `<image>`、OGP の順です。既存 alt だけ翻訳し、alt が空なら空文字を返します。生成はしません。現在メッセージの画像も履歴・リプライ・OGP と同様、取得・縮小失敗時はスキップします。`attachment_descriptions` の余剰要素は背景画像向けとして無視し、再アップロードには使いません。
+- `<attachments>` は現在メッセージの画像添付です（要素本文には alt を入れません）。翻訳対象の既存 alt だけを `<attachment_alts>` にソース順で出します。空の alt や URL のみの alt は出しません。ビジョン入力はテキストパートの後ろ（明示 breakpoint があるときはその後）に置き、現在メッセージの添付、履歴/リプライの `<image>`、OGP の順です。生成はしません。現在メッセージの画像も履歴・リプライ・OGP と同様、取得・縮小失敗時はスキップします。`attachment_descriptions` の余剰要素は適用しません。翻訳しなかった画像スロットはソースの Description を保持します。
 - 履歴・リプライの `<message>` は `author`（表示名）と原文、任意の `<image>`。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / topic_summary / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は凍結ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
-- メッセージ翻訳の JSON Schema は画像の有無で変えず、各言語オブジェクトで `attachment_descriptions` を常に required にします。添付なしは空配列、添付ありは `<attachment>` と同順で少なくとも同数です。余剰要素は適用しません。ルートのキーはリクエストの target languages です。投票の回答数や添付枚数などリクエスト固有の件数は schema にも system にも書きません。
+- メッセージ翻訳の JSON Schema は、翻訳対象の既存 alt があるときだけ各言語オブジェクトで `attachment_descriptions` を required にし、`minItems`/`maxItems` でその件数に固定します。無いときはフィールド自体を出しません。余剰要素は適用しません。ルートのキーはリクエストの target languages です。投票の回答数は schema にも system にも書きません。system に alt の件数は書きません。
 - Chat Completions リクエストは `prompt_cache_key` を付けます。system と凍結ユーザーパートの推定トークンが 1024 以上のときだけ、凍結テキストパートに `prompt_cache_breakpoint` を置き、そのキーを未保持なら `prompt_cache_options.ttl=1h` を送ります。短いコンテキストでは明示キャッシュを付けず、プロバイダの暗黙キャッシュに任せます。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 

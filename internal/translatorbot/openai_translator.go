@@ -350,18 +350,28 @@ func openaiLanguageKeyedSchema(targetLanguages []string, item map[string]any) (j
 	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
 }
 
-func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"translated_text", "attachment_descriptions"}, map[string]any{
+func openaiMessageTranslationSchema(targetLanguages []string, altCount int) (json.RawMessage, error) {
+	if altCount < 0 {
+		return nil, errors.New("translation JSON schema has a negative alt count")
+	}
+	required := []string{"translated_text"}
+	properties := map[string]any{
 		"translated_text": map[string]any{
 			"type":        "string",
 			"description": "The <final_message> translated into this language. Empty when <final_message> is empty.",
 		},
-		"attachment_descriptions": map[string]any{
+	}
+	if altCount > 0 {
+		required = append(required, "attachment_descriptions")
+		properties["attachment_descriptions"] = map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
-			"description": "Exactly as many strings as <attachment> elements, in source order. Translate existing non-empty alt text. If an attachment has no alt, return an empty string. Never invent alt text. Empty array when <attachments> is absent. Do not describe background images from history, replies, or linked pages.",
-		},
-	}))
+			"minItems":    altCount,
+			"maxItems":    altCount,
+			"description": "Exactly as many strings as <alt> elements in <attachment_alts>, in that order. Translate those existing alt texts. Never invent alt text. Do not describe background images from history, replies, or linked pages.",
+		}
+	}
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema(required, properties))
 }
 
 func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
@@ -404,7 +414,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	schema, err := openaiMessageTranslationSchema(prepared.targetLanguages)
+	schema, err := openaiMessageTranslationSchema(prepared.targetLanguages, prepared.altCount)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -412,7 +422,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	translations, descriptions, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content, prepared.attachmentCount)
+	translations, descriptions, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content, prepared.translationContext.Attachments)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}

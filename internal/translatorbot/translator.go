@@ -124,7 +124,7 @@ type preparedTranslation struct {
 	threadMessage      string
 	translationContext TranslationContext
 	visionImages       []visionImage
-	attachmentCount    int
+	altCount           int
 	promptCacheKey     string
 }
 
@@ -139,37 +139,25 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	}
 
 	protected := p.Protect(content)
-	attachments := make([]TranslationAttachment, len(translationContext.Attachments))
+	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
+	protectedAlts := make([]string, len(attachments))
 	glossaryContent := content
-	for i, attachment := range translationContext.Attachments {
-		attachments[i] = attachment
-		if strings.TrimSpace(attachment.Description) != "" {
-			attachments[i].Description = p.Protect(attachment.Description)
+	altCount := 0
+	for i, attachment := range attachments {
+		if !hasTranslatableText(attachment.Description) {
+			continue
 		}
-		glossaryContent += "\n" + attachment.Description
+		protectedAlts[i] = p.Protect(attachment.Description)
+		glossaryContent += "\n" + protectedAlts[i]
+		altCount++
 	}
 	translationContext.Attachments = attachments
 	assignSiteContext(p, &translationContext)
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
 	systemInstruction := buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>")
 	frozen, variable := buildTranslationUserPromptParts(normalized, translationContext, alwaysGlossary, matchedGlossary, func(b *strings.Builder) {
-		if len(attachments) > 0 {
-			b.WriteString("<attachments>")
-			for _, attachment := range attachments {
-				b.WriteString(`<attachment index="`)
-				writeXMLAttributeValue(b, fmt.Sprintf("%d", attachment.Index))
-				b.WriteString(`"`)
-				if attachment.Filename != "" {
-					b.WriteString(` filename="`)
-					writeXMLAttributeValue(b, attachment.Filename)
-					b.WriteString(`"`)
-				}
-				b.WriteString(">")
-				writeXMLText(b, attachment.Description)
-				b.WriteString("</attachment>")
-			}
-			b.WriteString("</attachments>")
-		}
+		writeAttachmentContext(b, attachments)
+		writeAttachmentAlts(b, attachments, protectedAlts)
 		writeAttributedElement(b, "final_message", translationContext.Author, protected)
 	})
 	return preparedTranslation{
@@ -182,7 +170,7 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 		messageID:          translationContext.MessageID,
 		content:            content,
 		translationContext: translationContext,
-		attachmentCount:    len(attachments),
+		altCount:           altCount,
 		promptCacheKey:     translationPromptCacheKey(translationContext, ""),
 	}, nil
 }
@@ -235,12 +223,13 @@ func decodeLanguageKeyedJSON[T any](raw string, targetLanguages []string) (map[s
 	return out, nil
 }
 
-func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector, sourceContent string, attachmentCount int) (map[string]string, map[string][]string, error) {
+func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector, sourceContent string, attachments []TranslationAttachment) (map[string]string, map[string][]string, error) {
 	parsed, err := decodeLanguageKeyedJSON[translationResponseItem](raw, targetLanguages)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse translation response: %w", err)
 	}
 
+	altCount := translatableAttachmentCount(attachments)
 	texts := make(map[string]string, len(targetLanguages))
 	descriptions := make(map[string][]string, len(targetLanguages))
 	for _, targetLanguage := range targetLanguages {
@@ -254,15 +243,12 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 		} else {
 			texts[targetLanguage] = protector.Restore(text)
 		}
-		if attachmentCount == 0 {
+		if altCount == 0 {
 			continue
 		}
-		if len(item.AttachmentDescriptions) < attachmentCount {
-			return nil, nil, fmt.Errorf("parse translation response: language %q has %d attachment descriptions, want %d", targetLanguage, len(item.AttachmentDescriptions), attachmentCount)
-		}
-		alts := make([]string, attachmentCount)
-		for j := 0; j < attachmentCount; j++ {
-			alts[j] = protector.Restore(strings.TrimSpace(html.UnescapeString(item.AttachmentDescriptions[j])))
+		alts, err := applyAttachmentDescriptions(item.AttachmentDescriptions, attachments, protector)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse translation response: language %q: %w", targetLanguage, err)
 		}
 		descriptions[targetLanguage] = alts
 	}
@@ -270,6 +256,41 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 		return texts, nil, nil
 	}
 	return texts, descriptions, nil
+}
+
+func translatableAttachmentCount(attachments []TranslationAttachment) int {
+	n := 0
+	for _, attachment := range attachments {
+		if hasTranslatableText(attachment.Description) {
+			n++
+		}
+	}
+	return n
+}
+
+func applyAttachmentDescriptions(translated []string, attachments []TranslationAttachment, protector *Protector) ([]string, error) {
+	altCount := translatableAttachmentCount(attachments)
+	if altCount == 0 {
+		return nil, nil
+	}
+	if len(translated) < altCount {
+		return nil, fmt.Errorf("%d attachment descriptions, want %d", len(translated), altCount)
+	}
+	out := make([]string, len(attachments))
+	ti := 0
+	for i, attachment := range attachments {
+		if !hasTranslatableText(attachment.Description) {
+			out[i] = attachment.Description
+			continue
+		}
+		got := protector.Restore(strings.TrimSpace(html.UnescapeString(translated[ti])))
+		if got == "" {
+			return nil, fmt.Errorf("empty attachment description")
+		}
+		out[i] = got
+		ti++
+	}
+	return out, nil
 }
 
 func normalizeTargetLanguages(targetLanguages []string) ([]string, error) {
@@ -482,7 +503,7 @@ func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, 
 
 const (
 	messageTranslationTaskIntro = "Translate the text inside <final_message> into every language in <target_languages>. Return one object whose keys are those language tags copied character-for-character from <target_languages>; do not use English names such as English or Japanese.\n" +
-		"Images supplied after the text prompt are the <attachments> in source order, then <image> elements from <recent_context> and <reply_context> in index order used only as background, then <image> elements inside <site> used only as background. Always return attachment_descriptions: exactly as many strings as <attachment> elements, in that source order, or an empty array when <attachments> is absent. Never include background images from <recent_context>, <reply_context>, or <site_context> in attachment_descriptions. Translate an existing non-empty description; if it is empty, return an empty string. Never invent or generate alt text. translated_text may be empty when <final_message> is empty.\n"
+		"Images supplied after the text prompt are visual background only: the <attachments> in source order, then <image> elements from <recent_context> and <reply_context> in index order, then <image> elements inside <site>. When <attachment_alts> is present, return attachment_descriptions with exactly as many strings as <alt> elements, in that order. Never include background images from <recent_context>, <reply_context>, or <site_context> in attachment_descriptions. Never invent or generate alt text. translated_text may be empty when <final_message> is empty.\n"
 	pollTranslationTaskIntro = "Translate the Discord poll inside <poll> into every language in <target_languages>. Return one object whose keys are those language tags copied character-for-character from <target_languages>; do not use English names such as English or Japanese.\n" +
 		"Each language object must include question and answers. answers must have the same number of strings as <answer> elements, in the same order.\n"
 	threadCreateTranslationTaskIntro = "Translate the Discord thread create payload inside <thread_create> into every language in <target_languages>. Return one object whose keys are those language tags copied character-for-character from <target_languages>; do not use English names such as English or Japanese.\n" +
@@ -647,6 +668,46 @@ func writeContextSection(b *strings.Builder, section string, messages []ChatCont
 		writeContextMessage(b, h)
 	}
 	b.WriteString("</" + section + ">")
+}
+
+func writeAttachmentContext(b *strings.Builder, attachments []TranslationAttachment) {
+	if len(attachments) == 0 {
+		return
+	}
+	b.WriteString("<attachments>")
+	for _, attachment := range attachments {
+		b.WriteString(`<attachment index="`)
+		writeXMLAttributeValue(b, fmt.Sprintf("%d", attachment.Index))
+		b.WriteString(`"`)
+		if attachment.Filename != "" {
+			b.WriteString(` filename="`)
+			writeXMLAttributeValue(b, attachment.Filename)
+			b.WriteString(`"`)
+		}
+		b.WriteString("></attachment>")
+	}
+	b.WriteString("</attachments>")
+}
+
+func writeAttachmentAlts(b *strings.Builder, attachments []TranslationAttachment, protectedAlts []string) {
+	wrote := false
+	for i, attachment := range attachments {
+		if !hasTranslatableText(attachment.Description) {
+			continue
+		}
+		if !wrote {
+			b.WriteString("<attachment_alts>")
+			wrote = true
+		}
+		b.WriteString(`<alt index="`)
+		writeXMLAttributeValue(b, fmt.Sprintf("%d", attachment.Index))
+		b.WriteString(`">`)
+		writeXMLText(b, protectedAlts[i])
+		b.WriteString("</alt>")
+	}
+	if wrote {
+		b.WriteString("</attachment_alts>")
+	}
 }
 
 func writeContextMessage(b *strings.Builder, msg ChatContextMessage) {
