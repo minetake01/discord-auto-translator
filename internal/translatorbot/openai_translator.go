@@ -467,11 +467,7 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 	return ThreadCreateMultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
-func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, req TopicSummaryRequest) (TopicSummaryResult, error) {
-	prepared, err := prepareTopicSummary(req)
-	if err != nil {
-		return TopicSummaryResult{}, err
-	}
+func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, prepared preparedTranslation) (TopicSummaryResult, error) {
 	schema, err := openaiTopicSummarySchema()
 	if err != nil {
 		return TopicSummaryResult{}, err

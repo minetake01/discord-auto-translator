@@ -10,6 +10,7 @@ import (
 const (
 	topicSummaryTimeout          = 2 * time.Minute
 	topicSummarySourceTokenLimit = 1200
+	translationReplyChainLimit   = 3
 )
 
 type translationContextRequest struct {
@@ -217,12 +218,10 @@ func (s *Service) generateAndStoreTopicSummary(ctx context.Context, guildID, loc
 	if err != nil {
 		return err
 	}
-	if s.rateLimiter != nil {
-		if !s.rateLimiter.Allow(guildID, estimatePreparedTokens(prepared)) {
-			return errTranslationRateLimited
-		}
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
+		return err
 	}
-	result, err := summarizer.SummarizeTopic(ctx, req)
+	result, err := summarizer.SummarizeTopic(ctx, prepared)
 	if err != nil {
 		return err
 	}

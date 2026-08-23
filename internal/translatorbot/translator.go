@@ -75,13 +75,6 @@ type ThreadCreateMultiTranslationResult struct {
 	OutputTokens int
 }
 
-type TopicSummaryRequest struct {
-	PreviousSummary string
-	Discarded       []ChatContextMessage
-	GuildID         string
-	MessageID       string
-}
-
 type TopicSummaryResult struct {
 	Summary      string
 	InputTokens  int
@@ -97,7 +90,7 @@ type Translator interface {
 // TopicSummarizer is implemented by translators that can compress discarded
 // history into a short topic summary. Translation itself does not wait for it.
 type TopicSummarizer interface {
-	SummarizeTopic(ctx context.Context, req TopicSummaryRequest) (TopicSummaryResult, error)
+	SummarizeTopic(ctx context.Context, prepared preparedTranslation) (TopicSummaryResult, error)
 }
 
 type preparedTranslation struct {
@@ -119,10 +112,22 @@ type preparedTranslation struct {
 	visionImages       []visionImage
 	altCount           int
 	promptCacheKey     string
+	alwaysGlossary     []GlossaryEntry
+	matchedGlossary    []GlossaryEntry
+	writeSource        func(*strings.Builder)
 }
 
 func (p preparedTranslation) userPrompt() string {
 	return p.userPromptFrozen + p.userPromptVariable
+}
+
+func (p *preparedTranslation) buildUserPrompt() {
+	if p.writeSource == nil {
+		return
+	}
+	frozen, variable := buildTranslationUserPromptParts(p.targetLanguages, p.translationContext, p.alwaysGlossary, p.matchedGlossary, p.writeSource)
+	p.userPromptFrozen = frozen
+	p.userPromptVariable = variable
 }
 
 func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -147,17 +152,9 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	translationContext.Attachments = attachments
 	assignSiteContext(p, &translationContext)
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
-	systemInstruction := buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>")
-	frozen, variable := buildTranslationUserPromptParts(normalized, translationContext, alwaysGlossary, matchedGlossary, func(b *strings.Builder) {
-		writeAttachmentContext(b, attachments)
-		writeAttachmentAlts(b, attachments, protectedAlts)
-		writeAttributedElement(b, "final_message", translationContext.Author, protected)
-	})
-	return preparedTranslation{
+	prepared := preparedTranslation{
 		targetLanguages:    normalized,
-		systemInstruction:  systemInstruction,
-		userPromptFrozen:   frozen,
-		userPromptVariable: variable,
+		systemInstruction:  buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>"),
 		protector:          p,
 		guildID:            translationContext.GuildID,
 		messageID:          translationContext.MessageID,
@@ -165,7 +162,16 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 		translationContext: translationContext,
 		altCount:           altCount,
 		promptCacheKey:     translationPromptCacheKey(translationContext, ""),
-	}, nil
+		alwaysGlossary:     alwaysGlossary,
+		matchedGlossary:    matchedGlossary,
+		writeSource: func(b *strings.Builder) {
+			writeAttachmentContext(b, attachments)
+			writeAttachmentAlts(b, attachments, protectedAlts)
+			writeAttributedElement(b, "final_message", translationContext.Author, protected)
+		},
+	}
+	prepared.buildUserPrompt()
+	return prepared, nil
 }
 
 type translationResponseItem struct {
@@ -251,16 +257,6 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 	return texts, descriptions, nil
 }
 
-func translatableAttachmentCount(attachments []TranslationAttachment) int {
-	n := 0
-	for _, attachment := range attachments {
-		if hasTranslatableText(attachment.Description) {
-			n++
-		}
-	}
-	return n
-}
-
 func applyAttachmentDescriptions(translated []string, attachments []TranslationAttachment, protector *Protector) ([]string, error) {
 	altCount := translatableAttachmentCount(attachments)
 	if altCount == 0 {
@@ -320,20 +316,9 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 		glossaryContent += "\n" + answer
 	}
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
-	systemInstruction := buildTranslationSystemInstruction(pollTranslationTaskIntro, "<poll>")
-	frozen, variable := buildTranslationUserPromptParts(normalized, translationContext, alwaysGlossary, matchedGlossary, func(b *strings.Builder) {
-		b.WriteString("<poll>")
-		writeAttributedElement(b, "question", translationContext.Author, protectedQuestion)
-		for _, answer := range protectedAnswers {
-			writeXMLElement(b, "answer", answer)
-		}
-		b.WriteString("</poll>")
-	})
-	return preparedTranslation{
+	prepared := preparedTranslation{
 		targetLanguages:    normalized,
-		systemInstruction:  systemInstruction,
-		userPromptFrozen:   frozen,
-		userPromptVariable: variable,
+		systemInstruction:  buildTranslationSystemInstruction(pollTranslationTaskIntro, "<poll>"),
 		protector:          p,
 		guildID:            translationContext.GuildID,
 		messageID:          translationContext.MessageID,
@@ -342,7 +327,19 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 		answers:            answers,
 		translationContext: translationContext,
 		promptCacheKey:     translationPromptCacheKey(translationContext, "poll"),
-	}, nil
+		alwaysGlossary:     alwaysGlossary,
+		matchedGlossary:    matchedGlossary,
+		writeSource: func(b *strings.Builder) {
+			b.WriteString("<poll>")
+			writeAttributedElement(b, "question", translationContext.Author, protectedQuestion)
+			for _, answer := range protectedAnswers {
+				writeXMLElement(b, "answer", answer)
+			}
+			b.WriteString("</poll>")
+		},
+	}
+	prepared.buildUserPrompt()
+	return prepared, nil
 }
 
 func prepareThreadCreateTranslation(targetLanguages []string, name, message string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -365,20 +362,9 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 		glossaryContent += "\n" + message
 	}
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
-	systemInstruction := buildTranslationSystemInstruction(threadCreateTranslationTaskIntro, "<thread_create>")
-	frozen, variable := buildTranslationUserPromptParts(normalized, translationContext, alwaysGlossary, matchedGlossary, func(b *strings.Builder) {
-		b.WriteString("<thread_create>")
-		writeXMLElement(b, "name", protectedName)
-		if messageRequired {
-			writeAttributedElement(b, "message", translationContext.Author, protectedMessage)
-		}
-		b.WriteString("</thread_create>")
-	})
-	return preparedTranslation{
+	prepared := preparedTranslation{
 		targetLanguages:    normalized,
-		systemInstruction:  systemInstruction,
-		userPromptFrozen:   frozen,
-		userPromptVariable: variable,
+		systemInstruction:  buildTranslationSystemInstruction(threadCreateTranslationTaskIntro, "<thread_create>"),
 		protector:          p,
 		guildID:            translationContext.GuildID,
 		messageID:          translationContext.MessageID,
@@ -387,7 +373,19 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 		threadMessage:      message,
 		translationContext: translationContext,
 		promptCacheKey:     translationPromptCacheKey(translationContext, "thread_create"),
-	}, nil
+		alwaysGlossary:     alwaysGlossary,
+		matchedGlossary:    matchedGlossary,
+		writeSource: func(b *strings.Builder) {
+			b.WriteString("<thread_create>")
+			writeXMLElement(b, "name", protectedName)
+			if messageRequired {
+				writeAttributedElement(b, "message", translationContext.Author, protectedMessage)
+			}
+			b.WriteString("</thread_create>")
+		},
+	}
+	prepared.buildUserPrompt()
+	return prepared, nil
 }
 
 func beginPreparedTranslation(targetLanguages []string, translationContext *TranslationContext) ([]string, *Protector, error) {
@@ -494,34 +492,10 @@ func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, 
 	return out, nil
 }
 
-func prepareTopicSummary(req TopicSummaryRequest) (preparedTranslation, error) {
-	if len(req.Discarded) == 0 {
-		return preparedTranslation{}, errors.New("topic summary requires discarded messages")
-	}
-	var frozen strings.Builder
-	frozen.WriteString("<topic_summary_request>")
-	if previous := strings.TrimSpace(req.PreviousSummary); previous != "" {
-		writeXMLElement(&frozen, "previous_summary", previous)
-	}
-	frozen.WriteString("<discarded_context>")
-	for _, msg := range req.Discarded {
-		writeContextMessage(&frozen, ChatContextMessage{Author: msg.Author, Content: msg.Content})
-	}
-	frozen.WriteString("</discarded_context></topic_summary_request>")
-	return preparedTranslation{
-		systemInstruction: topicSummarySystemInstruction,
-		userPromptFrozen:  frozen.String(),
-		guildID:           req.GuildID,
-		messageID:         req.MessageID,
-	}, nil
-}
-
-type topicSummaryResponse struct {
-	Summary string `json:"summary"`
-}
-
 func parseTopicSummaryResponse(raw string) (string, error) {
-	var parsed topicSummaryResponse
+	var parsed struct {
+		Summary string `json:"summary"`
+	}
 	decoder := json.NewDecoder(bytes.NewBufferString(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&parsed); err != nil {
@@ -536,18 +510,4 @@ func parseTopicSummaryResponse(raw string) (string, error) {
 		return "", errors.New("parse topic summary response: empty summary")
 	}
 	return truncateRunes(summary, topicSummaryMaxRunes, ""), nil
-}
-
-const translationOutputTokenReserve = 200
-
-func EstimateTranslationTokens(prompt, response string) int {
-	total := len(prompt) + len(response)
-	if total == 0 {
-		return 0
-	}
-	tokens := total / 4
-	if tokens < 1 {
-		return 1
-	}
-	return tokens
 }

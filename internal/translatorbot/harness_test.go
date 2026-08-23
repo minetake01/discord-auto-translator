@@ -273,14 +273,14 @@ func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepare
 type topicSummaryTranslator struct {
 	echoTranslator
 	mu       sync.Mutex
-	requests []TopicSummaryRequest
+	requests []preparedTranslation
 	summary  string
 	block    <-chan struct{}
 	started  chan struct{}
 	err      error
 }
 
-func (t *topicSummaryTranslator) SummarizeTopic(ctx context.Context, req TopicSummaryRequest) (TopicSummaryResult, error) {
+func (t *topicSummaryTranslator) SummarizeTopic(ctx context.Context, prepared preparedTranslation) (TopicSummaryResult, error) {
 	if t.started != nil {
 		select {
 		case <-t.started:
@@ -296,7 +296,7 @@ func (t *topicSummaryTranslator) SummarizeTopic(ctx context.Context, req TopicSu
 		}
 	}
 	t.mu.Lock()
-	t.requests = append(t.requests, req)
+	t.requests = append(t.requests, prepared)
 	t.mu.Unlock()
 	if t.err != nil {
 		return TopicSummaryResult{}, t.err
@@ -308,10 +308,10 @@ func (t *topicSummaryTranslator) SummarizeTopic(ctx context.Context, req TopicSu
 	return TopicSummaryResult{Summary: summary, InputTokens: 10, OutputTokens: 5}, nil
 }
 
-func (t *topicSummaryTranslator) summaryRequests() []TopicSummaryRequest {
+func (t *topicSummaryTranslator) summaryRequests() []preparedTranslation {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return append([]TopicSummaryRequest(nil), t.requests...)
+	return append([]preparedTranslation(nil), t.requests...)
 }
 
 func seedGroup(t *testing.T, s *Store) {

@@ -14,13 +14,14 @@ internal/translatorbot/
     store_glossary.go       # 用語集 CRUD
     store_topic.go          # 世代切替で捨てた会話の話題要約
     store_poll.go           # 投票選択肢の翻訳キャッシュ
-    translator.go           # Translator インターフェース・prepare/parse・トークン見積もり
-    prompt.go               # provider-neutral なシステム/ユーザープロンプト構築
+    translator.go           # Translator インターフェース・メッセージ/投票/スレッドの prepare/parse
+    prompt.go               # provider-neutral なシステム/ユーザープロンプト構築（話題要約 XML 含む）
+    tokens.go               # 文字数ベースのトークン見積もりヒューリスティック
     history.go              # 会話バーストの履歴選択（沈黙・件数・時間幅・トークンの世代切替）
     openai_translator.go    # OpenAI 互換 Chat Completions の翻訳クライアント
     debug_log.go            # 翻訳往復のデバッグログ（JSON Lines・任意有効化）
     placeholders.go         # 翻訳前後のプレースホルダー保護・復元
-    service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・通知
+    service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・レート制限見積もり・通知
     service_context.go      # 翻訳文脈の収集（会話スコープ・リプライチェイン・話題要約）
     service_message.go      # 通常メッセージのミラー・編集・削除・リプライ引用
     service_forward.go      # 転送メッセージ（FORWARD）のミラー
@@ -44,6 +45,8 @@ internal/translatorbot/
     source_allowlist.go     # Bot/Webhook 送信元の許可リスト
     url_page.go             # URL 単位ページキャッシュ（OGP メタ + hreflang 置換）
 ```
+
+翻訳の準備は、文脈ビジョン（メッセージ添付）→ Protect（サイト ID 割り当て）→ 初回プロンプト → OGP ビジョン（サイト ID が必要）→ 画像が載ったときだけプロンプト XML を組み直し → レート制限 → Chat Completions、の順です。Protect 自体はやり直しません。話題要約は翻訳を待たず、同じ `preparedTranslation` を一度だけ組み立ててからレート制限と `SummarizeTopic` に渡します。
 
 ### ユーザー向け文言の多言語化 (i18n)
 
@@ -384,7 +387,6 @@ const (
 	historyTokenHigh   = 800
 	historyTokenLow    = 400
 	historyFetchLimit  = 512
-	translationReplyChainLimit = 3
 
 	mergeShortMessageMaxRunes = 60
 	mergeMaxCombinedRunes     = 150
@@ -393,4 +395,4 @@ const (
 )
 ```
 
-定義は `history.go`。翻訳文脈の直近履歴は同一バーストを append-only に積み、沈黙 15 分・件数 16/8・時間幅 30/15 分・トークン 800/400 で世代を切り替えます。切り捨て確定時に捨てた枠を裏で短く要約し、次の翻訳から `<topic_summary>` として凍結先頭へ載せます。引用チェインの最大遡り件数は 3 で、時間窓は適用しません。明示キャッシュの TTL は 1 時間で、system+凍結が 1024 トークン以上のときだけ write します。
+定義は `history.go`。翻訳文脈の直近履歴は同一バーストを append-only に積み、沈黙 15 分・件数 16/8・時間幅 30/15 分・トークン 800/400 で世代を切り替えます。切り捨て確定時に捨てた枠を裏で短く要約し、次の翻訳から `<topic_summary>` として凍結先頭へ載せます。引用チェインの最大遡り件数 `translationReplyChainLimit = 3` は `service_context.go` にあり、時間窓は適用しません。明示キャッシュの TTL は 1 時間で、system+凍結が 1024 トークン以上のときだけ write します。
