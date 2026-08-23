@@ -24,8 +24,8 @@ const (
 
 	promptCacheTTL     = time.Hour
 	promptCacheTTLText = "1h"
-	// Explicit breakpoint + TTL write are omitted until the reusable prefix
-	// is large enough to be worth a cache write on typical providers.
+	// Breakpoints are always marked. TTL write is omitted until the reusable
+	// prefix is large enough to be worth a cache write on typical providers.
 	promptCacheExplicitMinTokens = 1024
 
 	// Keep TCP probes active and drop idle pooled connections before common
@@ -82,7 +82,8 @@ type openaiDebugEntry struct {
 	PromptCacheTTLSent bool               `json:"prompt_cache_ttl_sent"`
 	PromptCacheHit     *bool              `json:"prompt_cache_hit,omitempty"`
 	SystemInstruction  string             `json:"system_instruction,omitempty"`
-	UserPromptFrozen   string             `json:"user_prompt_frozen,omitempty"`
+	UserPromptStable   string             `json:"user_prompt_stable,omitempty"`
+	UserPromptHistory  string             `json:"user_prompt_history,omitempty"`
 	UserPromptVariable string             `json:"user_prompt_variable,omitempty"`
 	VisionImageCount   int                `json:"vision_image_count,omitempty"`
 	Usage              *openaiLoggedUsage `json:"usage,omitempty"`
@@ -162,7 +163,7 @@ type openaiPromptCacheBreakpoint struct {
 
 type openaiPromptCacheOptions struct {
 	Mode string `json:"mode"`
-	TTL  string `json:"ttl"`
+	TTL  string `json:"ttl,omitempty"`
 }
 
 type openaiChatCompletionResponse struct {
@@ -559,43 +560,57 @@ func openaiTextContent(text string) json.RawMessage {
 	return encoded
 }
 
-func openaiUserContent(images []visionImage, frozen, variable string, markBreakpoint bool) json.RawMessage {
-	if frozen == "" && variable == "" && len(images) == 0 {
-		return openaiTextContent("")
+func openaiSystemContent(text string) json.RawMessage {
+	return openaiContentParts([]any{openaiCachedTextPart(text)})
+}
+
+func openaiCachedTextPart(text string) openaiTextPart {
+	return openaiTextPart{
+		Type:                  "text",
+		Text:                  text,
+		PromptCacheBreakpoint: &openaiPromptCacheBreakpoint{Mode: "explicit"},
 	}
-	if frozen == "" {
-		frozen, variable = variable, ""
+}
+
+func openaiUserContent(images []visionImage, stable, history, variable string) json.RawMessage {
+	parts := make([]any, 0, 3+len(images))
+	if stable != "" {
+		parts = append(parts, openaiCachedTextPart(stable))
 	}
-	parts := make([]any, 0, 2+len(images))
-	frozenPart := openaiTextPart{Type: "text", Text: frozen}
-	if markBreakpoint {
-		frozenPart.PromptCacheBreakpoint = &openaiPromptCacheBreakpoint{Mode: "explicit"}
+	if history != "" {
+		parts = append(parts, openaiCachedTextPart(history))
 	}
-	parts = append(parts, frozenPart)
 	if variable != "" {
 		parts = append(parts, openaiTextPart{Type: "text", Text: variable})
 	}
 	for _, img := range images {
 		parts = append(parts, openaiImagePart{Type: "image_url", ImageURL: openaiImageURL{URL: img.DataURL}})
 	}
+	if len(parts) == 0 {
+		return openaiTextContent("")
+	}
+	return openaiContentParts(parts)
+}
+
+func openaiContentParts(parts []any) json.RawMessage {
 	encoded, err := json.Marshal(parts)
 	if err != nil {
-		return openaiTextContent(frozen + variable)
+		return json.RawMessage(`[]`)
 	}
 	return encoded
 }
 
 func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage, attempt int) (text string, inputTokens, outputTokens int, err error) {
-	explicitCache := shouldSendExplicitPromptCache(prepared.systemInstruction, prepared.userPromptFrozen)
 	payload := openaiChatCompletionRequest{
 		Model: t.model,
 		Messages: []openaiChatMessage{
-			{Role: "system", Content: openaiTextContent(prepared.systemInstruction)},
-			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPromptFrozen, prepared.userPromptVariable, explicitCache)},
+			{Role: "system", Content: openaiSystemContent(prepared.systemInstruction)},
+			{Role: "user", Content: openaiUserContent(prepared.visionImages, prepared.userPromptStable, prepared.userPromptHistory, prepared.userPromptVariable)},
 		},
-		MaxTokens:       openaiMaxTokens,
-		ReasoningEffort: t.reasoningEffort,
-		PromptCacheKey:  prepared.promptCacheKey,
+		MaxTokens:          openaiMaxTokens,
+		ReasoningEffort:    t.reasoningEffort,
+		PromptCacheKey:     prepared.promptCacheKey,
+		PromptCacheOptions: &openaiPromptCacheOptions{Mode: "explicit"},
 		ResponseFormat: openaiResponseFormat{
 			Type: "json_schema",
 			JSONSchema: openaiJSONSchema{
@@ -609,8 +624,8 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		payload.Provider = &openaiProviderPreferences{RequireParameters: true}
 	}
 	wroteTTL := false
-	if explicitCache && t.promptCacheNeedsTTL(prepared.promptCacheKey) {
-		payload.PromptCacheOptions = &openaiPromptCacheOptions{Mode: "explicit", TTL: promptCacheTTLText}
+	if shouldWritePromptCacheTTL(prepared) && t.promptCacheNeedsTTL(prepared.promptCacheKey) {
+		payload.PromptCacheOptions.TTL = promptCacheTTLText
 		wroteTTL = true
 	}
 	start := time.Now()
@@ -625,7 +640,8 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		PromptCacheKey:     prepared.promptCacheKey,
 		PromptCacheTTLSent: wroteTTL,
 		SystemInstruction:  prepared.systemInstruction,
-		UserPromptFrozen:   prepared.userPromptFrozen,
+		UserPromptStable:   prepared.userPromptStable,
+		UserPromptHistory:  prepared.userPromptHistory,
 		UserPromptVariable: prepared.userPromptVariable,
 		VisionImageCount:   len(prepared.visionImages),
 	}
@@ -692,8 +708,8 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	return extractOpenAIChatText(output)
 }
 
-func shouldSendExplicitPromptCache(system, frozen string) bool {
-	return EstimateTranslationTokens(system+frozen, "") >= promptCacheExplicitMinTokens
+func shouldWritePromptCacheTTL(prepared preparedTranslation) bool {
+	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory, "") >= promptCacheExplicitMinTokens
 }
 
 func (t *OpenAITranslator) promptCacheNeedsTTL(key string) bool {

@@ -322,7 +322,7 @@ func estimatePreparedTokens(prepared preparedTranslation) int {
 	if langs == 0 {
 		langs = 1
 	}
-	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptFrozen+prepared.userPromptVariable, "") +
+	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory+prepared.userPromptVariable, "") +
 		translationOutputTokenReserve*langs +
 		visionTokenOverheadPerImage*len(prepared.visionImages)
 }

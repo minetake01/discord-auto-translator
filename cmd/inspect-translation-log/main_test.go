@@ -40,7 +40,7 @@ func TestPrintDetailReadsChatCompletionsRoundTrip(t *testing.T) {
 		"reasoning: keep [USER:Alice] verbatim",
 		"[en] Hello",
 		"cache: ?",
-		"prompt: system=11B frozen=",
+		"prompt: system=11B stable=",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("detail output missing %q\n%s", want, output)
@@ -85,7 +85,7 @@ func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 		Attempt:            1,
 		ProcessingMS:       int64Ptr(790),
 		SystemInstruction:  "Translate faithfully.",
-		UserPromptFrozen:   "<translation_request><target_languages>en</target_languages>",
+		UserPromptStable:   "<translation_request><target_languages>en</target_languages>",
 		UserPromptVariable: "<final_message>こんにちは</final_message></translation_request>",
 		Usage: &loggedUsage{
 			PromptTokens:     1200,
@@ -115,15 +115,18 @@ func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 func TestPrintPromptDumpsSynthesizedParts(t *testing.T) {
 	entry := logEntry{
 		SystemInstruction:  "System line",
-		UserPromptFrozen:   "Frozen part",
+		UserPromptStable:   "Stable part",
+		UserPromptHistory:  "History part",
 		UserPromptVariable: "Variable part",
 	}
 	output := captureStdout(t, func() { printPrompt(entry) })
 	for _, want := range []string{
 		"--- system ---",
 		"System line",
-		"--- user frozen ---",
-		"Frozen part",
+		"--- user stable ---",
+		"Stable part",
+		"--- user history ---",
+		"History part",
 		"--- user variable ---",
 		"Variable part",
 	} {
@@ -173,6 +176,9 @@ func TestParseEntryReadsMeasurementFields(t *testing.T) {
 	}
 	if entry.Usage == nil || entry.Usage.PromptTokens != 9 || entry.Usage.CachedTokens == nil || *entry.Usage.CachedTokens != 3 || entry.Usage.CostUSD == nil || *entry.Usage.CostUSD != 0.001 {
 		t.Fatalf("usage = %#v", entry.Usage)
+	}
+	if entry.UserPromptFrozen != "frozen" || entry.UserPromptVariable != "var" {
+		t.Fatalf("legacy prompts = %#v", entry)
 	}
 }
 

@@ -139,14 +139,17 @@ func TestBuildTranslationSystemInstructionSelectsGlossary(t *testing.T) {
 	}
 
 	always, matched := splitGlossaryEntries("An npc appeared", glossary)
-	frozen, variable := buildTranslationUserPromptParts([]string{"en", "ja"}, TranslationContext{}, always, matched, func(b *strings.Builder) {
+	stable, history, variable := buildTranslationUserPromptParts([]string{"en", "ja"}, TranslationContext{}, always, matched, func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "", "An npc appeared")
 	})
-	if !strings.Contains(frozen, "<source_term>raid</source_term>") {
-		t.Fatalf("always_include glossary missing from frozen prompt:\n%s", frozen)
+	if history != "" {
+		t.Fatalf("glossary-only prompt should not have a history part:\n%s", history)
 	}
-	if strings.Contains(frozen, "<source_term>NPC</source_term>") || strings.Contains(frozen, "<source_term>guild</source_term>") {
-		t.Fatalf("matched glossary leaked into frozen prompt:\n%s", frozen)
+	if !strings.Contains(stable, "<source_term>raid</source_term>") {
+		t.Fatalf("always_include glossary missing from stable prompt:\n%s", stable)
+	}
+	if strings.Contains(stable, "<source_term>NPC</source_term>") || strings.Contains(stable, "<source_term>guild</source_term>") {
+		t.Fatalf("matched glossary leaked into stable prompt:\n%s", stable)
 	}
 	if !strings.Contains(variable, "<source_term>NPC</source_term>") || !strings.Contains(variable, "<attribute>略語</attribute>") {
 		t.Fatalf("matched glossary missing from variable prompt:\n%s", variable)
@@ -353,7 +356,7 @@ func TestBuildTranslationUserPromptPreservesNewlinesAndBlockquotes(t *testing.T)
 	}
 }
 
-func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
+func TestUserPromptKeepsStablePrefixWhenHistoryGrows(t *testing.T) {
 	writeFinal := func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "carol", "now")
 	}
@@ -367,7 +370,6 @@ func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
 			{Author: "alice", Content: "first"},
 			{Author: "bob", Content: "second"},
 		},
-		HistoryFrozenCount: 1,
 	}
 	three := TranslationContext{
 		History: []ChatContextMessage{
@@ -375,35 +377,53 @@ func TestFrozenUserPromptGrowsByAppendingHistory(t *testing.T) {
 			{Author: "bob", Content: "second"},
 			{Author: "carol", Content: "third"},
 		},
-		HistoryFrozenCount: 2,
 		ReplyChain: []ChatContextMessage{
 			{Author: "alice", Content: "first"},
 		},
 		Sites: []SiteContextEntry{{ID: "1", Title: "Doc", Description: "page"}},
 	}
 	always := []GlossaryEntry{{SourceTerm: "raid", PreferredTranslation: "レイド", AlwaysInclude: true}}
-	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, always, nil, writeFinal)
-	frozen2, variable2 := buildTranslationUserPromptParts([]string{"en"}, two, always, nil, writeFinal)
-	frozen3, _ := buildTranslationUserPromptParts([]string{"en"}, three, always, nil, writeFinal)
-	if !strings.HasPrefix(frozen2, frozen1) {
-		t.Fatalf("second frozen prompt is not an append-only extension:\n%s\n---\n%s", frozen1, frozen2)
+	stable1, history1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, always, nil, writeFinal)
+	stable2, history2, variable2 := buildTranslationUserPromptParts([]string{"en"}, two, always, nil, writeFinal)
+	stable3, history3, variable3 := buildTranslationUserPromptParts([]string{"en"}, three, always, nil, writeFinal)
+	if stable1 != stable2 || stable2 != stable3 {
+		t.Fatalf("stable prefix changed as history grew:\n%s\n---\n%s\n---\n%s", stable1, stable2, stable3)
 	}
-	if !strings.HasPrefix(frozen3, frozen2) {
-		t.Fatalf("third frozen prompt is not an append-only extension:\n%s\n---\n%s", frozen2, frozen3)
+	if !strings.Contains(history1, `<message author="alice">first</message>`) || strings.Contains(history1, "second") {
+		t.Fatalf("history[0] = %s", history1)
 	}
-	for i, frozen := range []string{frozen1, frozen2, frozen3} {
-		for _, leaked := range []string{"</recent_context>", "<reply_context>", "<site_context>", "<final_message"} {
-			if strings.Contains(frozen, leaked) {
-				t.Fatalf("frozen[%d] contains %q:\n%s", i, leaked, frozen)
+	if !strings.Contains(history2, `<message author="alice">first</message>`) || !strings.Contains(history2, `<message author="bob">second</message>`) {
+		t.Fatalf("history did not keep earlier messages:\n%s\n---\n%s", history1, history2)
+	}
+	if !strings.Contains(history3, `<message author="alice">first</message>`) || !strings.Contains(history3, `<message author="carol">third</message>`) {
+		t.Fatalf("history did not keep earlier messages:\n%s\n---\n%s", history2, history3)
+	}
+	if !strings.Contains(history3, "<reply_context>") {
+		t.Fatal("reply_context belongs in the history prompt")
+	}
+	for i, stable := range []string{stable1, stable2, stable3} {
+		for _, leaked := range []string{"<topic_summary>", "<recent_context>", "<reply_context>", "<site_context>", "<final_message"} {
+			if strings.Contains(stable, leaked) {
+				t.Fatalf("stable[%d] contains %q:\n%s", i, leaked, stable)
 			}
 		}
 	}
-	if !strings.Contains(variable1, "</recent_context>") || !strings.Contains(variable2, "</recent_context>") {
-		t.Fatal("recent_context close tag belongs in the variable prompt")
+	for i, variable := range []string{variable1, variable2, variable3} {
+		for _, leaked := range []string{"<topic_summary>", "<recent_context>", "<reply_context>"} {
+			if strings.Contains(variable, leaked) {
+				t.Fatalf("variable[%d] contains %q:\n%s", i, leaked, variable)
+			}
+		}
+		if !strings.Contains(variable, "<final_message") {
+			t.Fatalf("variable[%d] missing target message:\n%s", i, variable)
+		}
+	}
+	if !strings.Contains(variable3, "<site_context>") {
+		t.Fatal("site_context belongs in the variable prompt with the target message")
 	}
 }
 
-func TestFrozenUserPromptKeepsTopicSummaryStable(t *testing.T) {
+func TestUserPromptPutsTopicSummaryInHistory(t *testing.T) {
 	writeFinal := func(b *strings.Builder) {
 		writeAttributedElement(b, "final_message", "carol", "now")
 	}
@@ -420,27 +440,29 @@ func TestFrozenUserPromptKeepsTopicSummaryStable(t *testing.T) {
 			{Author: "alice", Content: "first"},
 			{Author: "bob", Content: "second"},
 		},
-		HistoryFrozenCount: 1,
 	}
-	frozen1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, nil, nil, writeFinal)
-	frozen2, _ := buildTranslationUserPromptParts([]string{"en"}, two, nil, nil, writeFinal)
-	if !strings.Contains(frozen1, "<topic_summary>"+summary+"</topic_summary>") {
-		t.Fatalf("missing topic_summary in frozen prompt:\n%s", frozen1)
+	stable1, history1, variable1 := buildTranslationUserPromptParts([]string{"en"}, one, nil, nil, writeFinal)
+	stable2, history2, _ := buildTranslationUserPromptParts([]string{"en"}, two, nil, nil, writeFinal)
+	if strings.Contains(stable1, "topic_summary") || strings.Contains(variable1, "topic_summary") {
+		t.Fatalf("topic_summary leaked out of history:\nstable=%s\nvariable=%s", stable1, variable1)
 	}
-	if strings.Contains(variable1, "topic_summary") {
-		t.Fatalf("topic_summary leaked into variable prompt:\n%s", variable1)
+	if !strings.Contains(history1, "<topic_summary>"+summary+"</topic_summary>") {
+		t.Fatalf("missing topic_summary in history prompt:\n%s", history1)
 	}
-	if !strings.HasPrefix(frozen2, frozen1) {
-		t.Fatalf("frozen prompt with a stable topic summary is not append-only:\n%s\n---\n%s", frozen1, frozen2)
+	if stable1 != stable2 {
+		t.Fatalf("stable prefix changed when history grew:\n%s\n---\n%s", stable1, stable2)
+	}
+	if !strings.Contains(history2, `<message author="alice">first</message>`) || !strings.Contains(history2, `<message author="bob">second</message>`) {
+		t.Fatalf("history with a stable topic summary dropped earlier messages:\n%s\n---\n%s", history1, history2)
 	}
 	without := TranslationContext{
 		History: []ChatContextMessage{
 			{Author: "alice", Content: "first"},
 		},
 	}
-	frozenWithout, _ := buildTranslationUserPromptParts([]string{"en"}, without, nil, nil, writeFinal)
-	if strings.Contains(frozenWithout, "topic_summary") {
-		t.Fatalf("empty topic summary should omit the tag:\n%s", frozenWithout)
+	_, historyWithout, _ := buildTranslationUserPromptParts([]string{"en"}, without, nil, nil, writeFinal)
+	if strings.Contains(historyWithout, "topic_summary") {
+		t.Fatalf("empty topic summary should omit the tag:\n%s", historyWithout)
 	}
 }
 
@@ -606,11 +628,14 @@ func TestPrepareTranslationSystemInstructionIsStableAcrossRequestFeatures(t *tes
 	if strings.Contains(base.systemInstruction, "<source_term>") || strings.Contains(base.systemInstruction, "<entry>") {
 		t.Fatal("glossary entries must not be in the system instruction")
 	}
-	if !strings.Contains(withFeatures.userPromptFrozen, "<source_term>raid</source_term>") {
-		t.Fatal("always_include glossary belongs in the frozen user prompt")
+	if !strings.Contains(withFeatures.userPromptStable, "<source_term>raid</source_term>") {
+		t.Fatal("always_include glossary belongs in the stable user prompt")
 	}
-	if strings.Contains(withFeatures.userPromptFrozen, "<source_term>npc</source_term>") {
-		t.Fatal("matched glossary must not be in the frozen user prompt")
+	if strings.Contains(withFeatures.userPromptStable, "<source_term>npc</source_term>") {
+		t.Fatal("matched glossary must not be in the stable user prompt")
+	}
+	if strings.Contains(withFeatures.userPromptHistory, "<source_term>npc</source_term>") {
+		t.Fatal("matched glossary must not be in the history user prompt")
 	}
 	if !strings.Contains(withFeatures.userPromptVariable, "<source_term>npc</source_term>") {
 		t.Fatal("matched glossary belongs in the variable user prompt")

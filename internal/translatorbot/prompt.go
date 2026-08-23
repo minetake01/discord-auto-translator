@@ -99,62 +99,48 @@ func translationPromptCacheKey(translationContext TranslationContext, kind strin
 }
 
 func buildTranslationUserPrompt(targetLanguages []string, translationContext TranslationContext, writeSource func(*strings.Builder)) string {
-	frozen, variable := buildTranslationUserPromptParts(targetLanguages, translationContext, nil, nil, writeSource)
-	return frozen + variable
+	stable, history, variable := buildTranslationUserPromptParts(targetLanguages, translationContext, nil, nil, writeSource)
+	return stable + history + variable
 }
 
-func buildTranslationUserPromptParts(targetLanguages []string, translationContext TranslationContext, alwaysGlossary, matchedGlossary []GlossaryEntry, writeSource func(*strings.Builder)) (frozen, variable string) {
-	var frozenB, variableB strings.Builder
-	frozenB.WriteString("<translation_request>")
-	writeXMLElement(&frozenB, "target_languages", strings.Join(targetLanguages, ", "))
+func buildTranslationUserPromptParts(targetLanguages []string, translationContext TranslationContext, alwaysGlossary, matchedGlossary []GlossaryEntry, writeSource func(*strings.Builder)) (stable, history, variable string) {
+	var stableB, historyB, variableB strings.Builder
+	stableB.WriteString("<translation_request>")
+	writeXMLElement(&stableB, "target_languages", strings.Join(targetLanguages, ", "))
 	if strings.TrimSpace(translationContext.StyleInstructions) != "" {
-		writeXMLElement(&frozenB, "style_instructions", translationContext.StyleInstructions)
+		writeXMLElement(&stableB, "style_instructions", translationContext.StyleInstructions)
 	}
 	if translationContext.ServerName != "" || translationContext.ServerDescription != "" || translationContext.ChannelName != "" || translationContext.ChannelTopic != "" || translationContext.ThreadName != "" {
-		frozenB.WriteString("<discord_context>")
+		stableB.WriteString("<discord_context>")
 		if translationContext.ServerName != "" {
-			writeXMLElement(&frozenB, "server_name", translationContext.ServerName)
+			writeXMLElement(&stableB, "server_name", translationContext.ServerName)
 		}
 		if translationContext.ServerDescription != "" {
-			writeXMLElement(&frozenB, "server_overview", translationContext.ServerDescription)
+			writeXMLElement(&stableB, "server_overview", translationContext.ServerDescription)
 		}
 		if translationContext.ChannelName != "" {
-			writeXMLElement(&frozenB, "channel_name", translationContext.ChannelName)
+			writeXMLElement(&stableB, "channel_name", translationContext.ChannelName)
 		}
 		if translationContext.ChannelTopic != "" {
-			writeXMLElement(&frozenB, "channel_topic", translationContext.ChannelTopic)
+			writeXMLElement(&stableB, "channel_topic", translationContext.ChannelTopic)
 		}
 		if translationContext.ThreadName != "" {
-			writeXMLElement(&frozenB, "thread_name", translationContext.ThreadName)
+			writeXMLElement(&stableB, "thread_name", translationContext.ThreadName)
 		}
-		frozenB.WriteString("</discord_context>")
+		stableB.WriteString("</discord_context>")
 	}
-	writeGlossarySection(&frozenB, alwaysGlossary)
+	writeGlossarySection(&stableB, alwaysGlossary)
 	if summary := strings.TrimSpace(translationContext.TopicSummary); summary != "" {
-		writeXMLElement(&frozenB, "topic_summary", summary)
-	}
-	frozenCount := translationContext.HistoryFrozenCount
-	if frozenCount < 0 {
-		frozenCount = 0
-	}
-	if frozenCount > len(translationContext.History) {
-		frozenCount = len(translationContext.History)
+		writeXMLElement(&historyB, "topic_summary", summary)
 	}
 	if len(translationContext.History) > 0 {
-		frozenB.WriteString("<recent_context>")
-		for _, h := range translationContext.History[:frozenCount] {
-			writeContextMessage(&frozenB, h)
-		}
-		for _, h := range translationContext.History[frozenCount:] {
-			writeContextMessage(&variableB, h)
-		}
-		variableB.WriteString("</recent_context>")
+		writeContextSection(&historyB, "recent_context", translationContext.History)
+	}
+	if len(translationContext.ReplyChain) > 0 {
+		writeContextSection(&historyB, "reply_context", translationContext.ReplyChain)
 	}
 	if len(matchedGlossary) > 0 {
 		writeGlossarySection(&variableB, matchedGlossary)
-	}
-	if len(translationContext.ReplyChain) > 0 {
-		writeContextSection(&variableB, "reply_context", translationContext.ReplyChain)
 	}
 	if len(translationContext.Sites) > 0 {
 		variableB.WriteString("<site_context>")
@@ -174,7 +160,7 @@ func buildTranslationUserPromptParts(targetLanguages []string, translationContex
 	}
 	writeSource(&variableB)
 	variableB.WriteString("</translation_request>")
-	return frozenB.String(), variableB.String()
+	return stableB.String(), historyB.String(), variableB.String()
 }
 
 func writeContextSection(b *strings.Builder, section string, messages []ChatContextMessage) {
@@ -307,19 +293,19 @@ func prepareTopicSummary(req TopicSummaryRequest) (preparedTranslation, error) {
 	if len(req.Discarded) == 0 {
 		return preparedTranslation{}, errors.New("topic summary requires discarded messages")
 	}
-	var frozen strings.Builder
-	frozen.WriteString("<topic_summary_request>")
+	var user strings.Builder
+	user.WriteString("<topic_summary_request>")
 	if previous := strings.TrimSpace(req.PreviousSummary); previous != "" {
-		writeXMLElement(&frozen, "previous_summary", previous)
+		writeXMLElement(&user, "previous_summary", previous)
 	}
-	frozen.WriteString("<discarded_context>")
+	user.WriteString("<discarded_context>")
 	for _, msg := range req.Discarded {
-		writeContextMessage(&frozen, ChatContextMessage{Author: msg.Author, Content: msg.Content})
+		writeContextMessage(&user, ChatContextMessage{Author: msg.Author, Content: msg.Content})
 	}
-	frozen.WriteString("</discarded_context></topic_summary_request>")
+	user.WriteString("</discarded_context></topic_summary_request>")
 	return preparedTranslation{
 		systemInstruction: topicSummarySystemInstruction,
-		userPromptFrozen:  frozen.String(),
+		userPromptStable:  user.String(),
 		guildID:           req.GuildID,
 		messageID:         req.MessageID,
 	}, nil
