@@ -4,13 +4,23 @@
 
 ```
 cmd/discord-auto-translator/
-└── main.go                 # エントリポイント。Discord イベントを受け取り Service に渡す
+    main.go                 # エントリポイント。Discord イベントを受け取り Service に渡す
+    gateway_message.go      # MESSAGE_CREATE / UPDATE の Gateway ハンドラ
+    gateway_message_map.go  # discordgo メッセージ → ドメイン DTO
+    gateway_role_color.go   # Gateway メンバーからのロール色解決
+    guild_lifecycle.go      # ギルド参加・離脱の永続化
+    retention.go            # 保持期限ワーカー
 
 internal/translatorbot/
     config.go               # 環境変数・.env の読み込み
     models.go               # 永続化エンティティ・Discord DTO・用語集エントリ
-    store.go                # SQLite Open/Init/スキーマ + グループ/リンク/スレッド等 CRUD + sentinel エラー
-    store_guild.go          # ギルドライフサイクル・保持期限パージ
+    store.go                # Store・Open/Init/スキーマ・sentinel エラー・共有 helper
+    store_group.go          # グループ/チャンネル CRUD・スタイル
+    store_forum.go          # フォーラムタグ対応付け
+    store_message.go        # メッセージリンク・ピン・保持期限パージ
+    store_thread.go         # スレッドリンク
+    store_processed.go      # 処理済みイベント
+    store_guild.go          # ギルドライフサイクル
     store_glossary.go       # 用語集 CRUD
     store_topic.go          # 世代切替で捨てた会話の話題要約
     store_poll.go           # 投票選択肢の翻訳キャッシュ
@@ -18,25 +28,34 @@ internal/translatorbot/
     prompt.go               # provider-neutral なシステム/ユーザープロンプト構築（話題要約 XML 含む）
     tokens.go               # 文字数ベースのトークン見積もりヒューリスティック
     history.go              # 会話バーストの履歴選択（沈黙・件数・時間幅・トークンの世代切替）
-    openai_translator.go    # OpenAI 互換 Chat Completions の翻訳クライアント
-    debug_log.go            # 翻訳往復のデバッグログ（JSON Lines・任意有効化）
+    openai.go               # OpenAITranslator・Chat Completions 呼び出し
+    openai_schema.go        # Structured Outputs の JSON Schema
+    openai_debug.go         # 翻訳往復のデバッグ記録
+    debug_log.go            # デバッグログファイル（JSON Lines・任意有効化）
     placeholders.go         # 翻訳前後のプレースホルダー保護・復元
-    service.go              # Service 本体・翻訳フロー共通処理（translateWithLimit）・レート制限見積もり・通知
+    service.go              # Service 本体・処理ポリシー・setter
+    service_translate.go    # 翻訳フロー・レート制限・障害通知
+    service_mirror.go       # webhook 送信とリンク保存
     service_context.go      # 翻訳文脈の収集（会話スコープ・リプライチェイン・話題要約）
     service_message.go      # 通常メッセージのミラー・編集・削除・リプライ引用
     service_forward.go      # 転送メッセージ（FORWARD）のミラー
     service_thread.go       # スレッド作成・更新・削除・スレッド内メッセージ同期
     service_sync.go         # リアクション・ピン留め同期
-    content.go              # 本文加工の純粋関数（添付URL化・疑似リプライ解析・切り詰め等）
-    image.go                # 画像添付判定・ダウンロード・ビジョン用縮小・再アップロード用バイト保持
+    content.go              # 添付URL化など本文加工
+    content_mirror.go       # 疑似リプライ/転送見出しの解析
+    content_links.go        # 翻訳後テキスト内の Discord リンク・メンション置換
+    snowflake.go            # Discord snowflake の時刻・境界計算
+    image.go                # 画像添付判定・ダウンロード・ビジョン用縮小
+    image_context.go        # 会話文脈のビジョン画像
+    image_webhook.go        # webhook 再アップロード用変換
     ui_strings.go           # 全ユーザー向け文言の多言語カタログ（13言語 + 英語フォールバック）
     commands.go             # スラッシュコマンド定義・ギルド登録
-    command_handlers.go     # CommandHandler と各コマンド処理
-    forum_tag_ui.go         # フォーラム/メディアのタグ対応付け UI
+    command.go              # CommandHandler と各コマンド処理
+    command_forum_tag_ui.go # フォーラム/メディアのタグ対応付け UI
     styles.go               # 翻訳スタイルプリセット定義・検証
-    discord_client.go       # DiscordAPI インターフェース + discordgo 実装
-    discord_links.go        # 翻訳後テキスト内の Discord リンク・メンション置換
+    discord.go              # DiscordAPI インターフェース + discordgo 実装
     discord_retry.go        # Discord API のレート制限リトライ
+    discord_embed.go        # embed 引用の本文合成
     ratelimit.go            # ギルド単位の翻訳トークンレートリミッター
     languages.go            # 言語コード検証・オートコンプリート候補
     avatar.go               # アバター画像バッジ
@@ -67,7 +86,7 @@ internal/translatorbot/
 
 `discordgo v0.29.0` を使用しています。このバージョンは Discord の一部新しい API に未対応の場合があります。
 
-**スレッドの webhook 操作** (`EditWebhook` / `DeleteWebhook` でのスレッド内メッセージ操作) は discordgo の公式メソッドが `thread_id` に対応していないため、`discord_client.go` 内で `session.RequestWithBucketID` を直接呼び出す実装になっています（`webhookMessageURL` 関数）。discordgo をアップデートする場合はこの部分の互換性を確認してください。
+**スレッドの webhook 操作** (`EditWebhook` / `DeleteWebhook` でのスレッド内メッセージ操作) は discordgo の公式メソッドが `thread_id` に対応していないため、`discord.go` 内で `session.RequestWithBucketID` を直接呼び出す実装になっています（`webhookMessageURL` 関数）。discordgo をアップデートする場合はこの部分の互換性を確認してください。
 
 **添付の代替テキスト** discordgo v0.29.0 の `MessageAttachment` に `description` が無いため、Gateway の `Event.RawData` から読み、webhook / forum 初回投稿では `payload_json.attachments[].description` を自前の multipart で送ります。
 
@@ -77,7 +96,7 @@ internal/translatorbot/
 
 ### OpenAI 互換 Chat Completions
 
-`openai_translator.go` でリクエストパラメータが定義されています。ベース URL・API キー・モデルは `config.go` が環境変数から必須設定として読み込みます：
+`openai.go` でリクエストパラメータが定義されています。ベース URL・API キー・モデルは `config.go` が環境変数から必須設定として読み込みます：
 
 ```go
 // per-attempt timeout: 60s
@@ -196,7 +215,7 @@ type Service struct {
 PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={thread.id}
 ```
 
-`discord_client.go` の `threadIDForWebhook` と `webhookMessageURL` がこの処理を担います。
+`discord.go` の `threadIDForWebhook` と `webhookMessageURL` がこの処理を担います。
 
 ---
 
