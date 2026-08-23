@@ -146,15 +146,6 @@ func fetchedMessageFromDiscord(message *discordgo.Message) DiscordFetchedMessage
 	return result
 }
 
-func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, error) {
-	name = sanitizeWebhookName(name)
-	w, err := d.session.WebhookCreate(channelID, name, "")
-	if err != nil {
-		return "", "", err
-	}
-	return w.ID, w.Token, nil
-}
-
 func (d DiscordGoAPI) SendChannelMessage(channelID, replyToMessageID, content string) error {
 	if replyToMessageID == "" {
 		return errors.New("send channel message: replyToMessageID is required")
@@ -164,6 +155,15 @@ func (d DiscordGoAPI) SendChannelMessage(channelID, replyToMessageID, content st
 		ChannelID: channelID,
 	})
 	return err
+}
+
+func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, error) {
+	name = sanitizeWebhookName(name)
+	w, err := d.session.WebhookCreate(channelID, name, "")
+	if err != nil {
+		return "", "", err
+	}
+	return w.ID, w.Token, nil
 }
 
 func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (string, error) {
@@ -364,6 +364,23 @@ func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
 	return d.session.ChannelMessageUnpin(channelID, messageID)
 }
 
+type forumThreadStartPayload struct {
+	Name                string             `json:"name"`
+	AutoArchiveDuration int                `json:"auto_archive_duration"`
+	AppliedTags         []string           `json:"applied_tags,omitempty"`
+	Message             forumThreadMessage `json:"message"`
+}
+
+type forumThreadMessage struct {
+	Content     string                    `json:"content,omitempty"`
+	Embeds      []*discordgo.MessageEmbed `json:"embeds,omitempty"`
+	Attachments []webhookAttachmentMeta   `json:"attachments,omitempty"`
+}
+
+func isThreadOnlyChannelType(channelType int) bool {
+	return channelType == int(discordgo.ChannelTypeGuildForum) || channelType == int(discordgo.ChannelTypeGuildMedia)
+}
+
 func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (string, string, error) {
 	if isThreadOnlyChannelType(channelType) {
 		if strings.TrimSpace(initialMessage) == "" && len(embeds) == 0 && len(files) == 0 {
@@ -400,23 +417,6 @@ func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, init
 		return "", "", err
 	}
 	return t.ID, "", nil
-}
-
-func isThreadOnlyChannelType(channelType int) bool {
-	return channelType == int(discordgo.ChannelTypeGuildForum) || channelType == int(discordgo.ChannelTypeGuildMedia)
-}
-
-type forumThreadStartPayload struct {
-	Name                string              `json:"name"`
-	AutoArchiveDuration int                 `json:"auto_archive_duration"`
-	AppliedTags         []string            `json:"applied_tags,omitempty"`
-	Message             forumThreadMessage  `json:"message"`
-}
-
-type forumThreadMessage struct {
-	Content     string                    `json:"content,omitempty"`
-	Embeds      []*discordgo.MessageEmbed `json:"embeds,omitempty"`
-	Attachments []webhookAttachmentMeta   `json:"attachments,omitempty"`
 }
 
 func (d DiscordGoAPI) startForumThreadWithFiles(channelID, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (*discordgo.Channel, error) {

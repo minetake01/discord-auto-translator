@@ -59,6 +59,14 @@ func (s *Service) groupTranslationContext(ctx context.Context, req translationCo
 	return translationContext
 }
 
+func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID string) string {
+	preset, custom, err := s.store.GroupStyle(ctx, guildID, groupID)
+	if err != nil {
+		return ""
+	}
+	return ResolveStyleInstructions(preset, custom)
+}
+
 func (s *Service) resolveThreadName(m DiscordMessage) string {
 	if name := strings.TrimSpace(m.ThreadName); name != "" {
 		return name
@@ -66,14 +74,6 @@ func (s *Service) resolveThreadName(m DiscordMessage) string {
 	return bestEffortString(func() (string, error) {
 		return s.discord.ChannelName(m.ChannelID)
 	})
-}
-
-func (s *Service) groupStyleInstructions(ctx context.Context, guildID, groupID string) string {
-	preset, custom, err := s.store.GroupStyle(ctx, guildID, groupID)
-	if err != nil {
-		return ""
-	}
-	return ResolveStyleInstructions(preset, custom)
 }
 
 func (s *Service) conversationScope(ctx context.Context, guildID, groupID, historyChannelID string) (channelIDs []string, locationKey string) {
@@ -169,83 +169,12 @@ func (s *Service) loadConversationContext(ctx context.Context, guildID, channelI
 	return translationContext
 }
 
-func (s *Service) scheduleTopicSummary(guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) {
-	if _, ok := s.translator.(TopicSummarizer); !ok {
-		return
-	}
-	if strings.TrimSpace(locationKey) == "" || strings.TrimSpace(generationID) == "" || generationID == "empty" || len(discarded) == 0 {
-		return
-	}
-	attemptKey := locationKey + "\x00" + generationID
-	if _, loaded := s.topicSummaryAttempts.LoadOrStore(attemptKey, struct{}{}); loaded {
-		return
-	}
-	copied := append([]ChatContextMessage(nil), discarded...)
-	run := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), topicSummaryTimeout)
-		defer cancel()
-		if err := s.generateAndStoreTopicSummary(ctx, guildID, locationKey, generationID, messageID, copied); err != nil && errors.Is(err, errTranslationRateLimited) {
-			s.topicSummaryAttempts.Delete(attemptKey)
-		}
-	}
-	if s.runTopicSummary != nil {
-		s.runTopicSummary(run)
-		return
-	}
-	go run()
-}
-
-func (s *Service) generateAndStoreTopicSummary(ctx context.Context, guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) error {
-	summarizer, ok := s.translator.(TopicSummarizer)
-	if !ok {
-		return nil
-	}
-	if existing, err := s.store.TopicSummary(ctx, locationKey, generationID); err == nil && existing != "" {
-		return nil
-	}
-	previous := ""
-	if prevGeneration, prevSummary, err := s.store.TopicSummaryForLocation(ctx, locationKey); err == nil && prevGeneration != generationID {
-		previous = prevSummary
-	}
-	req := TopicSummaryRequest{
-		PreviousSummary: previous,
-		Discarded:       capDiscardedForSummary(discarded),
-		GuildID:         guildID,
-		MessageID:       messageID,
-	}
-	prepared, err := prepareTopicSummary(req)
+func bestEffortString(fn func() (string, error)) string {
+	value, err := fn()
 	if err != nil {
-		return err
+		return ""
 	}
-	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
-		return err
-	}
-	result, err := summarizer.SummarizeTopic(ctx, prepared)
-	if err != nil {
-		return err
-	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
-	if strings.TrimSpace(result.Summary) == "" {
-		return errors.New("empty topic summary")
-	}
-	return s.store.UpsertTopicSummary(ctx, guildID, locationKey, generationID, result.Summary)
-}
-
-func capDiscardedForSummary(messages []ChatContextMessage) []ChatContextMessage {
-	if len(messages) == 0 {
-		return nil
-	}
-	total := 0
-	start := len(messages)
-	for i := len(messages) - 1; i >= 0; i-- {
-		n := EstimateTranslationTokens(messages[i].Content, "")
-		if total+n > topicSummarySourceTokenLimit && start < len(messages) {
-			break
-		}
-		total += n
-		start = i
-	}
-	return messages[start:]
+	return strings.TrimSpace(value)
 }
 
 type messageRef struct {
@@ -340,10 +269,81 @@ func contextMessageHasContent(entry ChatContextMessage) bool {
 	return strings.TrimSpace(entry.Content) != "" || len(imageAttachmentsOnly(entry.Attachments)) > 0
 }
 
-func bestEffortString(fn func() (string, error)) string {
-	value, err := fn()
-	if err != nil {
-		return ""
+func (s *Service) scheduleTopicSummary(guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) {
+	if _, ok := s.translator.(TopicSummarizer); !ok {
+		return
 	}
-	return strings.TrimSpace(value)
+	if strings.TrimSpace(locationKey) == "" || strings.TrimSpace(generationID) == "" || generationID == "empty" || len(discarded) == 0 {
+		return
+	}
+	attemptKey := locationKey + "\x00" + generationID
+	if _, loaded := s.topicSummaryAttempts.LoadOrStore(attemptKey, struct{}{}); loaded {
+		return
+	}
+	copied := append([]ChatContextMessage(nil), discarded...)
+	run := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), topicSummaryTimeout)
+		defer cancel()
+		if err := s.generateAndStoreTopicSummary(ctx, guildID, locationKey, generationID, messageID, copied); err != nil && errors.Is(err, errTranslationRateLimited) {
+			s.topicSummaryAttempts.Delete(attemptKey)
+		}
+	}
+	if s.runTopicSummary != nil {
+		s.runTopicSummary(run)
+		return
+	}
+	go run()
+}
+
+func (s *Service) generateAndStoreTopicSummary(ctx context.Context, guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) error {
+	summarizer, ok := s.translator.(TopicSummarizer)
+	if !ok {
+		return nil
+	}
+	if existing, err := s.store.TopicSummary(ctx, locationKey, generationID); err == nil && existing != "" {
+		return nil
+	}
+	previous := ""
+	if prevGeneration, prevSummary, err := s.store.TopicSummaryForLocation(ctx, locationKey); err == nil && prevGeneration != generationID {
+		previous = prevSummary
+	}
+	req := TopicSummaryRequest{
+		PreviousSummary: previous,
+		Discarded:       capDiscardedForSummary(discarded),
+		GuildID:         guildID,
+		MessageID:       messageID,
+	}
+	prepared, err := prepareTopicSummary(req)
+	if err != nil {
+		return err
+	}
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
+		return err
+	}
+	result, err := summarizer.SummarizeTopic(ctx, prepared)
+	if err != nil {
+		return err
+	}
+	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	if strings.TrimSpace(result.Summary) == "" {
+		return errors.New("empty topic summary")
+	}
+	return s.store.UpsertTopicSummary(ctx, guildID, locationKey, generationID, result.Summary)
+}
+
+func capDiscardedForSummary(messages []ChatContextMessage) []ChatContextMessage {
+	if len(messages) == 0 {
+		return nil
+	}
+	total := 0
+	start := len(messages)
+	for i := len(messages) - 1; i >= 0; i-- {
+		n := EstimateTranslationTokens(messages[i].Content, "")
+		if total+n > topicSummarySourceTokenLimit && start < len(messages) {
+			break
+		}
+		total += n
+		start = i
+	}
+	return messages[start:]
 }

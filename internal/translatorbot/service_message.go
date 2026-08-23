@@ -41,6 +41,48 @@ func (d mirrorDestination) threadID() string {
 	return d.targetID
 }
 
+// replyQuote builds the pseudo-reply quote line for a reply message,
+// preferring the mirrored version of the referenced message in the target
+// channel so the jump link stays within that channel.
+func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
+	if m.ReferencedMessageID == "" {
+		return "", nil
+	}
+	content := m.ReferencedMessageContent
+	quoteChannelID := m.ReferencedMessageChannelID
+	quoteMessageID := m.ReferencedMessageID
+	if quoteChannelID == "" {
+		quoteChannelID = m.ChannelID
+	}
+
+	dbOriginalContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
+	if err != nil {
+		return "", err
+	}
+	if ok {
+		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
+			quoteChannelID = dbQuoteChannelID
+			quoteMessageID = dbQuoteMessageID
+			if transferred, fetchErr := s.discord.Message(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferred.Content) != "" {
+				content = transferred.Content
+			} else {
+				content = dbOriginalContent
+			}
+		} else {
+			content = dbOriginalContent
+		}
+	}
+	snippet := firstLineWithoutPseudoReply(content)
+	if snippet == "" {
+		return "", nil
+	}
+	snippet = normalizeMarkdownHeaderSnippet(snippet)
+	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")
+	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
+	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
+	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
+}
+
 func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) error {
 	allowed, err := s.shouldProcessMessage(ctx, m)
 	if err != nil {
@@ -170,6 +212,24 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	return errors.Join(errs...)
 }
 
+// sendMirror posts the prepared content to one destination and records the
+// message link with the given source snapshot.
+func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) error {
+	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
+	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
+	if ref.MessageID != "" && ref.ChannelID == "" {
+		ref.ChannelID = m.ChannelID
+	}
+	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
+		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds, Files: files,
+	}, MessageLink{
+		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
+		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
+		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
+		SourceImageAttachments: sourceImageAttachments(m),
+	}, ref)
+}
+
 func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
 	languages := destinationLanguages(dests)
 	question := strings.TrimSpace(m.Poll.Question)
@@ -290,24 +350,6 @@ func (s *Service) pollResultVictorLabel(ctx context.Context, pollChannelID, poll
 		answerText = strings.TrimSpace(result.VictorAnswerText)
 	}
 	return formatPollVictorLabel(answerText, result.VictorEmoji), nil
-}
-
-// sendMirror posts the prepared content to one destination and records the
-// message link with the given source snapshot.
-func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) error {
-	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
-	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
-	if ref.MessageID != "" && ref.ChannelID == "" {
-		ref.ChannelID = m.ChannelID
-	}
-	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
-		Content: content, Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds, Files: files,
-	}, MessageLink{
-		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
-		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
-		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
-		SourceImageAttachments: sourceImageAttachments(m),
-	}, ref)
 }
 
 type pendingMessageEdit struct {
@@ -504,46 +546,4 @@ func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string,
 		}
 	}
 	return nil
-}
-
-// replyQuote builds the pseudo-reply quote line for a reply message,
-// preferring the mirrored version of the referenced message in the target
-// channel so the jump link stays within that channel.
-func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
-	if m.ReferencedMessageID == "" {
-		return "", nil
-	}
-	content := m.ReferencedMessageContent
-	quoteChannelID := m.ReferencedMessageChannelID
-	quoteMessageID := m.ReferencedMessageID
-	if quoteChannelID == "" {
-		quoteChannelID = m.ChannelID
-	}
-
-	dbOriginalContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
-	if err != nil {
-		return "", err
-	}
-	if ok {
-		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
-			quoteChannelID = dbQuoteChannelID
-			quoteMessageID = dbQuoteMessageID
-			if transferred, fetchErr := s.discord.Message(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferred.Content) != "" {
-				content = transferred.Content
-			} else {
-				content = dbOriginalContent
-			}
-		} else {
-			content = dbOriginalContent
-		}
-	}
-	snippet := firstLineWithoutPseudoReply(content)
-	if snippet == "" {
-		return "", nil
-	}
-	snippet = normalizeMarkdownHeaderSnippet(snippet)
-	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")
-	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
-	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
-	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
 }

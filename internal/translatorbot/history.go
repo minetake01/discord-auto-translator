@@ -43,6 +43,10 @@ func (slot historyMergeSlot) toMessage() ChatContextMessage {
 	}
 }
 
+func historyLinkHasContext(link MessageLink) bool {
+	return strings.TrimSpace(link.SourceContentSnapshot) != "" || len(imageAttachmentsOnly(link.SourceImageAttachments)) > 0
+}
+
 func selectRecentHistory(links []MessageLink, currentMessageID string, excludeReplyKeys map[string]bool) ([]ChatContextMessage, int, []ChatContextMessage) {
 	session := truncateIdleSession(links, currentMessageID)
 	slots, discardedSlots := replayHistoryHysteresis(mergeConsecutiveMessages(session))
@@ -215,10 +219,6 @@ func slotMatchesReply(slot historyMergeSlot, excludeReplyKeys map[string]bool) b
 		}
 	}
 	return false
-}
-
-func historyLinkHasContext(link MessageLink) bool {
-	return strings.TrimSpace(link.SourceContentSnapshot) != "" || len(imageAttachmentsOnly(link.SourceImageAttachments)) > 0
 }
 
 func historyGenerationID(history []ChatContextMessage, currentChannelID, currentMessageID string) string {

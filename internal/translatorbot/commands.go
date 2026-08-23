@@ -9,8 +9,33 @@ import (
 
 var defaultAdminCommandPermissions int64 = discordgo.PermissionAdministrator
 
-const viewOriginalCommandName = "View Original"
-const botWhitelistCommandName = "bot-whitelist"
+const (
+	viewOriginalCommandName = "View Original"
+	botWhitelistCommandName = "bot-whitelist"
+)
+
+var glossaryAttributeDefaults = []string{"人名", "地名", "スラング", "略語", "専門用語"}
+
+func sourceTypeChoices() []*discordgo.ApplicationCommandOptionChoice {
+	return []*discordgo.ApplicationCommandOptionChoice{
+		{Name: "Bot", Value: string(SourceTypeBot)},
+		{Name: "Webhook", Value: string(SourceTypeWebhook)},
+	}
+}
+
+func glossaryAttributeSuggestions(query string, limit int) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	result := make([]string, 0, len(glossaryAttributeDefaults))
+	for _, attribute := range glossaryAttributeDefaults {
+		if query == "" || strings.Contains(strings.ToLower(attribute), query) {
+			result = append(result, attribute)
+			if len(result) == limit {
+				break
+			}
+		}
+	}
+	return result
+}
 
 func Commands() []*discordgo.ApplicationCommand {
 	channelTypes := []discordgo.ChannelType{
@@ -136,29 +161,6 @@ func Commands() []*discordgo.ApplicationCommand {
 		Type: discordgo.MessageApplicationCommand,
 	})
 	return cmds
-}
-
-func sourceTypeChoices() []*discordgo.ApplicationCommandOptionChoice {
-	return []*discordgo.ApplicationCommandOptionChoice{
-		{Name: "Bot", Value: string(SourceTypeBot)},
-		{Name: "Webhook", Value: string(SourceTypeWebhook)},
-	}
-}
-
-var glossaryAttributeDefaults = []string{"人名", "地名", "スラング", "略語", "専門用語"}
-
-func glossaryAttributeSuggestions(query string, limit int) []string {
-	query = strings.ToLower(strings.TrimSpace(query))
-	result := make([]string, 0, len(glossaryAttributeDefaults))
-	for _, attribute := range glossaryAttributeDefaults {
-		if query == "" || strings.Contains(strings.ToLower(attribute), query) {
-			result = append(result, attribute)
-			if len(result) == limit {
-				break
-			}
-		}
-	}
-	return result
 }
 
 func RegisterGuildCommands(s *discordgo.Session, appID string) {

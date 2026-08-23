@@ -6,8 +6,10 @@ import (
 	"regexp"
 )
 
-var discordChannelURLPattern = regexp.MustCompile(`https?://(?:(?:www|ptb|canary)\.)?discord(?:app)?\.com/channels/([^/\s<>()]+)/([^/\s<>()]+)(?:/([^/\s<>()]+))?`)
-var discordChannelMentionPattern = regexp.MustCompile(`<#([^>]+)>`)
+var (
+	discordChannelURLPattern     = regexp.MustCompile(`https?://(?:(?:www|ptb|canary)\.)?discord(?:app)?\.com/channels/([^/\s<>()]+)/([^/\s<>()]+)(?:/([^/\s<>()]+))?`)
+	discordChannelMentionPattern = regexp.MustCompile(`<#([^>]+)>`)
+)
 
 func MessageJumpURL(guildID, channelID, messageID string) string {
 	return fmt.Sprintf("https://discord.com/channels/%s/%s/%s", guildID, channelID, messageID)
@@ -18,6 +20,14 @@ func discordChannelURL(guildID, channelID, messageID string) string {
 		return fmt.Sprintf("https://discord.com/channels/%s/%s", guildID, channelID)
 	}
 	return MessageJumpURL(guildID, channelID, messageID)
+}
+
+func parseDiscordChannelURL(u string) (guildID, channelID, messageID string, ok bool) {
+	m := discordChannelURLPattern.FindStringSubmatch(u)
+	if m == nil {
+		return "", "", "", false
+	}
+	return m[1], m[2], m[3], true
 }
 
 func ReplaceDiscordRefs(ctx context.Context, store *Store, guildID, text, targetLanguage string) string {
@@ -49,14 +59,6 @@ func ReplaceDiscordRefs(ctx context.Context, store *Store, guildID, text, target
 		return "<#" + newChannelID + ">"
 	})
 	return text
-}
-
-func parseDiscordChannelURL(u string) (guildID, channelID, messageID string, ok bool) {
-	m := discordChannelURLPattern.FindStringSubmatch(u)
-	if m == nil {
-		return "", "", "", false
-	}
-	return m[1], m[2], m[3], true
 }
 
 type discordLinkResolver struct {
@@ -133,6 +135,32 @@ func (r *discordLinkResolver) resolveThreadChannel(ctx context.Context, threadID
 	return "", "", false, nil
 }
 
+func resolveMessageTarget(ctx context.Context, store *Store, channelID, messageID, targetChannelID string) (string, bool, error) {
+	links, err := store.MessageTargets(ctx, channelID, messageID)
+	if err != nil {
+		return "", false, err
+	}
+	for _, link := range links {
+		if link.TargetChannelID == targetChannelID {
+			return link.TargetMessageID, true, nil
+		}
+	}
+	if len(links) > 0 && links[0].SourceChannelID == targetChannelID {
+		return links[0].SourceMessageID, true, nil
+	}
+
+	peers, err := store.MessagePeers(ctx, channelID, messageID)
+	if err != nil {
+		return "", false, err
+	}
+	for _, peer := range peers {
+		if peer.TargetChannelID == targetChannelID {
+			return peer.TargetMessageID, true, nil
+		}
+	}
+	return "", false, nil
+}
+
 func threadPeerForLanguage(link ThreadLink, currentThreadID, guildID, targetLanguage string, store *Store, ctx context.Context) (peerThreadID string, ok bool) {
 	if link.SourceThreadID == currentThreadID {
 		if link.TargetLanguage == targetLanguage {
@@ -160,30 +188,4 @@ func findChannelByLanguage(channels []GroupChannel, lang string) *GroupChannel {
 		}
 	}
 	return nil
-}
-
-func resolveMessageTarget(ctx context.Context, store *Store, channelID, messageID, targetChannelID string) (string, bool, error) {
-	links, err := store.MessageTargets(ctx, channelID, messageID)
-	if err != nil {
-		return "", false, err
-	}
-	for _, link := range links {
-		if link.TargetChannelID == targetChannelID {
-			return link.TargetMessageID, true, nil
-		}
-	}
-	if len(links) > 0 && links[0].SourceChannelID == targetChannelID {
-		return links[0].SourceMessageID, true, nil
-	}
-
-	peers, err := store.MessagePeers(ctx, channelID, messageID)
-	if err != nil {
-		return "", false, err
-	}
-	for _, peer := range peers {
-		if peer.TargetChannelID == targetChannelID {
-			return peer.TargetMessageID, true, nil
-		}
-	}
-	return "", false, nil
 }

@@ -61,6 +61,57 @@ type ThreadLink struct {
 	TargetLanguage  string
 }
 
+type DiscordAttachment struct {
+	URL         string
+	Filename    string
+	ContentType string
+	Description string
+}
+
+type DiscordSticker struct {
+	ID         string
+	Name       string
+	FormatType int
+}
+
+type DiscordPollEmoji struct {
+	Name     string
+	ID       string
+	Animated bool
+}
+
+type DiscordPollAnswer struct {
+	Text  string
+	Emoji *DiscordPollEmoji
+}
+
+type DiscordPoll struct {
+	Question string
+	Answers  []DiscordPollAnswer
+	Expiry   *time.Time
+}
+
+// DiscordPollResult is the payload of a Discord POLL_RESULT system message
+// (type 46), parsed from the poll_result embed fields.
+type DiscordPollResult struct {
+	HasEmbed          bool
+	QuestionText      string
+	VictorAnswerID    int // 0 when absent; Discord answer ids are 1-based
+	VictorAnswerText  string
+	VictorEmoji       *DiscordPollEmoji
+	VictorAnswerVotes int
+	TotalVotes        int
+}
+
+type DiscordForwardedMessage struct {
+	MessageID   string
+	ChannelID   string
+	GuildID     string
+	Content     string
+	Attachments []DiscordAttachment
+	Stickers    []DiscordSticker
+}
+
 type DiscordMessage struct {
 	ID                         string
 	ChannelID                  string
@@ -89,57 +140,6 @@ type DiscordMessage struct {
 	MentionedUsers             map[string]string // userID → display name
 	MentionedChannels          map[string]string // channelID → channel name (source)
 	MentionedRoles             map[string]string // roleID → role name
-}
-
-type DiscordPoll struct {
-	Question string
-	Answers  []DiscordPollAnswer
-	Expiry   *time.Time
-}
-
-// DiscordPollResult is the payload of a Discord POLL_RESULT system message
-// (type 46), parsed from the poll_result embed fields.
-type DiscordPollResult struct {
-	HasEmbed          bool
-	QuestionText      string
-	VictorAnswerID    int // 0 when absent; Discord answer ids are 1-based
-	VictorAnswerText  string
-	VictorEmoji       *DiscordPollEmoji
-	VictorAnswerVotes int
-	TotalVotes        int
-}
-
-type DiscordPollAnswer struct {
-	Text  string
-	Emoji *DiscordPollEmoji
-}
-
-type DiscordPollEmoji struct {
-	Name     string
-	ID       string
-	Animated bool
-}
-
-type DiscordForwardedMessage struct {
-	MessageID   string
-	ChannelID   string
-	GuildID     string
-	Content     string
-	Attachments []DiscordAttachment
-	Stickers    []DiscordSticker
-}
-
-type DiscordAttachment struct {
-	URL         string
-	Filename    string
-	ContentType string
-	Description string
-}
-
-type DiscordSticker struct {
-	ID         string
-	Name       string
-	FormatType int
 }
 
 type DiscordFetchedMessage struct {

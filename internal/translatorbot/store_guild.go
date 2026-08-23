@@ -148,27 +148,3 @@ func (s *Store) PurgeGuildRemovedBefore(ctx context.Context, guildID string, cut
 	}
 	return n == 1, nil
 }
-
-func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
-	maxID := snowflakeIDBefore(cutoff.UTC())
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE source_message_id < ?`, maxID)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
-		return 0, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM pin_states WHERE message_id < ?`, maxID); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	return n, nil
-}

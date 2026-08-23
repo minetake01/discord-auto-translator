@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -41,6 +40,44 @@ const (
 	openaiTopicSummarySchemaName            = "topic_summary"
 )
 
+// errTranslationProvider marks a translation API outage (timeout, transport, or
+// HTTP 429/5xx after retry). Channel notices are shown once per outage.
+var errTranslationProvider = errors.New("translation provider unavailable")
+
+// openaiHTTPStatusError is a sanitized provider HTTP failure. Status is kept
+// so transient codes (429 / 5xx) can be retried without logging response bodies.
+type openaiHTTPStatusError struct {
+	status  int
+	message string
+}
+
+func (e *openaiHTTPStatusError) Error() string { return e.message }
+
+func wrapProviderIssue(err error) error {
+	if err == nil || errors.Is(err, errTranslationProvider) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	if isOpenAIRetryable(err) {
+		return fmt.Errorf("%w: %w", errTranslationProvider, err)
+	}
+	return err
+}
+
+func isOpenAIRetryable(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var httpErr *openaiHTTPStatusError
+	if errors.As(err, &httpErr) {
+		return httpErr.status == http.StatusTooManyRequests || httpErr.status >= http.StatusInternalServerError
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 type openaiHTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -57,150 +94,6 @@ type OpenAITranslator struct {
 	promptCacheMu     sync.Mutex
 	promptCacheExpiry map[string]time.Time
 }
-
-// openaiDebugEntry records one Chat Completions round trip. The raw request
-// and response keep unknown fields intact. First-class prompt, cache, and
-// usage fields make accuracy and cache-efficiency measurement possible without
-// re-parsing the provider payload. GuildID and MessageID are local
-// correlation keys; they are not sent to the provider.
-type openaiDebugEntry struct {
-	Time               time.Time          `json:"time"`
-	GuildID            string             `json:"guild_id,omitempty"`
-	MessageID          string             `json:"message_id,omitempty"`
-	Model              string             `json:"model,omitempty"`
-	SchemaName         string             `json:"schema_name,omitempty"`
-	TargetLanguages    []string           `json:"target_languages"`
-	DurationMS         int64              `json:"duration_ms"`
-	WaitMS             *int64             `json:"wait_ms,omitempty"`
-	ReadMS             *int64             `json:"read_ms,omitempty"`
-	Ended              *time.Time         `json:"ended,omitempty"`
-	Attempt            int                `json:"attempt,omitempty"`
-	ResponseCreated    *int64             `json:"response_created,omitempty"`
-	ProcessingMS       *int64             `json:"processing_ms,omitempty"`
-	ServerTiming       string             `json:"server_timing,omitempty"`
-	PromptCacheKey     string             `json:"prompt_cache_key,omitempty"`
-	PromptCacheTTLSent bool               `json:"prompt_cache_ttl_sent"`
-	PromptCacheHit     *bool              `json:"prompt_cache_hit,omitempty"`
-	SystemInstruction  string             `json:"system_instruction,omitempty"`
-	UserPromptStable   string             `json:"user_prompt_stable,omitempty"`
-	UserPromptHistory  string             `json:"user_prompt_history,omitempty"`
-	UserPromptVariable string             `json:"user_prompt_variable,omitempty"`
-	VisionImageCount   int                `json:"vision_image_count,omitempty"`
-	Usage              *openaiLoggedUsage `json:"usage,omitempty"`
-	Request            json.RawMessage    `json:"request,omitempty"`
-	HTTPStatus         int                `json:"http_status,omitempty"`
-	Response           json.RawMessage    `json:"response,omitempty"`
-	ResponseText       string             `json:"response_text,omitempty"`
-	Error              string             `json:"error,omitempty"`
-}
-
-// openaiLoggedUsage is the subset of Chat Completions usage used for
-// measurement. CachedTokens and CostUSD are pointers so a reported zero stays
-// distinct from a provider that omitted the field.
-type openaiLoggedUsage struct {
-	PromptTokens     int      `json:"prompt_tokens,omitempty"`
-	CompletionTokens int      `json:"completion_tokens,omitempty"`
-	TotalTokens      int      `json:"total_tokens,omitempty"`
-	CachedTokens     *int     `json:"cached_tokens,omitempty"`
-	CacheWriteTokens *int     `json:"cache_write_tokens,omitempty"`
-	ReasoningTokens  *int     `json:"reasoning_tokens,omitempty"`
-	CostUSD          *float64 `json:"cost_usd,omitempty"`
-	QueueTime        *float64 `json:"queue_time,omitempty"`
-	PromptTime       *float64 `json:"prompt_time,omitempty"`
-	CompletionTime   *float64 `json:"completion_time,omitempty"`
-	TotalTime        *float64 `json:"total_time,omitempty"`
-}
-
-type openaiChatCompletionRequest struct {
-	Model              string                     `json:"model"`
-	Messages           []openaiChatMessage        `json:"messages"`
-	MaxTokens          int                        `json:"max_tokens"`
-	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
-	PromptCacheKey     string                     `json:"prompt_cache_key,omitempty"`
-	PromptCacheOptions *openaiPromptCacheOptions  `json:"prompt_cache_options,omitempty"`
-	ResponseFormat     openaiResponseFormat       `json:"response_format"`
-	Provider           *openaiProviderPreferences `json:"provider,omitempty"`
-}
-
-type openaiResponseFormat struct {
-	Type       string           `json:"type"`
-	JSONSchema openaiJSONSchema `json:"json_schema"`
-}
-
-type openaiJSONSchema struct {
-	Name   string          `json:"name"`
-	Strict bool            `json:"strict"`
-	Schema json.RawMessage `json:"schema"`
-}
-
-type openaiProviderPreferences struct {
-	RequireParameters bool `json:"require_parameters"`
-}
-
-type openaiChatMessage struct {
-	Role    string          `json:"role"`
-	Content json.RawMessage `json:"content"`
-}
-
-type openaiImageURL struct {
-	URL string `json:"url"`
-}
-
-type openaiImagePart struct {
-	Type     string         `json:"type"`
-	ImageURL openaiImageURL `json:"image_url"`
-}
-
-type openaiTextPart struct {
-	Type                  string                       `json:"type"`
-	Text                  string                       `json:"text"`
-	PromptCacheBreakpoint *openaiPromptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
-}
-
-type openaiPromptCacheBreakpoint struct {
-	Mode string `json:"mode"`
-}
-
-type openaiPromptCacheOptions struct {
-	Mode string `json:"mode"`
-	TTL  string `json:"ttl,omitempty"`
-}
-
-type openaiChatCompletionResponse struct {
-	Choices []openaiChatChoice    `json:"choices"`
-	Usage   *openaiChatTokenUsage `json:"usage"`
-}
-
-type openaiChatChoice struct {
-	FinishReason string            `json:"finish_reason"`
-	Message      openaiChatMessage `json:"message"`
-}
-
-type openaiChatTokenUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-}
-
-type openaiErrorEnvelope struct {
-	Type      string `json:"type"`
-	Code      string `json:"code"`
-	Param     string `json:"param"`
-	RequestID string `json:"request_id"`
-	Error     struct {
-		Type  string `json:"type"`
-		Code  string `json:"code"`
-		Param string `json:"param"`
-	} `json:"error"`
-}
-
-// openaiHTTPStatusError is a sanitized provider HTTP failure. Status is kept
-// so transient codes (429 / 5xx) can be retried without logging response bodies.
-type openaiHTTPStatusError struct {
-	status  int
-	message string
-}
-
-func (e *openaiHTTPStatusError) Error() string { return e.message }
 
 func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model, reasoningEffort string) (*OpenAITranslator, error) {
 	normalizedBase, err := normalizeOpenAIBaseURL(baseURL)
@@ -300,115 +193,6 @@ func openaiHostRequiresParameters(completionsURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
-}
-
-// SetDebugLog records every Chat Completions round trip for diagnosis and
-// measurement (synthesized prompts, cache hit, token usage, and provider cost).
-// It is off unless configured.
-func (t *OpenAITranslator) SetDebugLog(debugLog *DebugLog) {
-	t.debugLog = debugLog
-}
-
-func openaiObjectSchema(required []string, properties map[string]any) map[string]any {
-	return map[string]any{
-		"type":                 "object",
-		"additionalProperties": false,
-		"required":             required,
-		"properties":           properties,
-	}
-}
-
-func requireSchemaLanguages(targetLanguages []string) error {
-	if len(targetLanguages) == 0 {
-		return errors.New("translation JSON schema requires target languages")
-	}
-	for _, lang := range targetLanguages {
-		if lang == "" {
-			return errors.New("translation JSON schema has an empty language")
-		}
-	}
-	return nil
-}
-
-func marshalOpenAIJSONSchema(schema map[string]any) (json.RawMessage, error) {
-	encoded, err := json.Marshal(schema)
-	if err != nil {
-		return nil, errors.New("encode translation JSON schema")
-	}
-	return encoded, nil
-}
-
-func openaiLanguageKeyedSchema(targetLanguages []string, item map[string]any) (json.RawMessage, error) {
-	if err := requireSchemaLanguages(targetLanguages); err != nil {
-		return nil, err
-	}
-	properties := make(map[string]any, len(targetLanguages))
-	required := make([]string, len(targetLanguages))
-	for i, lang := range targetLanguages {
-		properties[lang] = item
-		required[i] = lang
-	}
-	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
-}
-
-func openaiMessageTranslationSchema(targetLanguages []string, altCount int) (json.RawMessage, error) {
-	if altCount < 0 {
-		return nil, errors.New("translation JSON schema has a negative alt count")
-	}
-	required := []string{"translated_text"}
-	properties := map[string]any{
-		"translated_text": map[string]any{
-			"type":        "string",
-			"description": "The <final_message> translated into this language. Empty when <final_message> is empty.",
-		},
-	}
-	if altCount > 0 {
-		required = append(required, "attachment_descriptions")
-		properties["attachment_descriptions"] = map[string]any{
-			"type":        "array",
-			"items":       map[string]any{"type": "string"},
-			"minItems":    altCount,
-			"maxItems":    altCount,
-			"description": "Exactly as many strings as <alt> elements in <attachment_alts>, in that order. Translate those existing alt texts. Never invent alt text. Do not describe background images from history, replies, or linked pages.",
-		}
-	}
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema(required, properties))
-}
-
-func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"question", "answers"}, map[string]any{
-		"question": map[string]any{
-			"type":        "string",
-			"description": "The poll question translated into this language.",
-		},
-		"answers": map[string]any{
-			"type":        "array",
-			"items":       map[string]any{"type": "string"},
-			"description": "The poll answers translated into this language, in source order.",
-		},
-	}))
-}
-
-func openaiThreadCreateTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"name", "message"}, map[string]any{
-		"name": map[string]any{
-			"type":        "string",
-			"description": "The thread <name> translated into this language.",
-		},
-		"message": map[string]any{
-			"type":        "string",
-			"description": "The initial thread <message> translated into this language. Empty when <message> was omitted.",
-		},
-	}))
-}
-
-func openaiTopicSummarySchema() (json.RawMessage, error) {
-	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"summary"}, map[string]any{
-		"summary": map[string]any{
-			"type":        "string",
-			"description": "A 2-4 sentence topic summary of the discarded conversation, for later translation background only.",
-		},
-	}))
 }
 
 func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
@@ -523,33 +307,74 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 	return "", 0, 0, wrapProviderIssue(lastErr)
 }
 
-// errTranslationProvider marks a translation API outage (timeout, transport, or
-// HTTP 429/5xx after retry). Channel notices are shown once per outage.
-var errTranslationProvider = errors.New("translation provider unavailable")
-
-func wrapProviderIssue(err error) error {
-	if err == nil || errors.Is(err, errTranslationProvider) || errors.Is(err, context.Canceled) {
-		return err
-	}
-	if isOpenAIRetryable(err) {
-		return fmt.Errorf("%w: %w", errTranslationProvider, err)
-	}
-	return err
+type openaiChatCompletionRequest struct {
+	Model              string                     `json:"model"`
+	Messages           []openaiChatMessage        `json:"messages"`
+	MaxTokens          int                        `json:"max_tokens"`
+	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
+	PromptCacheKey     string                     `json:"prompt_cache_key,omitempty"`
+	PromptCacheOptions *openaiPromptCacheOptions  `json:"prompt_cache_options,omitempty"`
+	ResponseFormat     openaiResponseFormat       `json:"response_format"`
+	Provider           *openaiProviderPreferences `json:"provider,omitempty"`
 }
 
-func isOpenAIRetryable(err error) bool {
-	if err == nil || errors.Is(err, context.Canceled) {
-		return false
-	}
-	var httpErr *openaiHTTPStatusError
-	if errors.As(err, &httpErr) {
-		return httpErr.status == http.StatusTooManyRequests || httpErr.status >= http.StatusInternalServerError
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-	var netErr net.Error
-	return errors.As(err, &netErr)
+type openaiResponseFormat struct {
+	Type       string           `json:"type"`
+	JSONSchema openaiJSONSchema `json:"json_schema"`
+}
+
+type openaiJSONSchema struct {
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict"`
+	Schema json.RawMessage `json:"schema"`
+}
+
+type openaiProviderPreferences struct {
+	RequireParameters bool `json:"require_parameters"`
+}
+
+type openaiChatMessage struct {
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+type openaiImageURL struct {
+	URL string `json:"url"`
+}
+
+type openaiImagePart struct {
+	Type     string         `json:"type"`
+	ImageURL openaiImageURL `json:"image_url"`
+}
+
+type openaiTextPart struct {
+	Type                  string                       `json:"type"`
+	Text                  string                       `json:"text"`
+	PromptCacheBreakpoint *openaiPromptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
+}
+
+type openaiPromptCacheBreakpoint struct {
+	Mode string `json:"mode"`
+}
+
+type openaiPromptCacheOptions struct {
+	Mode string `json:"mode"`
+	TTL  string `json:"ttl,omitempty"`
+}
+
+type openaiChatCompletionResponse struct {
+	Choices []openaiChatChoice    `json:"choices"`
+	Usage   *openaiChatTokenUsage `json:"usage"`
+}
+
+type openaiChatChoice struct {
+	FinishReason string            `json:"finish_reason"`
+	Message      openaiChatMessage `json:"message"`
+}
+
+type openaiChatTokenUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
 }
 
 func openaiTextContent(text string) json.RawMessage {
@@ -708,145 +533,72 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	return extractOpenAIChatText(output)
 }
 
-func shouldWritePromptCacheTTL(prepared preparedTranslation) bool {
-	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory, "") >= promptCacheExplicitMinTokens
+func extractOpenAIChatText(output openaiChatCompletionResponse) (text string, inputTokens, outputTokens int, err error) {
+	if len(output.Choices) != 1 {
+		return "", 0, 0, fmt.Errorf("OpenAI response has %d choices, want 1", len(output.Choices))
+	}
+	choice := output.Choices[0]
+	if strings.EqualFold(choice.FinishReason, "length") {
+		return "", 0, 0, errors.New("OpenAI response was truncated by max_tokens")
+	}
+	if choice.Message.Role != "" && choice.Message.Role != "assistant" {
+		return "", 0, 0, fmt.Errorf("OpenAI response has unexpected message role %q", choice.Message.Role)
+	}
+	text, err = decodeOpenAIMessageContent(choice.Message.Content)
+	if err != nil {
+		return "", 0, 0, err
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", 0, 0, errors.New("OpenAI response has empty assistant content")
+	}
+	if output.Usage == nil || output.Usage.PromptTokens < 0 || output.Usage.CompletionTokens < 0 {
+		return "", 0, 0, errors.New("OpenAI response has no valid token usage")
+	}
+	return text, output.Usage.PromptTokens, output.Usage.CompletionTokens, nil
 }
 
-func (t *OpenAITranslator) promptCacheNeedsTTL(key string) bool {
-	if key == "" {
-		return false
+func decodeOpenAIMessageContent(raw json.RawMessage) (string, error) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return "", errors.New("OpenAI response has empty assistant content")
 	}
-	now := t.now()
-	t.promptCacheMu.Lock()
-	defer t.promptCacheMu.Unlock()
-	if t.promptCacheExpiry == nil {
-		return true
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
 	}
-	expiry, ok := t.promptCacheExpiry[key]
-	return !ok || !now.Before(expiry)
-}
-
-func (t *OpenAITranslator) rememberPromptCache(key string) {
-	if key == "" {
-		return
+	var parts []openaiTextPart
+	if err := json.Unmarshal(raw, &parts); err != nil {
+		return "", errors.New("OpenAI response has unsupported assistant content")
 	}
-	now := t.now()
-	t.promptCacheMu.Lock()
-	defer t.promptCacheMu.Unlock()
-	if t.promptCacheExpiry == nil {
-		t.promptCacheExpiry = make(map[string]time.Time)
-	}
-	t.promptCacheExpiry[key] = now.Add(promptCacheTTL)
-}
-
-func (e *openaiDebugEntry) recordResponse(body []byte) {
-	if json.Valid(body) {
-		e.Response = body
-		return
-	}
-	e.ResponseText = string(body)
-}
-
-func extractLoggedUsage(body []byte) *openaiLoggedUsage {
-	if !json.Valid(body) {
-		return nil
-	}
-	var payload struct {
-		Usage *struct {
-			PromptTokens        int      `json:"prompt_tokens"`
-			CompletionTokens    int      `json:"completion_tokens"`
-			TotalTokens         int      `json:"total_tokens"`
-			CachedTokens        *int     `json:"cached_tokens"`
-			CacheWriteTokens    *int     `json:"cache_write_tokens"`
-			Cost                *float64 `json:"cost"`
-			QueueTime           *float64 `json:"queue_time"`
-			PromptTime          *float64 `json:"prompt_time"`
-			CompletionTime      *float64 `json:"completion_time"`
-			TotalTime           *float64 `json:"total_time"`
-			PromptTokensDetails *struct {
-				CachedTokens     *int `json:"cached_tokens"`
-				CacheWriteTokens *int `json:"cache_write_tokens"`
-			} `json:"prompt_tokens_details"`
-			CompletionTokensDetails *struct {
-				ReasoningTokens *int `json:"reasoning_tokens"`
-			} `json:"completion_tokens_details"`
-		} `json:"usage"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.Usage == nil {
-		return nil
-	}
-	u := payload.Usage
-	out := &openaiLoggedUsage{
-		PromptTokens:     u.PromptTokens,
-		CompletionTokens: u.CompletionTokens,
-		TotalTokens:      u.TotalTokens,
-		CostUSD:          u.Cost,
-		CachedTokens:     u.CachedTokens,
-		CacheWriteTokens: u.CacheWriteTokens,
-		QueueTime:        u.QueueTime,
-		PromptTime:       u.PromptTime,
-		CompletionTime:   u.CompletionTime,
-		TotalTime:        u.TotalTime,
-	}
-	if details := u.PromptTokensDetails; details != nil {
-		if details.CachedTokens != nil {
-			out.CachedTokens = details.CachedTokens
+	var b strings.Builder
+	for _, part := range parts {
+		if part.Type != "" && part.Type != "text" {
+			return "", fmt.Errorf("OpenAI response has unsupported content part type %q", part.Type)
 		}
-		if details.CacheWriteTokens != nil {
-			out.CacheWriteTokens = details.CacheWriteTokens
-		}
+		b.WriteString(part.Text)
 	}
-	if u.CompletionTokensDetails != nil {
-		out.ReasoningTokens = u.CompletionTokensDetails.ReasoningTokens
-	}
-	return out
+	return b.String(), nil
 }
 
-func promptCacheHit(usage *openaiLoggedUsage) *bool {
-	if usage == nil || usage.CachedTokens == nil {
-		return nil
-	}
-	hit := *usage.CachedTokens > 0
-	return &hit
-}
-
-func extractResponseCreated(body []byte) *int64 {
-	if !json.Valid(body) {
-		return nil
-	}
-	var payload struct {
-		Created *int64 `json:"created"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.Created == nil {
-		return nil
-	}
-	return payload.Created
-}
-
-func elapsedMS(start time.Time) int64 {
-	ms := time.Since(start).Milliseconds()
-	if ms < 0 {
-		return 0
-	}
-	return ms
-}
-
-func headerInt64(h http.Header, names ...string) *int64 {
-	if h == nil {
-		return nil
-	}
-	for _, name := range names {
-		raw := strings.TrimSpace(h.Get(name))
-		if raw == "" {
-			continue
-		}
-		v, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil {
-			continue
-		}
-		return &v
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("multiple JSON values")
 	}
 	return nil
+}
+
+type openaiErrorEnvelope struct {
+	Type      string `json:"type"`
+	Code      string `json:"code"`
+	Param     string `json:"param"`
+	RequestID string `json:"request_id"`
+	Error     struct {
+		Type  string `json:"type"`
+		Code  string `json:"code"`
+		Param string `json:"param"`
+	} `json:"error"`
 }
 
 func openaiHTTPError(response *http.Response, body []byte) error {
@@ -907,58 +659,33 @@ func firstSafeErrorField(values ...string) string {
 	return ""
 }
 
-func extractOpenAIChatText(output openaiChatCompletionResponse) (text string, inputTokens, outputTokens int, err error) {
-	if len(output.Choices) != 1 {
-		return "", 0, 0, fmt.Errorf("OpenAI response has %d choices, want 1", len(output.Choices))
-	}
-	choice := output.Choices[0]
-	if strings.EqualFold(choice.FinishReason, "length") {
-		return "", 0, 0, errors.New("OpenAI response was truncated by max_tokens")
-	}
-	if choice.Message.Role != "" && choice.Message.Role != "assistant" {
-		return "", 0, 0, fmt.Errorf("OpenAI response has unexpected message role %q", choice.Message.Role)
-	}
-	text, err = decodeOpenAIMessageContent(choice.Message.Content)
-	if err != nil {
-		return "", 0, 0, err
-	}
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return "", 0, 0, errors.New("OpenAI response has empty assistant content")
-	}
-	if output.Usage == nil || output.Usage.PromptTokens < 0 || output.Usage.CompletionTokens < 0 {
-		return "", 0, 0, errors.New("OpenAI response has no valid token usage")
-	}
-	return text, output.Usage.PromptTokens, output.Usage.CompletionTokens, nil
+func shouldWritePromptCacheTTL(prepared preparedTranslation) bool {
+	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory, "") >= promptCacheExplicitMinTokens
 }
 
-func decodeOpenAIMessageContent(raw json.RawMessage) (string, error) {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return "", errors.New("OpenAI response has empty assistant content")
+func (t *OpenAITranslator) promptCacheNeedsTTL(key string) bool {
+	if key == "" {
+		return false
 	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		return text, nil
+	now := t.now()
+	t.promptCacheMu.Lock()
+	defer t.promptCacheMu.Unlock()
+	if t.promptCacheExpiry == nil {
+		return true
 	}
-	var parts []openaiTextPart
-	if err := json.Unmarshal(raw, &parts); err != nil {
-		return "", errors.New("OpenAI response has unsupported assistant content")
-	}
-	var b strings.Builder
-	for _, part := range parts {
-		if part.Type != "" && part.Type != "text" {
-			return "", fmt.Errorf("OpenAI response has unsupported content part type %q", part.Type)
-		}
-		b.WriteString(part.Text)
-	}
-	return b.String(), nil
+	expiry, ok := t.promptCacheExpiry[key]
+	return !ok || !now.Before(expiry)
 }
 
-func ensureJSONEOF(decoder *json.Decoder) error {
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("multiple JSON values")
+func (t *OpenAITranslator) rememberPromptCache(key string) {
+	if key == "" {
+		return
 	}
-	return nil
+	now := t.now()
+	t.promptCacheMu.Lock()
+	defer t.promptCacheMu.Unlock()
+	if t.promptCacheExpiry == nil {
+		t.promptCacheExpiry = make(map[string]time.Time)
+	}
+	t.promptCacheExpiry[key] = now.Add(promptCacheTTL)
 }

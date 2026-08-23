@@ -11,6 +11,35 @@ import (
 
 const discordEmbedTitleLimit = 256
 
+// pollAnswerTexts returns trimmed answer texts in source order.
+func pollAnswerTexts(poll *DiscordPoll) []string {
+	if poll == nil {
+		return nil
+	}
+	out := make([]string, len(poll.Answers))
+	for i, answer := range poll.Answers {
+		out[i] = strings.TrimSpace(answer.Text)
+	}
+	return out
+}
+
+func pollEmojiMarkup(emoji *DiscordPollEmoji) string {
+	if emoji == nil {
+		return ""
+	}
+	name := strings.TrimSpace(emoji.Name)
+	if emoji.ID != "" {
+		if name == "" {
+			name = "emoji"
+		}
+		if emoji.Animated {
+			return fmt.Sprintf("<a:%s:%s>", name, emoji.ID)
+		}
+		return fmt.Sprintf("<:%s:%s>", name, emoji.ID)
+	}
+	return name
+}
+
 // formatTranslatedPollAnswers renders numbered answers using translated texts
 // while keeping emoji markup from the source poll answers.
 func formatTranslatedPollAnswers(poll *DiscordPoll, answers []string) string {
@@ -35,18 +64,6 @@ func formatTranslatedPollAnswers(poll *DiscordPoll, answers []string) string {
 	return b.String()
 }
 
-// pollAnswerTexts returns trimmed answer texts in source order.
-func pollAnswerTexts(poll *DiscordPoll) []string {
-	if poll == nil {
-		return nil
-	}
-	out := make([]string, len(poll.Answers))
-	for i, answer := range poll.Answers {
-		out[i] = strings.TrimSpace(answer.Text)
-	}
-	return out
-}
-
 // formatPollSnapshot is the plain-text snapshot used for reply quotes.
 func formatPollSnapshot(poll *DiscordPoll) string {
 	if poll == nil {
@@ -62,23 +79,6 @@ func formatPollSnapshot(poll *DiscordPoll) string {
 	default:
 		return answers
 	}
-}
-
-func pollEmojiMarkup(emoji *DiscordPollEmoji) string {
-	if emoji == nil {
-		return ""
-	}
-	name := strings.TrimSpace(emoji.Name)
-	if emoji.ID != "" {
-		if name == "" {
-			name = "emoji"
-		}
-		if emoji.Animated {
-			return fmt.Sprintf("<a:%s:%s>", name, emoji.ID)
-		}
-		return fmt.Sprintf("<:%s:%s>", name, emoji.ID)
-	}
-	return name
 }
 
 // buildPollEmbed builds the mirrored poll embed. Title is the question;
@@ -124,36 +124,6 @@ func withPollStartedHeader(body, language, guildID, channelID, messageID string,
 		return header
 	}
 	return header + "\n" + body
-}
-
-// contentWithEmbedQuoteText merges message content with the first embed's
-// title (or description first line) so reply quotes can see poll questions
-// that live only in embeds.
-func contentWithEmbedQuoteText(content string, embeds []*discordgo.MessageEmbed) string {
-	embedLine := ""
-	for _, embed := range embeds {
-		if embed == nil {
-			continue
-		}
-		if title := strings.TrimSpace(embed.Title); title != "" {
-			embedLine = title
-			break
-		}
-		if desc := strings.TrimSpace(embed.Description); desc != "" {
-			if line, _, _ := strings.Cut(desc, "\n"); strings.TrimSpace(line) != "" {
-				embedLine = strings.TrimSpace(line)
-				break
-			}
-		}
-	}
-	content = strings.TrimRight(content, "\r\n")
-	if embedLine == "" {
-		return content
-	}
-	if strings.TrimSpace(content) == "" {
-		return embedLine
-	}
-	return content + "\n" + embedLine
 }
 
 // pollResultPercent returns the integer percent for victor votes over total,

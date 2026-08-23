@@ -8,9 +8,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const StylePresetDefault = "default"
-
-const styleCustomMaxRunes = 200
+const (
+	StylePresetDefault  = "default"
+	styleCustomMaxRunes = 200
+)
 
 var (
 	ErrStyleCustomEmpty   = errors.New("custom style instruction is empty")
