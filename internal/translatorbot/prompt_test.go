@@ -211,6 +211,9 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "topic_summary") {
 		t.Fatal("system instruction should always describe topic_summary")
 	}
+	if !strings.Contains(got, "Each language object must include translated_text") {
+		t.Fatal("system instruction should require translated_text on each language object")
+	}
 	if !strings.Contains(got, "attachment_descriptions") {
 		t.Fatal("system instruction should always describe attachment_descriptions")
 	}
