@@ -131,6 +131,56 @@ func (p *preparedTranslation) buildUserPrompt() {
 	p.userPromptVariable = variable
 }
 
+func normalizeTargetLanguages(targetLanguages []string) ([]string, error) {
+	normalized := make([]string, 0, len(targetLanguages))
+	seen := make(map[string]bool, len(targetLanguages))
+	for _, lang := range targetLanguages {
+		lang = normalizeLanguage(lang)
+		if lang == "" || seen[lang] {
+			continue
+		}
+		if !IsValidLanguageCode(lang) {
+			return nil, fmt.Errorf("invalid target language %q", lang)
+		}
+		seen[lang] = true
+		normalized = append(normalized, lang)
+	}
+	return normalized, nil
+}
+
+func beginPreparedTranslation(targetLanguages []string, translationContext *TranslationContext) ([]string, *Protector, error) {
+	normalized, err := normalizeTargetLanguages(targetLanguages)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(normalized) == 0 {
+		return nil, nil, nil
+	}
+	p := NewProtector(NameMaps{
+		Users:    translationContext.MentionedUsers,
+		Channels: translationContext.MentionedChannels,
+		Roles:    translationContext.MentionedRoles,
+		Sites:    translationContext.SiteTitles,
+	})
+	p.SetSiteDescriptions(translationContext.SiteDescriptions)
+	p.SetSiteImages(translationContext.SiteImages)
+	return normalized, p, nil
+}
+
+func assignSiteContext(p *Protector, translationContext *TranslationContext) {
+	incoming := translationContext.Sites
+	translationContext.Sites = p.SiteContext()
+	flags := make(map[string]bool, len(incoming))
+	for _, site := range incoming {
+		if site.HasVisionImage {
+			flags[site.ID] = true
+		}
+	}
+	for i := range translationContext.Sites {
+		translationContext.Sites[i].HasVisionImage = flags[translationContext.Sites[i].ID]
+	}
+}
+
 func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 	normalized, p, err := beginPreparedTranslation(targetLanguages, &translationContext)
 	if err != nil || len(normalized) == 0 {
@@ -283,23 +333,6 @@ func applyAttachmentDescriptions(translated []string, attachments []TranslationA
 	return out, nil
 }
 
-func normalizeTargetLanguages(targetLanguages []string) ([]string, error) {
-	normalized := make([]string, 0, len(targetLanguages))
-	seen := make(map[string]bool, len(targetLanguages))
-	for _, lang := range targetLanguages {
-		lang = normalizeLanguage(lang)
-		if lang == "" || seen[lang] {
-			continue
-		}
-		if !IsValidLanguageCode(lang) {
-			return nil, fmt.Errorf("invalid target language %q", lang)
-		}
-		seen[lang] = true
-		normalized = append(normalized, lang)
-	}
-	return normalized, nil
-}
-
 func preparePollTranslation(targetLanguages []string, question string, answers []string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 	normalized, p, err := beginPreparedTranslation(targetLanguages, &translationContext)
 	if err != nil || len(normalized) == 0 {
@@ -341,6 +374,43 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 	}
 	prepared.buildUserPrompt()
 	return prepared, nil
+}
+
+type pollTranslationResponseItem struct {
+	Question string   `json:"question"`
+	Answers  []string `json:"answers"`
+}
+
+func parsePollTranslationResponse(raw string, targetLanguages []string, answerCount int, protector *Protector) (map[string]PollTranslation, error) {
+	parsed, err := decodeLanguageKeyedJSON[pollTranslationResponseItem](raw, targetLanguages)
+	if err != nil {
+		return nil, fmt.Errorf("parse poll translation response: %w", err)
+	}
+
+	out := make(map[string]PollTranslation, len(targetLanguages))
+	for _, targetLanguage := range targetLanguages {
+		item := parsed[targetLanguage]
+		question := strings.TrimSpace(html.UnescapeString(item.Question))
+		if question == "" {
+			return nil, fmt.Errorf("parse poll translation response: empty question for %q", targetLanguage)
+		}
+		if len(item.Answers) != answerCount {
+			return nil, fmt.Errorf("parse poll translation response: language %q has %d answers, want %d", targetLanguage, len(item.Answers), answerCount)
+		}
+		answers := make([]string, answerCount)
+		for j, answer := range item.Answers {
+			text := strings.TrimSpace(html.UnescapeString(answer))
+			if text == "" {
+				return nil, fmt.Errorf("parse poll translation response: empty answer %d for %q", j, targetLanguage)
+			}
+			answers[j] = protector.Restore(text)
+		}
+		out[targetLanguage] = PollTranslation{
+			Question: protector.Restore(question),
+			Answers:  answers,
+		}
+	}
+	return out, nil
 }
 
 func prepareThreadCreateTranslation(targetLanguages []string, name, message string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -389,76 +459,6 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 	return prepared, nil
 }
 
-func beginPreparedTranslation(targetLanguages []string, translationContext *TranslationContext) ([]string, *Protector, error) {
-	normalized, err := normalizeTargetLanguages(targetLanguages)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(normalized) == 0 {
-		return nil, nil, nil
-	}
-	p := NewProtector(NameMaps{
-		Users:    translationContext.MentionedUsers,
-		Channels: translationContext.MentionedChannels,
-		Roles:    translationContext.MentionedRoles,
-		Sites:    translationContext.SiteTitles,
-	})
-	p.SetSiteDescriptions(translationContext.SiteDescriptions)
-	p.SetSiteImages(translationContext.SiteImages)
-	return normalized, p, nil
-}
-
-func assignSiteContext(p *Protector, translationContext *TranslationContext) {
-	incoming := translationContext.Sites
-	translationContext.Sites = p.SiteContext()
-	flags := make(map[string]bool, len(incoming))
-	for _, site := range incoming {
-		if site.HasVisionImage {
-			flags[site.ID] = true
-		}
-	}
-	for i := range translationContext.Sites {
-		translationContext.Sites[i].HasVisionImage = flags[translationContext.Sites[i].ID]
-	}
-}
-
-type pollTranslationResponseItem struct {
-	Question string   `json:"question"`
-	Answers  []string `json:"answers"`
-}
-
-func parsePollTranslationResponse(raw string, targetLanguages []string, answerCount int, protector *Protector) (map[string]PollTranslation, error) {
-	parsed, err := decodeLanguageKeyedJSON[pollTranslationResponseItem](raw, targetLanguages)
-	if err != nil {
-		return nil, fmt.Errorf("parse poll translation response: %w", err)
-	}
-
-	out := make(map[string]PollTranslation, len(targetLanguages))
-	for _, targetLanguage := range targetLanguages {
-		item := parsed[targetLanguage]
-		question := strings.TrimSpace(html.UnescapeString(item.Question))
-		if question == "" {
-			return nil, fmt.Errorf("parse poll translation response: empty question for %q", targetLanguage)
-		}
-		if len(item.Answers) != answerCount {
-			return nil, fmt.Errorf("parse poll translation response: language %q has %d answers, want %d", targetLanguage, len(item.Answers), answerCount)
-		}
-		answers := make([]string, answerCount)
-		for j, answer := range item.Answers {
-			text := strings.TrimSpace(html.UnescapeString(answer))
-			if text == "" {
-				return nil, fmt.Errorf("parse poll translation response: empty answer %d for %q", j, targetLanguage)
-			}
-			answers[j] = protector.Restore(text)
-		}
-		out[targetLanguage] = PollTranslation{
-			Question: protector.Restore(question),
-			Answers:  answers,
-		}
-	}
-	return out, nil
-}
-
 type threadCreateTranslationResponseItem struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
@@ -491,24 +491,4 @@ func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, 
 		}
 	}
 	return out, nil
-}
-
-func parseTopicSummaryResponse(raw string) (string, error) {
-	var parsed struct {
-		Summary string `json:"summary"`
-	}
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&parsed); err != nil {
-		return "", fmt.Errorf("parse topic summary response: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return "", fmt.Errorf("parse topic summary response: multiple JSON values")
-	}
-	summary := strings.TrimSpace(html.UnescapeString(parsed.Summary))
-	if summary == "" {
-		return "", errors.New("parse topic summary response: empty summary")
-	}
-	return truncateRunes(summary, topicSummaryMaxRunes, ""), nil
 }

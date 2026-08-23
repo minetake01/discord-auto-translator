@@ -12,18 +12,22 @@ import (
 	"time"
 )
 
-const urlPageCacheTTL = 24 * time.Hour
-const urlPageLookupConcurrency = 4
-const urlPageFetchTimeout = 5 * time.Second
-const urlPageBodyLimit = 512 * 1024
-const urlPageTitleMaxRunes = 100
-const urlPageDescriptionMaxRunes = 200
+const (
+	urlPageCacheTTL            = 24 * time.Hour
+	urlPageLookupConcurrency   = 4
+	urlPageFetchTimeout        = 5 * time.Second
+	urlPageBodyLimit           = 512 * 1024
+	urlPageTitleMaxRunes       = 100
+	urlPageDescriptionMaxRunes = 200
+)
 
-var urlPattern = regexp.MustCompile(`https?://[^\s<>()]+`)
-var hreflangLinkPattern = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*\balternate\b[^"']*["'][^>]*>`)
-var attrPattern = regexp.MustCompile(`(?is)(href|hreflang|content|property|name)=["']([^"']+)["']`)
-var metaTagPattern = regexp.MustCompile(`(?is)<meta\s+[^>]*>`)
-var titleTagPattern = regexp.MustCompile(`(?is)<title[^>]*>([^<]*)</title>`)
+var (
+	urlPattern          = regexp.MustCompile(`https?://[^\s<>()]+`)
+	hreflangLinkPattern = regexp.MustCompile(`(?is)<link\s+[^>]*rel=["'][^"']*\balternate\b[^"']*["'][^>]*>`)
+	attrPattern         = regexp.MustCompile(`(?is)(href|hreflang|content|property|name)=["']([^"']+)["']`)
+	metaTagPattern      = regexp.MustCompile(`(?is)<meta\s+[^>]*>`)
+	titleTagPattern     = regexp.MustCompile(`(?is)<title[^>]*>([^<]*)</title>`)
+)
 
 type urlPageInfo struct {
 	Title       string
@@ -75,6 +79,29 @@ func (c *urlPageCache) Lookup(ctx context.Context, content string) map[string]ur
 	return out
 }
 
+func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
+	if len(pages) == 0 {
+		return
+	}
+	titles := make(map[string]string, len(pages))
+	descriptions := make(map[string]string, len(pages))
+	images := make(map[string]string, len(pages))
+	for rawURL, page := range pages {
+		if title := strings.TrimSpace(page.Title); title != "" {
+			titles[rawURL] = title
+		}
+		if desc := strings.TrimSpace(page.Description); desc != "" {
+			descriptions[rawURL] = desc
+		}
+		if imageURL := strings.TrimSpace(page.ImageURL); imageURL != "" {
+			images[rawURL] = imageURL
+		}
+	}
+	tc.SiteTitles = titles
+	tc.SiteDescriptions = descriptions
+	tc.SiteImages = images
+}
+
 func (c *urlPageCache) Replace(ctx context.Context, text, targetLanguage string) string {
 	matches := urlPattern.FindAllStringIndex(text, -1)
 	if len(matches) == 0 {
@@ -117,6 +144,32 @@ func (c *urlPageCache) Replace(ctx context.Context, text, targetLanguage string)
 	}
 	b.WriteString(text[last:])
 	return b.String()
+}
+
+func hreflangURLForLanguage(info urlPageInfo, targetLanguage, fallback string) string {
+	if alt := pickHreflangURL(info.Hreflangs, targetLanguage); alt != "" {
+		return alt
+	}
+	return fallback
+}
+
+func pickHreflangURL(hreflangs map[string]string, targetLanguage string) string {
+	if len(hreflangs) == 0 {
+		return ""
+	}
+	target := strings.ToLower(targetLanguage)
+	prefix := strings.Split(target, "-")[0] + "-"
+	for hreflang, href := range hreflangs {
+		if strings.EqualFold(hreflang, target) {
+			return href
+		}
+	}
+	for hreflang, href := range hreflangs {
+		if strings.HasPrefix(strings.ToLower(hreflang), prefix) {
+			return href
+		}
+	}
+	return ""
 }
 
 func (c *urlPageCache) ensure(ctx context.Context, urls []string) {
@@ -342,32 +395,6 @@ func extractHreflangURLs(htmlBody string) map[string]string {
 	return out
 }
 
-func hreflangURLForLanguage(info urlPageInfo, targetLanguage, fallback string) string {
-	if alt := pickHreflangURL(info.Hreflangs, targetLanguage); alt != "" {
-		return alt
-	}
-	return fallback
-}
-
-func pickHreflangURL(hreflangs map[string]string, targetLanguage string) string {
-	if len(hreflangs) == 0 {
-		return ""
-	}
-	target := strings.ToLower(targetLanguage)
-	prefix := strings.Split(target, "-")[0] + "-"
-	for hreflang, href := range hreflangs {
-		if strings.EqualFold(hreflang, target) {
-			return href
-		}
-	}
-	for hreflang, href := range hreflangs {
-		if strings.HasPrefix(strings.ToLower(hreflang), prefix) {
-			return href
-		}
-	}
-	return ""
-}
-
 func attrs(tag string) map[string]string {
 	out := map[string]string{}
 	for _, m := range attrPattern.FindAllStringSubmatch(tag, -1) {
@@ -383,27 +410,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
-	if len(pages) == 0 {
-		return
-	}
-	titles := make(map[string]string, len(pages))
-	descriptions := make(map[string]string, len(pages))
-	images := make(map[string]string, len(pages))
-	for rawURL, page := range pages {
-		if title := strings.TrimSpace(page.Title); title != "" {
-			titles[rawURL] = title
-		}
-		if desc := strings.TrimSpace(page.Description); desc != "" {
-			descriptions[rawURL] = desc
-		}
-		if imageURL := strings.TrimSpace(page.ImageURL); imageURL != "" {
-			images[rawURL] = imageURL
-		}
-	}
-	tc.SiteTitles = titles
-	tc.SiteDescriptions = descriptions
-	tc.SiteImages = images
 }

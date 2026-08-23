@@ -20,18 +20,18 @@ const (
 )
 
 type forumTagUISession struct {
-	GuildID         string
-	GroupID         string
-	FocusChannelID  string
-	PeerChannelID   string
-	FocusTagID      string
-	PeerTagID       string
-	UserID          string
-	Locale          string
-	Intro           string
-	FocusTags       []discordgo.ForumTag
-	PeerTagsByCh    map[string][]discordgo.ForumTag
-	PeerChannelIDs  []string
+	GuildID        string
+	GroupID        string
+	FocusChannelID string
+	PeerChannelID  string
+	FocusTagID     string
+	PeerTagID      string
+	UserID         string
+	Locale         string
+	Intro          string
+	FocusTags      []discordgo.ForumTag
+	PeerTagsByCh   map[string][]discordgo.ForumTag
+	PeerChannelIDs []string
 }
 
 func (h *CommandHandler) putTagUI(messageID string, session *forumTagUISession) {
@@ -59,97 +59,6 @@ func (h *CommandHandler) deleteTagUI(messageID string) {
 		return
 	}
 	delete(h.tagUI, messageID)
-}
-
-func interactionUserID(i *discordgo.InteractionCreate) string {
-	if i.Member != nil && i.Member.User != nil {
-		return i.Member.User.ID
-	}
-	if i.User != nil {
-		return i.User.ID
-	}
-	return ""
-}
-
-func (h *CommandHandler) handleEditForumTags(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
-	ctx := context.Background()
-	groupID := strings.TrimSpace(optionString(data.Options, "group"))
-	if groupID == "" {
-		h.reply(s, i, uiKeyGroupRequired)
-		return
-	}
-	exists, err := h.store.GroupExists(ctx, i.GuildID, groupID)
-	if err != nil {
-		log.Printf("edit-forum-tags group exists: %v", err)
-		h.reply(s, i, uiKeyUnexpectedError)
-		return
-	}
-	if !exists {
-		h.reply(s, i, uiKeyGroupNotFound, groupID)
-		return
-	}
-	ch, ok := h.resolveCommandChannel(s, i, data)
-	if !ok {
-		return
-	}
-	if !isThreadOnlyChannelType(int(ch.Type)) {
-		h.reply(s, i, uiKeyForumTagMapNeedForum)
-		return
-	}
-	channels, err := h.store.ChannelsInGroup(ctx, i.GuildID, groupID)
-	if err != nil {
-		log.Printf("edit-forum-tags channels: %v", err)
-		h.reply(s, i, uiKeyUnexpectedError)
-		return
-	}
-	joined := false
-	for _, c := range channels {
-		if c.ChannelID == ch.ID {
-			joined = true
-			break
-		}
-	}
-	if !joined {
-		h.reply(s, i, uiKeyChannelNotJoined, groupID)
-		return
-	}
-	h.openForumTagUI(s, i, groupID, ch, "", true)
-}
-
-func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string, respondFresh bool) {
-	ctx := context.Background()
-	locale := commandLocale(i)
-	session, err := h.buildForumTagUISession(ctx, i.GuildID, groupID, focus, interactionUserID(i), locale, intro)
-	if err != nil {
-		log.Printf("forum tag ui build: %v", err)
-		if respondFresh {
-			h.reply(s, i, uiKeyUnexpectedError)
-		}
-		return
-	}
-	if session == nil {
-		if respondFresh {
-			if intro != "" {
-				h.respond(s, i, intro, true)
-				return
-			}
-			h.reply(s, i, uiKeyForumTagMapNoPeers)
-		}
-		return
-	}
-	content, components := h.renderForumTagUI(session)
-	if respondFresh {
-		msg, err := h.respondComponents(s, i, content, components)
-		if err != nil {
-			log.Printf("forum tag ui respond: %v", err)
-			h.reply(s, i, uiKeyUnexpectedError)
-			return
-		}
-		if msg != nil {
-			h.putTagUI(msg.ID, session)
-		}
-		return
-	}
 }
 
 func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, groupID string, focus *discordgo.Channel, userID, locale, intro string) (*forumTagUISession, error) {
@@ -192,32 +101,6 @@ func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, gr
 		PeerChannelIDs: peerIDs,
 	}
 	return session, nil
-}
-
-func (h *CommandHandler) respondComponents(s *discordgo.Session, i *discordgo.InteractionCreate, content string, components []discordgo.MessageComponent) (*discordgo.Message, error) {
-	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content:    content,
-			Flags:      discordgo.MessageFlagsEphemeral,
-			Components: components,
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s.InteractionResponse(i.Interaction)
-}
-
-func (h *CommandHandler) updateForumTagUIMessage(s *discordgo.Session, i *discordgo.InteractionCreate, session *forumTagUISession) {
-	content, components := h.renderForumTagUI(session)
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content:    content,
-			Components: components,
-		},
-	})
 }
 
 func (h *CommandHandler) renderForumTagUI(session *forumTagUISession) (string, []discordgo.MessageComponent) {
@@ -346,6 +229,123 @@ func truncateSelectLabel(s string) string {
 		return s
 	}
 	return string(runes[:97]) + "..."
+}
+
+func (h *CommandHandler) respondComponents(s *discordgo.Session, i *discordgo.InteractionCreate, content string, components []discordgo.MessageComponent) (*discordgo.Message, error) {
+	err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content:    content,
+			Flags:      discordgo.MessageFlagsEphemeral,
+			Components: components,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.InteractionResponse(i.Interaction)
+}
+
+func (h *CommandHandler) updateForumTagUIMessage(s *discordgo.Session, i *discordgo.InteractionCreate, session *forumTagUISession) {
+	content, components := h.renderForumTagUI(session)
+	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{
+			Content:    content,
+			Components: components,
+		},
+	})
+}
+
+func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string, respondFresh bool) {
+	ctx := context.Background()
+	locale := commandLocale(i)
+	session, err := h.buildForumTagUISession(ctx, i.GuildID, groupID, focus, interactionUserID(i), locale, intro)
+	if err != nil {
+		log.Printf("forum tag ui build: %v", err)
+		if respondFresh {
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
+		return
+	}
+	if session == nil {
+		if respondFresh {
+			if intro != "" {
+				h.respond(s, i, intro, true)
+				return
+			}
+			h.reply(s, i, uiKeyForumTagMapNoPeers)
+		}
+		return
+	}
+	content, components := h.renderForumTagUI(session)
+	if respondFresh {
+		msg, err := h.respondComponents(s, i, content, components)
+		if err != nil {
+			log.Printf("forum tag ui respond: %v", err)
+			h.reply(s, i, uiKeyUnexpectedError)
+			return
+		}
+		if msg != nil {
+			h.putTagUI(msg.ID, session)
+		}
+		return
+	}
+}
+
+func interactionUserID(i *discordgo.InteractionCreate) string {
+	if i.Member != nil && i.Member.User != nil {
+		return i.Member.User.ID
+	}
+	if i.User != nil {
+		return i.User.ID
+	}
+	return ""
+}
+
+func (h *CommandHandler) handleEditForumTags(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	groupID := strings.TrimSpace(optionString(data.Options, "group"))
+	if groupID == "" {
+		h.reply(s, i, uiKeyGroupRequired)
+		return
+	}
+	exists, err := h.store.GroupExists(ctx, i.GuildID, groupID)
+	if err != nil {
+		log.Printf("edit-forum-tags group exists: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	if !exists {
+		h.reply(s, i, uiKeyGroupNotFound, groupID)
+		return
+	}
+	ch, ok := h.resolveCommandChannel(s, i, data)
+	if !ok {
+		return
+	}
+	if !isThreadOnlyChannelType(int(ch.Type)) {
+		h.reply(s, i, uiKeyForumTagMapNeedForum)
+		return
+	}
+	channels, err := h.store.ChannelsInGroup(ctx, i.GuildID, groupID)
+	if err != nil {
+		log.Printf("edit-forum-tags channels: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	joined := false
+	for _, c := range channels {
+		if c.ChannelID == ch.ID {
+			joined = true
+			break
+		}
+	}
+	if !joined {
+		h.reply(s, i, uiKeyChannelNotJoined, groupID)
+		return
+	}
+	h.openForumTagUI(s, i, groupID, ch, "", true)
 }
 
 func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {

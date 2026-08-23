@@ -121,31 +121,6 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-func validateHTTPAddr(addr string) error {
-	if _, err := net.ResolveTCPAddr("tcp", addr); err != nil {
-		return fmt.Errorf("HTTP_ADDR is invalid: %w", err)
-	}
-	return nil
-}
-
-func validatePublicBaseURL(raw string) error {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("PUBLIC_BASE_URL is invalid: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return errors.New("PUBLIC_BASE_URL must use http or https")
-	}
-	if u.Host == "" {
-		return errors.New("PUBLIC_BASE_URL must include a host")
-	}
-	return nil
-}
-
 func loadDotEnv(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
@@ -169,4 +144,29 @@ func loadDotEnv(path string) error {
 		}
 	}
 	return sc.Err()
+}
+
+func validateHTTPAddr(addr string) error {
+	if _, err := net.ResolveTCPAddr("tcp", addr); err != nil {
+		return fmt.Errorf("HTTP_ADDR is invalid: %w", err)
+	}
+	return nil
+}
+
+func validatePublicBaseURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("PUBLIC_BASE_URL is invalid: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errors.New("PUBLIC_BASE_URL must use http or https")
+	}
+	if u.Host == "" {
+		return errors.New("PUBLIC_BASE_URL must include a host")
+	}
+	return nil
 }

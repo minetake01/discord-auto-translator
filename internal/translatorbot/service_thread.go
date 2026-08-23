@@ -187,9 +187,88 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 	return false, nil
 }
 
+// createTargetThread creates the mirrored thread in one target channel.
+// For forum/media targets the thread starts with the translated initial
+// message. For text/news targets it is attached to the mirrored source
+// message when one exists, or deferred when DeferWithoutSourceMsg is set.
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
+	if isThreadOnlyChannelType(target.ChannelType) {
+		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
+		if err != nil {
+			return "", "", err
+		}
+		loaded := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
+		content, err = messageContentWithAllAssetURLs(content, imagesNotReuploaded(req.InitialMessageFiles, loaded), nil)
+		if err != nil {
+			return "", "", err
+		}
+		files := webhookFilesForImages(loaded, nil)
+		if content == "" && len(embeds) == 0 && len(files) == 0 {
+			if req.DeferWithoutSourceMsg {
+				return "", "", nil
+			}
+			content = name
+		}
+		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
+		if err != nil {
+			return "", "", err
+		}
+		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags, files)
+	}
+	if req.SourceMessageID != "" {
+		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
+		if err != nil {
+			return "", "", err
+		}
+		for _, link := range links {
+			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
+				threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
+				return threadID, "", err
+			}
+		}
+		if req.DeferWithoutSourceMsg {
+			return "", "", nil
+		}
+	}
+	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
+	return threadID, "", err
+}
+
+func (s *Service) mappedAppliedTagsForTarget(ctx context.Context, guildID, groupID, sourceChannelID string, target GroupChannel, sourceApplied []string) ([]string, error) {
+	mapping, err := s.store.ForumTagMapsBetween(ctx, guildID, groupID, sourceChannelID, target.ChannelID)
+	if err != nil {
+		return nil, err
+	}
+	mapped := MapAppliedForumTags(mapping, sourceApplied)
+	parent, err := s.discord.Channel(target.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch target forum channel %s: %w", target.ChannelID, err)
+	}
+	if parent.Flags&discordgo.ChannelFlagRequireTag != 0 && len(mapped) == 0 {
+		return nil, fmt.Errorf("forum channel %s requires tags but none are mapped from source tags %v", target.ChannelID, sourceApplied)
+	}
+	return mapped, nil
+}
+
 func existingThreadTarget(links []ThreadLink, groupID, targetChannelID string) bool {
 	for _, link := range links {
 		if link.GroupID == groupID && link.TargetChannelID == targetChannelID {
+			return true
+		}
+	}
+	return false
+}
+
+func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {
+	if messageID == "" || messageID != threadID {
+		return false
+	}
+	groups, err := store.ChannelsByChannel(ctx, guildID, parentChannelID)
+	if err != nil {
+		return false
+	}
+	for _, group := range groups {
+		if isThreadOnlyChannelType(group.ChannelType) {
 			return true
 		}
 	}
@@ -405,83 +484,4 @@ func (s *Service) SyncThreadDelete(ctx context.Context, sourceThreadID string) e
 		}
 	}
 	return s.store.DeleteThreadLinks(ctx, sourceThreadID)
-}
-
-// createTargetThread creates the mirrored thread in one target channel.
-// For forum/media targets the thread starts with the translated initial
-// message. For text/news targets it is attached to the mirrored source
-// message when one exists, or deferred when DeferWithoutSourceMsg is set.
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
-	if isThreadOnlyChannelType(target.ChannelType) {
-		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
-		if err != nil {
-			return "", "", err
-		}
-		loaded := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
-		content, err = messageContentWithAllAssetURLs(content, imagesNotReuploaded(req.InitialMessageFiles, loaded), nil)
-		if err != nil {
-			return "", "", err
-		}
-		files := webhookFilesForImages(loaded, nil)
-		if content == "" && len(embeds) == 0 && len(files) == 0 {
-			if req.DeferWithoutSourceMsg {
-				return "", "", nil
-			}
-			content = name
-		}
-		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
-		if err != nil {
-			return "", "", err
-		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags, files)
-	}
-	if req.SourceMessageID != "" {
-		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
-		if err != nil {
-			return "", "", err
-		}
-		for _, link := range links {
-			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
-				threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
-				return threadID, "", err
-			}
-		}
-		if req.DeferWithoutSourceMsg {
-			return "", "", nil
-		}
-	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
-	return threadID, "", err
-}
-
-func (s *Service) mappedAppliedTagsForTarget(ctx context.Context, guildID, groupID, sourceChannelID string, target GroupChannel, sourceApplied []string) ([]string, error) {
-	mapping, err := s.store.ForumTagMapsBetween(ctx, guildID, groupID, sourceChannelID, target.ChannelID)
-	if err != nil {
-		return nil, err
-	}
-	mapped := MapAppliedForumTags(mapping, sourceApplied)
-	parent, err := s.discord.Channel(target.ChannelID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch target forum channel %s: %w", target.ChannelID, err)
-	}
-	if parent.Flags&discordgo.ChannelFlagRequireTag != 0 && len(mapped) == 0 {
-		return nil, fmt.Errorf("forum channel %s requires tags but none are mapped from source tags %v", target.ChannelID, sourceApplied)
-	}
-	return mapped, nil
-}
-
-func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, parentChannelID, messageID, threadID string) bool {
-	if messageID == "" || messageID != threadID {
-		return false
-	}
-	groups, err := store.ChannelsByChannel(ctx, guildID, parentChannelID)
-	if err != nil {
-		return false
-	}
-	for _, group := range groups {
-		if isThreadOnlyChannelType(group.ChannelType) {
-			return true
-		}
-	}
-	return false
 }

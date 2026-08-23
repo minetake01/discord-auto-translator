@@ -9,22 +9,6 @@ import (
 
 var protectedPattern = regexp.MustCompile("<https?://[^\\s<>()]+>|https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|<a?:[A-Za-z0-9_]+:\\d+>|</[A-Za-z0-9_\\- ]+:\\d+>|<t:\\d+(?::[tTdDfFR])?>|```[\\s\\S]*?```|`[^`]*`")
 
-func hasTranslatableText(text string) bool {
-	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
-}
-
-func needsTranslation(content string, imageAttachments []DiscordAttachment) bool {
-	if hasTranslatableText(content) {
-		return true
-	}
-	for _, attachment := range imageAttachments {
-		if hasTranslatableText(attachment.Description) {
-			return true
-		}
-	}
-	return false
-}
-
 type NameMaps struct {
 	Users    map[string]string // userID → display name
 	Channels map[string]string // channelID → channel name (source)
@@ -164,6 +148,20 @@ func (p *Protector) recordSiteContext(rawURL, id, title string) {
 	p.sites = append(p.sites, SiteContextEntry{ID: id, Title: title, Description: desc, ImageURL: imageURL})
 }
 
+func (p *Protector) nextToken(kind, label string) string {
+	label = sanitizeLabel(label)
+	key := kind
+	if label != "" {
+		key = kind + ":" + label
+	}
+	p.counts[key]++
+	n := p.counts[key]
+	if n == 1 {
+		return "[" + key + "]"
+	}
+	return "[" + key + ":" + strconv.Itoa(n) + "]"
+}
+
 func emojiName(match string) string {
 	var inner string
 	switch {
@@ -180,22 +178,24 @@ func emojiName(match string) string {
 	return ""
 }
 
-func (p *Protector) nextToken(kind, label string) string {
-	label = sanitizeLabel(label)
-	key := kind
-	if label != "" {
-		key = kind + ":" + label
-	}
-	p.counts[key]++
-	n := p.counts[key]
-	if n == 1 {
-		return "[" + key + "]"
-	}
-	return "[" + key + ":" + strconv.Itoa(n) + "]"
-}
-
 func sanitizeLabel(s string) string {
 	s = strings.ReplaceAll(s, ":", "_")
 	s = strings.ReplaceAll(s, "]", "_")
 	return strings.TrimSpace(s)
+}
+
+func hasTranslatableText(text string) bool {
+	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
+}
+
+func needsTranslation(content string, imageAttachments []DiscordAttachment) bool {
+	if hasTranslatableText(content) {
+		return true
+	}
+	for _, attachment := range imageAttachments {
+		if hasTranslatableText(attachment.Description) {
+			return true
+		}
+	}
+	return false
 }

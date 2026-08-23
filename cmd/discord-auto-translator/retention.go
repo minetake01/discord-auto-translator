@@ -18,6 +18,59 @@ type retentionStore interface {
 	CancelGuildRemoval(context.Context, string) error
 }
 
+type retentionWorker struct {
+	cancel context.CancelFunc
+	done   <-chan struct{}
+}
+
+func startRetentionWorker(
+	store retentionStore,
+	messageLinkRetentionDays int,
+	guildDataRetentionDays int,
+	now func() time.Time,
+	state *discordgo.State,
+	logf func(string, ...any),
+) *retentionWorker {
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runRetentionWorker(ctx, store, messageLinkRetentionDays, guildDataRetentionDays, now, state, logf)
+	}()
+	return &retentionWorker{cancel: cancel, done: done}
+}
+
+func (w *retentionWorker) Stop() {
+	w.cancel()
+	<-w.done
+}
+
+func runRetentionWorker(
+	ctx context.Context,
+	store retentionStore,
+	messageLinkRetentionDays int,
+	guildDataRetentionDays int,
+	now func() time.Time,
+	state *discordgo.State,
+	logf func(string, ...any),
+) {
+	run := func() {
+		runRetentionPurge(ctx, store, now(), messageLinkRetentionDays, guildDataRetentionDays, state, logf)
+	}
+	run()
+
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run()
+		}
+	}
+}
+
 func runRetentionPurge(
 	ctx context.Context,
 	store retentionStore,
@@ -60,6 +113,13 @@ func runRetentionPurge(
 	}
 }
 
+func retentionCutoff(now time.Time, days int) (time.Time, error) {
+	if days <= 0 || days > translatorbot.MaxRetentionDays {
+		return time.Time{}, fmt.Errorf("retention days must be between 1 and %d", translatorbot.MaxRetentionDays)
+	}
+	return now.UTC().Add(-time.Duration(days) * 24 * time.Hour), nil
+}
+
 func purgeGuildsRemovedBefore(ctx context.Context, store retentionStore, cutoff time.Time, state *discordgo.State) (int64, error) {
 	guildIDs, err := store.GuildIDsRemovedBefore(ctx, cutoff)
 	if err != nil {
@@ -88,64 +148,4 @@ func purgeGuildRemovedBefore(ctx context.Context, store retentionStore, guildID 
 		return false, store.CancelGuildRemoval(ctx, guildID)
 	}
 	return store.PurgeGuildRemovedBefore(ctx, guildID, cutoff)
-}
-
-func retentionCutoff(now time.Time, days int) (time.Time, error) {
-	if days <= 0 || days > translatorbot.MaxRetentionDays {
-		return time.Time{}, fmt.Errorf("retention days must be between 1 and %d", translatorbot.MaxRetentionDays)
-	}
-	return now.UTC().Add(-time.Duration(days) * 24 * time.Hour), nil
-}
-
-func runRetentionWorker(
-	ctx context.Context,
-	store retentionStore,
-	messageLinkRetentionDays int,
-	guildDataRetentionDays int,
-	now func() time.Time,
-	state *discordgo.State,
-	logf func(string, ...any),
-) {
-	run := func() {
-		runRetentionPurge(ctx, store, now(), messageLinkRetentionDays, guildDataRetentionDays, state, logf)
-	}
-	run()
-
-	ticker := time.NewTicker(24 * time.Hour)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			run()
-		}
-	}
-}
-
-type retentionWorker struct {
-	cancel context.CancelFunc
-	done   <-chan struct{}
-}
-
-func startRetentionWorker(
-	store retentionStore,
-	messageLinkRetentionDays int,
-	guildDataRetentionDays int,
-	now func() time.Time,
-	state *discordgo.State,
-	logf func(string, ...any),
-) *retentionWorker {
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		runRetentionWorker(ctx, store, messageLinkRetentionDays, guildDataRetentionDays, now, state, logf)
-	}()
-	return &retentionWorker{cancel: cancel, done: done}
-}
-
-func (w *retentionWorker) Stop() {
-	w.cancel()
-	<-w.done
 }

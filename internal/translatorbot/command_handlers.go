@@ -30,17 +30,6 @@ func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
 	}
 }
 
-// commandLocale resolves the invoking user's Discord client locale to a
-// supported catalog language for ephemeral command responses.
-func commandLocale(i *discordgo.InteractionCreate) string {
-	return resolveUILanguage(string(i.Locale))
-}
-
-// reply sends a localized catalog message as the interaction response.
-func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCreate, key uiKey, args ...any) {
-	h.respond(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
-}
-
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Type == discordgo.InteractionMessageComponent {
 		data := i.MessageComponentData()
@@ -93,24 +82,70 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 	}
 }
 
-func (h *CommandHandler) handleBotWhitelist(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
-	if len(data.Options) != 1 || data.Options[0].Type != discordgo.ApplicationCommandOptionSubCommand {
-		log.Printf("%s invalid subcommand payload", botWhitelistCommandName)
-		h.reply(s, i, uiKeyUnexpectedError)
-		return
+func respondInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
+	flags := discordgo.MessageFlags(0)
+	if ephemeral {
+		flags = discordgo.MessageFlagsEphemeral
 	}
-	subcommand := data.Options[0]
-	switch subcommand.Name {
-	case "add":
-		h.handleAddSource(s, i, subcommand.Options)
-	case "remove":
-		h.handleRemoveSource(s, i, subcommand.Options)
-	case "list":
-		h.handleListSources(s, i)
-	default:
-		log.Printf("%s unknown subcommand %q", botWhitelistCommandName, subcommand.Name)
-		h.reply(s, i, uiKeyUnexpectedError)
+	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{Content: msg, Flags: flags},
+	})
+}
+
+// reply sends a localized catalog message as the interaction response.
+func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCreate, key uiKey, args ...any) {
+	h.respond(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
+}
+
+// commandLocale resolves the invoking user's Discord client locale to a
+// supported catalog language for ephemeral command responses.
+func commandLocale(i *discordgo.InteractionCreate) string {
+	return resolveUILanguage(string(i.Locale))
+}
+
+func focusedOption(options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.ApplicationCommandInteractionDataOption {
+	for _, o := range options {
+		if o.Focused {
+			return o
+		}
 	}
+	return nil
+}
+
+func optionString(options []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
+	for _, o := range options {
+		if o.Name == name {
+			return o.StringValue()
+		}
+	}
+	return ""
+}
+
+func optionBool(options []*discordgo.ApplicationCommandInteractionDataOption, name string) bool {
+	for _, o := range options {
+		if o.Name == name {
+			value, _ := o.Value.(bool)
+			return value
+		}
+	}
+	return false
+}
+
+func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption, name, fallback string) string {
+	for _, o := range options {
+		if o.Name == name {
+			if channelID, ok := o.Value.(string); ok && channelID != "" {
+				return channelID
+			}
+			return o.ChannelValue(nil).ID
+		}
+	}
+	return fallback
+}
+
+func allowedChannelType(t discordgo.ChannelType) bool {
+	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum || t == discordgo.ChannelTypeGuildMedia
 }
 
 func (h *CommandHandler) handleAutocomplete(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -293,36 +328,6 @@ func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.Inte
 	}
 }
 
-func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
-	ctx := context.Background()
-	lang := commandLocale(i)
-	term := optionString(data.Options, "term")
-	translation := optionString(data.Options, "translation")
-	attribute := optionString(data.Options, "attribute")
-	alwaysInclude := optionBool(data.Options, "always_include")
-	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, i.Member.User.ID, alwaysInclude); err != nil {
-		switch {
-		case errors.Is(err, ErrGlossaryTermRequired):
-			h.reply(s, i, uiKeyGlossaryTermRequired)
-		case errors.Is(err, ErrGlossaryFull):
-			h.reply(s, i, uiKeyGlossaryFull, glossaryMaxEntries)
-		default:
-			log.Printf("add-glossary store: %v", err)
-			h.reply(s, i, uiKeyUnexpectedError)
-		}
-		return
-	}
-	mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
-	if alwaysInclude {
-		mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
-	}
-	attributeLabel := localizedUIString(lang, uiKeyGlossaryAttributeNone)
-	if strings.TrimSpace(attribute) != "" {
-		attributeLabel = localizedUIStringf(lang, uiKeyGlossaryAttributeLabel, strings.TrimSpace(attribute))
-	}
-	h.reply(s, i, uiKeyGlossaryAdded, strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode)
-}
-
 func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	groups, err := h.store.Groups(ctx, i.GuildID, "", 100)
@@ -381,6 +386,36 @@ func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) 
 		fmt.Fprintf(&b, "  - <#%s> (%s)\n", ch.ChannelID, ch.Language)
 	}
 	return b.String()
+}
+
+func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	ctx := context.Background()
+	lang := commandLocale(i)
+	term := optionString(data.Options, "term")
+	translation := optionString(data.Options, "translation")
+	attribute := optionString(data.Options, "attribute")
+	alwaysInclude := optionBool(data.Options, "always_include")
+	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, i.Member.User.ID, alwaysInclude); err != nil {
+		switch {
+		case errors.Is(err, ErrGlossaryTermRequired):
+			h.reply(s, i, uiKeyGlossaryTermRequired)
+		case errors.Is(err, ErrGlossaryFull):
+			h.reply(s, i, uiKeyGlossaryFull, glossaryMaxEntries)
+		default:
+			log.Printf("add-glossary store: %v", err)
+			h.reply(s, i, uiKeyUnexpectedError)
+		}
+		return
+	}
+	mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
+	if alwaysInclude {
+		mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
+	}
+	attributeLabel := localizedUIString(lang, uiKeyGlossaryAttributeNone)
+	if strings.TrimSpace(attribute) != "" {
+		attributeLabel = localizedUIStringf(lang, uiKeyGlossaryAttributeLabel, strings.TrimSpace(attribute))
+	}
+	h.reply(s, i, uiKeyGlossaryAdded, strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode)
 }
 
 func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -500,6 +535,40 @@ func (h *CommandHandler) handleSetStyle(s *discordgo.Session, i *discordgo.Inter
 	}
 }
 
+func (h *CommandHandler) handleBotWhitelist(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	if len(data.Options) != 1 || data.Options[0].Type != discordgo.ApplicationCommandOptionSubCommand {
+		log.Printf("%s invalid subcommand payload", botWhitelistCommandName)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	subcommand := data.Options[0]
+	switch subcommand.Name {
+	case "add":
+		h.handleAddSource(s, i, subcommand.Options)
+	case "remove":
+		h.handleRemoveSource(s, i, subcommand.Options)
+	case "list":
+		h.handleListSources(s, i)
+	default:
+		log.Printf("%s unknown subcommand %q", botWhitelistCommandName, subcommand.Name)
+		h.reply(s, i, uiKeyUnexpectedError)
+	}
+}
+
+func (h *CommandHandler) sourceOptions(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) (SourceType, string, bool) {
+	sourceType, err := ParseSourceType(optionString(options, "source_type"))
+	if err != nil {
+		h.reply(s, i, uiKeyInvalidSourceType)
+		return "", "", false
+	}
+	sourceID := strings.TrimSpace(optionString(options, "source_id"))
+	if err := ValidateCanonicalSnowflake(sourceID); err != nil {
+		h.reply(s, i, uiKeyInvalidSourceID)
+		return "", "", false
+	}
+	return sourceType, sourceID, true
+}
+
 func (h *CommandHandler) handleAddSource(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) {
 	sourceType, sourceID, ok := h.sourceOptions(s, i, options)
 	if !ok {
@@ -539,20 +608,6 @@ func (h *CommandHandler) handleRemoveSource(s *discordgo.Session, i *discordgo.I
 		return
 	}
 	h.reply(s, i, uiKeySourceRemoved, sourceType, sourceID)
-}
-
-func (h *CommandHandler) sourceOptions(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) (SourceType, string, bool) {
-	sourceType, err := ParseSourceType(optionString(options, "source_type"))
-	if err != nil {
-		h.reply(s, i, uiKeyInvalidSourceType)
-		return "", "", false
-	}
-	sourceID := strings.TrimSpace(optionString(options, "source_id"))
-	if err := ValidateCanonicalSnowflake(sourceID); err != nil {
-		h.reply(s, i, uiKeyInvalidSourceID)
-		return "", "", false
-	}
-	return sourceType, sourceID, true
 }
 
 func (h *CommandHandler) handleListSources(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -644,59 +699,4 @@ func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, chan
 		}
 	}
 	return "en"
-}
-
-func focusedOption(options []*discordgo.ApplicationCommandInteractionDataOption) *discordgo.ApplicationCommandInteractionDataOption {
-	for _, o := range options {
-		if o.Focused {
-			return o
-		}
-	}
-	return nil
-}
-
-func optionString(options []*discordgo.ApplicationCommandInteractionDataOption, name string) string {
-	for _, o := range options {
-		if o.Name == name {
-			return o.StringValue()
-		}
-	}
-	return ""
-}
-
-func optionBool(options []*discordgo.ApplicationCommandInteractionDataOption, name string) bool {
-	for _, o := range options {
-		if o.Name == name {
-			value, _ := o.Value.(bool)
-			return value
-		}
-	}
-	return false
-}
-
-func optionChannel(options []*discordgo.ApplicationCommandInteractionDataOption, name, fallback string) string {
-	for _, o := range options {
-		if o.Name == name {
-			if channelID, ok := o.Value.(string); ok && channelID != "" {
-				return channelID
-			}
-			return o.ChannelValue(nil).ID
-		}
-	}
-	return fallback
-}
-
-func allowedChannelType(t discordgo.ChannelType) bool {
-	return t == discordgo.ChannelTypeGuildText || t == discordgo.ChannelTypeGuildNews || t == discordgo.ChannelTypeGuildForum || t == discordgo.ChannelTypeGuildMedia
-}
-
-func respondInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
-	flags := discordgo.MessageFlags(0)
-	if ephemeral {
-		flags = discordgo.MessageFlagsEphemeral
-	}
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{Content: msg, Flags: flags},
-	})
 }
