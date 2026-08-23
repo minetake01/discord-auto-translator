@@ -4,6 +4,13 @@ import (
 	"time"
 )
 
+type GlossaryEntry struct {
+	SourceTerm           string
+	PreferredTranslation string
+	Attribute            string
+	AlwaysInclude        bool
+}
+
 type TranslationGroup struct {
 	ID          string
 	GuildID     string

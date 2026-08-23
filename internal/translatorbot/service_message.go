@@ -25,6 +25,14 @@ func destinationForThread(channel GroupChannel, threadID string) mirrorDestinati
 	return mirrorDestination{channel: channel, targetID: threadID}
 }
 
+func destinationLanguages(dests []mirrorDestination) []string {
+	languages := make([]string, 0, len(dests))
+	for _, dest := range dests {
+		languages = append(languages, dest.channel.Language)
+	}
+	return languages
+}
+
 // threadID returns the thread_id webhook parameter, empty for channel sends.
 func (d mirrorDestination) threadID() string {
 	if d.targetID == d.channel.ChannelID {
@@ -106,15 +114,7 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		return nil
 	}
 	contextFn := func() TranslationContext {
-		replyChannelID := m.ReferencedMessageChannelID
-		if replyChannelID == "" {
-			replyChannelID = m.ChannelID
-		}
-		tc := s.groupTranslationContext(ctx, m.GuildID, source.GroupID, m.ChannelID, m.ChannelID, source.Language, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, "")
-		tc.MentionedUsers = m.MentionedUsers
-		tc.MentionedChannels = m.MentionedChannels
-		tc.MentionedRoles = m.MentionedRoles
-		return tc
+		return s.translationContextForMessage(ctx, m, source.GroupID, m.ChannelID, m.ChannelID, "")
 	}
 	return s.mirrorMessage(ctx, m, source.GroupID, source.Language, contextFn, dests)
 }
@@ -133,10 +133,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 		return s.mirrorPollMessage(ctx, m, groupID, sourceLanguage, contextFn, dests)
 	}
 
-	languages := make([]string, 0, len(dests))
-	for _, dest := range dests {
-		languages = append(languages, dest.channel.Language)
-	}
+	languages := destinationLanguages(dests)
 	loaded, err := s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
@@ -159,12 +156,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		switch {
-		case quote != "" && content != "":
-			content = quote + "\n\n" + content
-		case quote != "":
-			content = quote
-		}
+		content = withQuote(quote, content)
 		content, err = messageContentWithLoadedImages(content, m.Attachments, m.Stickers, loaded)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
@@ -179,10 +171,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 }
 
 func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
-	languages := make([]string, 0, len(dests))
-	for _, dest := range dests {
-		languages = append(languages, dest.channel.Language)
-	}
+	languages := destinationLanguages(dests)
 	question := strings.TrimSpace(m.Poll.Question)
 	answers := pollAnswerTexts(m.Poll)
 	snapshot := formatPollSnapshot(m.Poll)
@@ -219,12 +208,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		switch {
-		case quote != "" && content != "":
-			content = quote + "\n\n" + content
-		case quote != "":
-			content = quote
-		}
+		content = withQuote(quote, content)
 		content, err = messageContentWithAllAssetURLs(content, m.Attachments, m.Stickers)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
@@ -276,10 +260,7 @@ func (s *Service) mirrorPollResultMessage(ctx context.Context, m DiscordMessage,
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		content := body
-		if quote != "" {
-			content = quote + "\n\n" + body
-		}
+		content := withQuote(quote, body)
 		if err := s.sendMirror(ctx, m, groupID, dest, content, nil, nil, body); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
@@ -388,10 +369,6 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			continue
 		}
 		contextFn := func() TranslationContext {
-			replyChannelID := m.ReferencedMessageChannelID
-			if replyChannelID == "" {
-				replyChannelID = m.ChannelID
-			}
 			contextChannelID, historyChannelID := m.ChannelID, m.ChannelID
 			threadName := ""
 			if threads, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err == nil {
@@ -403,11 +380,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 					}
 				}
 			}
-			tc := s.groupTranslationContext(ctx, m.GuildID, groupID, contextChannelID, historyChannelID, languageForChannel(targets, m.ChannelID), m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, threadName)
-			tc.MentionedUsers = m.MentionedUsers
-			tc.MentionedChannels = m.MentionedChannels
-			tc.MentionedRoles = m.MentionedRoles
-			return tc
+			return s.translationContextForMessage(ctx, m, groupID, contextChannelID, historyChannelID, threadName)
 		}
 		languages := make([]string, 0, len(pending))
 		for _, p := range pending {
@@ -476,10 +449,6 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 }
 
 func (s *Service) messageTargetsReplyingToCopies(ctx context.Context, sourceChannelID, sourceMessageID string, copies []MessageLink) ([]MessageLink, error) {
-	type messageRef struct {
-		channelID string
-		messageID string
-	}
 	refs := make([]messageRef, 0, len(copies)+1)
 	refs = append(refs, messageRef{channelID: sourceChannelID, messageID: sourceMessageID})
 	for _, copy := range copies {
@@ -525,10 +494,10 @@ func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string,
 			if err != nil {
 				return fmt.Errorf("fetch reply mirror %s/%s: %w", link.TargetChannelID, link.TargetMessageID, err)
 			}
-			content := fmt.Sprintf("> -# %s", localizedUIString(link.TargetLanguage, uiKeyOriginalMessageDeleted))
-			if body := mirroredMessageBody(message.Content); body != "" {
-				content += "\n\n" + body
-			}
+			content := withQuote(
+				fmt.Sprintf("> -# %s", localizedUIString(link.TargetLanguage, uiKeyOriginalMessageDeleted)),
+				mirroredMessageBody(message.Content),
+			)
 			if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
 				return err
 			}
@@ -573,7 +542,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		return "", nil
 	}
 	snippet = normalizeMarkdownHeaderSnippet(snippet)
-	snippet = truncateRunes(snippet, 40, "...")
+	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
 	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
 	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil

@@ -384,3 +384,26 @@ func firstNonEmpty(values ...string) string {
 	}
 	return ""
 }
+
+func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
+	if len(pages) == 0 {
+		return
+	}
+	titles := make(map[string]string, len(pages))
+	descriptions := make(map[string]string, len(pages))
+	images := make(map[string]string, len(pages))
+	for rawURL, page := range pages {
+		if title := strings.TrimSpace(page.Title); title != "" {
+			titles[rawURL] = title
+		}
+		if desc := strings.TrimSpace(page.Description); desc != "" {
+			descriptions[rawURL] = desc
+		}
+		if imageURL := strings.TrimSpace(page.ImageURL); imageURL != "" {
+			images[rawURL] = imageURL
+		}
+	}
+	tc.SiteTitles = titles
+	tc.SiteDescriptions = descriptions
+	tc.SiteImages = images
+}

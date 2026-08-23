@@ -103,7 +103,15 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		if messageID == "" {
 			messageID = req.SourceThreadID
 		}
-		return s.groupTranslationContext(ctx, req.GuildID, source.GroupID, req.SourceChannelID, req.SourceThreadID, source.Language, messageID, "", "", req.InitialMessageUsername, req.Name)
+		return s.groupTranslationContext(ctx, translationContextRequest{
+			guildID:          req.GuildID,
+			groupID:          source.GroupID,
+			contextChannelID: req.SourceChannelID,
+			historyChannelID: req.SourceThreadID,
+			excludeMessageID: messageID,
+			author:           req.InitialMessageUsername,
+			threadName:       req.Name,
+		})
 	}
 	threadTranslations, err := s.translateThreadCreateWithLimit(ctx, req.GuildID, req.Name, req.InitialMessageText, languages, contextFn)
 	if err != nil {
@@ -259,15 +267,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	}
 	sourceLanguage := languageForChannel(targets, thread.SourceChannelID)
 	contextFn := func() TranslationContext {
-		replyChannelID := m.ReferencedMessageChannelID
-		if replyChannelID == "" {
-			replyChannelID = m.ChannelID
-		}
-		tc := s.groupTranslationContext(ctx, m.GuildID, thread.GroupID, thread.SourceChannelID, m.ChannelID, sourceLanguage, m.ID, replyChannelID, m.ReferencedMessageID, m.AuthorDisplayName, s.resolveThreadName(m))
-		tc.MentionedUsers = m.MentionedUsers
-		tc.MentionedChannels = m.MentionedChannels
-		tc.MentionedRoles = m.MentionedRoles
-		return tc
+		return s.translationContextForMessage(ctx, m, thread.GroupID, thread.SourceChannelID, m.ChannelID, s.resolveThreadName(m))
 	}
 	dests := []mirrorDestination{destinationForThread(*target, thread.TargetThreadID)}
 	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests)

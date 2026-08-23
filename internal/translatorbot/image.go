@@ -510,6 +510,20 @@ func webhookFilesForImages(loaded []loadedImageAttachment, descriptions []string
 	return out
 }
 
+func visionFromLoaded(loaded []loadedImageAttachment) []visionImage {
+	if len(loaded) == 0 {
+		return nil
+	}
+	vision := make([]visionImage, 0, len(loaded))
+	for _, item := range loaded {
+		if item.Vision.DataURL == "" {
+			continue
+		}
+		vision = append(vision, item.Vision)
+	}
+	return vision
+}
+
 func visionBytesTotal(images []visionImage) int {
 	total := 0
 	for _, img := range images {
