@@ -8,7 +8,10 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-const discordRetryAttempts = 3
+const (
+	discordRetryAttempts = 3
+	discordRetryBackoff  = 200 * time.Millisecond
+)
 
 func isDiscordRetryable(err error) bool {
 	var restErr *discordgo.RESTError
@@ -26,7 +29,7 @@ func withDiscordRetry(fn func() error) error {
 		if err == nil || !isDiscordRetryable(err) || attempt == discordRetryAttempts-1 {
 			return err
 		}
-		time.Sleep(time.Duration(1<<attempt) * 200 * time.Millisecond)
+		time.Sleep(discordRetryBackoff * time.Duration(1<<attempt))
 	}
 	return err
 }
@@ -41,7 +44,7 @@ func withDiscordRetryValue[T any](fn func() (T, error)) (T, error) {
 		if err == nil || !isDiscordRetryable(err) || attempt == discordRetryAttempts-1 {
 			return value, err
 		}
-		time.Sleep(time.Duration(1<<attempt) * 200 * time.Millisecond)
+		time.Sleep(discordRetryBackoff * time.Duration(1<<attempt))
 	}
 	return value, err
 }

@@ -12,6 +12,7 @@ import (
 )
 
 const discordMessageContentLimit = 2000
+const replyQuoteMaxRunes = 40
 const discordEpochMillis = 1420070400000
 
 const (
@@ -189,4 +190,15 @@ func truncateRunes(text string, maxRunes int, ellipsis string) string {
 		return text
 	}
 	return string(runes[:maxRunes]) + ellipsis
+}
+
+func withQuote(quote, content string) string {
+	switch {
+	case quote != "" && content != "":
+		return quote + "\n\n" + content
+	case quote != "":
+		return quote
+	default:
+		return content
+	}
 }

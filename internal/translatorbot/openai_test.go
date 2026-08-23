@@ -312,7 +312,7 @@ func TestOpenAITranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		if input.Model != testOpenAIModel || input.MaxTokens != 4096 {
+		if input.Model != testOpenAIModel || input.MaxTokens != openaiMaxTokens {
 			t.Fatalf("request config = %#v", input)
 		}
 		if len(input.Messages) != 2 || input.Messages[0].Role != "system" || input.Messages[1].Role != "user" {
