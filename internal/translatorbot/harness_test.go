@@ -220,15 +220,21 @@ func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTr
 		} else {
 			out[lang] = text
 		}
-		if prepared.attachmentCount > 0 {
-			descriptions := make([]string, prepared.attachmentCount)
-			for i, attachment := range prepared.translationContext.Attachments {
-				if strings.TrimSpace(attachment.Description) != "" {
-					descriptions[i] = "[" + lang + "] " + attachment.Description
-				}
-			}
-			alts[lang] = descriptions
+		if translatableAttachmentCount(prepared.translationContext.Attachments) == 0 {
+			continue
 		}
+		descriptions := make([]string, len(prepared.translationContext.Attachments))
+		for i, attachment := range prepared.translationContext.Attachments {
+			if hasTranslatableText(attachment.Description) {
+				descriptions[i] = "[" + lang + "] " + attachment.Description
+			} else {
+				descriptions[i] = attachment.Description
+			}
+		}
+		alts[lang] = descriptions
+	}
+	if len(alts) == 0 {
+		alts = nil
 	}
 	return MultiTranslationResult{Translations: out, AttachmentDescriptions: alts}, nil
 }
