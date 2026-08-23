@@ -12,7 +12,7 @@ Discord Auto Translator は、**複数の言語チャンネルをリンクして
 |---|---|
 | 言語 | Go 1.24 |
 | Discord ライブラリ | `github.com/bwmarrin/discordgo` v0.29.0 |
-| 翻訳エンジン | OpenAI 互換 Chat Completions（`internal/translatorbot/openai_translator.go`） |
+| 翻訳エンジン | OpenAI 互換 Chat Completions（`internal/translatorbot/openai.go`） |
 | データストア | SQLite (`modernc.org/sqlite` v1.38.2、CGO不要) |
 | オプション HTTP サーバー | アバター画像バッジ用 |
 
