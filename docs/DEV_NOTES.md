@@ -254,7 +254,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - **すべてのユーザーコンテンツは XML エスケープされています。** `<`, `>`, `&` 等が含まれていても安全です。
 - `<recent_context>` は翻訳グループ内の全会話ロケーション（親チャンネルまたは同期済みスレッド）から、同一バーストの原文を束ね後枠として積み上げます。隣接間隔が 15 分を超えると古い側を切り、件数・時間幅・トークンのハイウォーターで世代を切り替えます。履歴 0 件のときはセクション自体を出しません。本文が空でも画像添付がある投稿は残し、含まれた画像は `<image index>` で示します。
 - 世代切替で捨てた枠は翻訳を待たせず裏で短く要約し、次のメッセージから履歴ユーザーパートの `<topic_summary>` に載せます。要約が未完了なら履歴だけで翻訳します。沈黙 15 分でバーストが切れた要約は使いません。
-- ユーザープロンプトは安定パート（`always_include` glossary と discord_context など `<topic_summary>` より前）、履歴パート（`<topic_summary>`、`<recent_context>` 全枠、`<reply_context>`）、可変パート（本文マッチ glossary と対象メッセージの site/attachments/attachment_alts/final）に分かれます。要約が載った時点で `prompt_cache_key` を分けます。
+- ユーザープロンプトは安定パート（`always_include` glossary と discord_context など `<topic_summary>` より前）、履歴パート（`<topic_summary>`、`<recent_context>` 全枠、`<reply_context>`）、可変パート（本文マッチ glossary と対象メッセージの site/attachments/attachment_alts/final）に分かれます。`prompt_cache_key` は会話ロケーション（投票・スレッド作成は kind 付き）で、世代や要約では分けません。
 - `<reply_context>` はリプライ先を最大 3 件遡った引用チェイン（古い順、時間制限なし）です。`<recent_context>` より優先して解釈に使います。履歴枠はリプライ先と重複しても残し、末尾枠だけ同一投稿なら除外します。画像は履歴と同じ `<image>` で示し、同一投稿の画像は同じ index を共有します。
 - `<site_context>` は本文中の共有 URL から取得した title / description です。`<site id>` は `[SITE:N]` プレースホルダの N と一致します。title は背景情報であり、プレースホルダには含めません。読み込めた `og:image` は `<site>` 内の `<image>` として示し、ビジョン入力の文脈画像として渡します。
 - `<attachments>` は現在メッセージの画像添付です（要素本文には alt を入れません）。翻訳対象の既存 alt だけを `<attachment_alts>` にソース順で出します。空の alt や URL のみの alt は出しません。ビジョン入力はテキストパートの後ろ（明示 breakpoint があるときはその後）に置き、現在メッセージの添付、履歴/リプライの `<image>`、OGP の順です。生成はしません。現在メッセージの画像も履歴・リプライ・OGP と同様、取得・縮小失敗時はスキップします。`attachment_descriptions` の余剰要素は適用しません。翻訳しなかった画像スロットはソースの Description を保持します。
@@ -263,7 +263,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / topic_summary / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は安定ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
 - メッセージ翻訳の system 末尾に固定の日英 Few-shot を置きます（ユーザー XML や用語データではない）。英語は見本の訳先であり、`<target_languages>` の各言語でも同じネイティブのチャット自然さを使います。投票・スレッド作成・話題要約の system には含めません。メッセージ翻訳の system（不変領域）は推定 1200 トークン前後、上限 1500 で、system ブレークポイントだけでキャッシュ下限 1024 を超えます。
 - メッセージ翻訳の JSON Schema は、翻訳対象の既存 alt があるときだけ各言語オブジェクトで `attachment_descriptions` を required にし、`minItems`/`maxItems` でその件数に固定します。無いときはフィールド自体を出しません。余剰要素は適用しません。ルートのキーはリクエストの target languages です。system は投票・スレッド作成と同様、各言語オブジェクトが `translated_text` を含むこと、`<attachment_alts>` があるときだけ `attachment_descriptions` も含むことを指示します。投票の回答数は schema にも system にも書きません。system に alt の件数は書きません。
-- Chat Completions リクエストは `prompt_cache_key` を付けます。system・安定ユーザー・履歴ユーザーの各テキストパートに `prompt_cache_breakpoint` を置き、`prompt_cache_options.mode=explicit` を送ります。TTL は送らず、キャッシュ寿命はプロバイダーの自動キャッシュに任せます。
+- Chat Completions リクエストは会話ロケーションの `prompt_cache_key` を付けます（投票・スレッド作成は kind 付き。世代や要約では分けない）。system・安定ユーザー・履歴ユーザーの各テキストパートに `prompt_cache_breakpoint` を置き、`prompt_cache_options.mode=explicit` を送ります。TTL は送らず、キャッシュ寿命はプロバイダーの自動キャッシュに任せます。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
 ---

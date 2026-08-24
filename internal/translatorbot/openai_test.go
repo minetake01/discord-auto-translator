@@ -728,7 +728,7 @@ func TestOpenAITranslatorSendsExplicitPromptCacheWithoutTTL(t *testing.T) {
 		t.Fatalf("calls = %d, want 2", len(bodies))
 	}
 	for i, body := range bodies {
-		if !strings.Contains(body, `"prompt_cache_key":"guild:g:group:start1"`) {
+		if !strings.Contains(body, `"prompt_cache_key":"guild:g:group"`) {
 			t.Fatalf("request %d missing cache key: %s", i, body)
 		}
 		if !strings.Contains(body, `"prompt_cache_breakpoint"`) {
@@ -749,7 +749,7 @@ func TestOpenAITranslatorMarksBreakpointsWithoutTTLForShortPrefix(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(body), `"prompt_cache_key":"guild:g:group:poll:empty"`) {
+		if !strings.Contains(string(body), `"prompt_cache_key":"guild:g:group:poll"`) {
 			t.Fatalf("short prompts still send a cache key for sticky routing: %s", body)
 		}
 		if !strings.Contains(string(body), `"prompt_cache_breakpoint"`) {
@@ -841,7 +841,7 @@ func TestOpenAITranslatorSeparatesPollPromptCacheKey(t *testing.T) {
 	if len(keys) != 2 || keys[0] == keys[1] {
 		t.Fatalf("keys = %#v", keys)
 	}
-	if keys[0] != "guild:g:group:empty" || keys[1] != "guild:g:group:poll:empty" {
+	if keys[0] != "guild:g:group" || keys[1] != "guild:g:group:poll" {
 		t.Fatalf("keys = %#v", keys)
 	}
 }
@@ -966,7 +966,7 @@ func TestOpenAITranslatorDebugLogRecordsCacheHitAndCost(t *testing.T) {
 	}
 
 	entry := singleDebugLogEntry(t, path)
-	if entry.PromptCacheKey != "guild:g:group:start1" {
+	if entry.PromptCacheKey != "guild:g:group" {
 		t.Fatalf("cache key = %q", entry.PromptCacheKey)
 	}
 	if entry.Usage == nil || entry.Usage.CachedTokens == nil || *entry.Usage.CachedTokens != 800 {

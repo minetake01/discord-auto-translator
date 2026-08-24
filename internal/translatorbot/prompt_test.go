@@ -550,13 +550,27 @@ func TestParseTopicSummaryResponseRejectsEmptyAndUnknownFields(t *testing.T) {
 	}
 }
 
-func TestTranslationPromptCacheKeyChangesWhenTopicSummaryAppears(t *testing.T) {
-	tc := TranslationContext{PromptCacheLocation: "loc", PromptCacheGeneration: "gen"}
-	without := translationPromptCacheKey(tc, "")
-	tc.TopicSummary = "they are coordinating a delayed shipment"
-	with := translationPromptCacheKey(tc, "")
-	if without == with {
-		t.Fatal("prompt cache key must change when a topic summary is added to a generation")
+func TestTranslationPromptCacheKeyIsLocationScoped(t *testing.T) {
+	base := TranslationContext{PromptCacheLocation: "loc", PromptCacheGeneration: "gen"}
+	message := translationPromptCacheKey(base, "")
+	if message != "loc" {
+		t.Fatalf("message key = %q, want loc", message)
+	}
+	laterGeneration := base
+	laterGeneration.PromptCacheGeneration = "other"
+	if translationPromptCacheKey(laterGeneration, "") != message {
+		t.Fatal("prompt cache key must not change across history generations")
+	}
+	withSummary := base
+	withSummary.TopicSummary = "they are coordinating a delayed shipment"
+	if translationPromptCacheKey(withSummary, "") != message {
+		t.Fatal("prompt cache key must not change when a topic summary is added")
+	}
+	if poll := translationPromptCacheKey(base, "poll"); poll != "loc:poll" {
+		t.Fatalf("poll key = %q, want loc:poll", poll)
+	}
+	if translationPromptCacheKey(TranslationContext{}, "") != "unscoped" {
+		t.Fatal("empty location must still send a sticky routing key")
 	}
 }
 
