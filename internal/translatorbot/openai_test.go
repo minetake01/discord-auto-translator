@@ -768,7 +768,7 @@ func TestOpenAITranslatorMarksBreakpointsWithoutTTLForShortPrefix(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(body), `"prompt_cache_key":"guild:g:group:empty"`) {
+		if !strings.Contains(string(body), `"prompt_cache_key":"guild:g:group:poll:empty"`) {
 			t.Fatalf("short prompts still send a cache key for sticky routing: %s", body)
 		}
 		if !strings.Contains(string(body), `"prompt_cache_breakpoint"`) {
@@ -780,12 +780,15 @@ func TestOpenAITranslatorMarksBreakpointsWithoutTTLForShortPrefix(t *testing.T) 
 		if strings.Contains(string(body), `"ttl"`) {
 			t.Fatalf("short prefix must not send cache ttl: %s", body)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"question":"Q","answers":["A"]}}`, 1, 1)))}, nil
 	})
 	translator := testTranslator(client)
 	translator.now = func() time.Time { return time.Unix(123, 0) }
 	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "empty"}
-	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
+	// Poll system instruction stays below the explicit TTL threshold. Message
+	// translation sizes its invariant system prefix around 1200 tokens, so it
+	// writes TTL even without history.
+	if _, err := translatePollMulti(t, translator, []string{"en"}, "Q", []string{"A"}, tc, nil); err != nil {
 		t.Fatal(err)
 	}
 }

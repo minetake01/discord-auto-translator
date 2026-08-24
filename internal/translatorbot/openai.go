@@ -25,6 +25,8 @@ const (
 	promptCacheTTLText = "1h"
 	// Breakpoints are always marked. TTL write is omitted until the reusable
 	// prefix is large enough to be worth a cache write on typical providers.
+	// Message translation sizes its invariant system prefix around 1200 tokens
+	// so this threshold is met even without history.
 	promptCacheExplicitMinTokens = 1024
 
 	// Keep TCP probes active and drop idle pooled connections before common
