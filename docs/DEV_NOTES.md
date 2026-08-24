@@ -108,7 +108,7 @@ internal/translatorbot/
 
 `OPENAI_BASE_URL`（例: `https://api.openai.com/v1`）に対して非ストリーミング Chat Completions へ HTTP リクエストを送り、`Authorization: Bearer {OPENAI_API_KEY}` で認証します。モデルは `OPENAI_MODEL` をそのまま送ります。`OPENAI_REASONING_EFFORT` を設定したときだけ Chat Completions の `reasoning_effort` を送ります（未設定は省略）。ハイブリッド推論モデルでは `none` で思考トークンを省略できます。試行ごとに60秒の期限を付け、タイムアウト・通信エラー・HTTP 429/5xx に限り1秒待機してちょうど1回だけ再試行します。契約違反や4xx（429以外）は再試行しません。Discord ID は送らず、既定ではプロンプト・応答・認証情報・プロバイダーエラー本文をログへ出しません（下記のデバッグログを有効化した場合を除く）。HTTP失敗時は許可文字を制限したtype、code、param、request IDだけを診断情報として返します。
 
-Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の固定JSON Schemaで制約付きデコードします。翻訳用途のルートは当該リクエストの target languages をキーとするオブジェクトです。system instructionへschemaは複製しません。レスポンスは単一 choice、非空の assistant content、usage、JSONキー集合・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。OpenRouter（`openrouter.ai`）では `provider.require_parameters=true` を付け、Structured Outputs非対応エンドポイントへは送りません。
+Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の固定JSON Schemaで制約付きデコードします。翻訳用途のルートは当該リクエストの target languages をキーとするオブジェクトです。system instructionへschemaは複製しません。レスポンスは単一 choice、非空の assistant content、usage、JSONキー集合・空文字・未知フィールドをすべて検証してfail-closedにします。`finish_reason=length` は truncate として拒否します。プロバイダ固有のルーティング設定（`provider`）は送らず、エンドポイント選択はプロバイダ側の設定（OpenRouter のプリセットなど）に任せます。
 
 全対象言語を1リクエストで生成します。schema の構造は用途ごとに固定し、翻訳用途では対象言語をルートのオブジェクトキーにします。キー集合・空文字は既存パーサーで厳密検証します。4K出力上限への到達、不正JSON、異常finish reasonはfail-closedです。分割や別providerへのfallbackはありません。
 

@@ -76,13 +76,12 @@ type openaiHTTPClient interface {
 }
 
 type OpenAITranslator struct {
-	client            openaiHTTPClient
-	apiKey            string
-	model             string
-	completionsURL    string
-	reasoningEffort   string
-	requireParameters bool
-	debugLog          *DebugLog
+	client          openaiHTTPClient
+	apiKey          string
+	model           string
+	completionsURL  string
+	reasoningEffort string
+	debugLog        *DebugLog
 }
 
 func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model, reasoningEffort string) (*OpenAITranslator, error) {
@@ -166,22 +165,12 @@ func newOpenAIHTTPClient() *http.Client {
 
 func newOpenAITranslator(client openaiHTTPClient, apiKey, model, completionsURL, reasoningEffort string) *OpenAITranslator {
 	return &OpenAITranslator{
-		client:            client,
-		apiKey:            apiKey,
-		model:             model,
-		completionsURL:    completionsURL,
-		reasoningEffort:   reasoningEffort,
-		requireParameters: openaiHostRequiresParameters(completionsURL),
+		client:          client,
+		apiKey:          apiKey,
+		model:           model,
+		completionsURL:  completionsURL,
+		reasoningEffort: reasoningEffort,
 	}
-}
-
-func openaiHostRequiresParameters(completionsURL string) bool {
-	u, err := url.Parse(completionsURL)
-	if err != nil {
-		return false
-	}
-	host := strings.ToLower(u.Hostname())
-	return host == "openrouter.ai" || strings.HasSuffix(host, ".openrouter.ai")
 }
 
 func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
@@ -297,14 +286,13 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 }
 
 type openaiChatCompletionRequest struct {
-	Model              string                     `json:"model"`
-	Messages           []openaiChatMessage        `json:"messages"`
-	MaxTokens          int                        `json:"max_tokens"`
-	ReasoningEffort    string                     `json:"reasoning_effort,omitempty"`
-	PromptCacheKey     string                     `json:"prompt_cache_key,omitempty"`
-	PromptCacheOptions *openaiPromptCacheOptions  `json:"prompt_cache_options,omitempty"`
-	ResponseFormat     openaiResponseFormat       `json:"response_format"`
-	Provider           *openaiProviderPreferences `json:"provider,omitempty"`
+	Model              string                    `json:"model"`
+	Messages           []openaiChatMessage       `json:"messages"`
+	MaxTokens          int                       `json:"max_tokens"`
+	ReasoningEffort    string                    `json:"reasoning_effort,omitempty"`
+	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
+	PromptCacheOptions *openaiPromptCacheOptions `json:"prompt_cache_options,omitempty"`
+	ResponseFormat     openaiResponseFormat      `json:"response_format"`
 }
 
 type openaiResponseFormat struct {
@@ -316,10 +304,6 @@ type openaiJSONSchema struct {
 	Name   string          `json:"name"`
 	Strict bool            `json:"strict"`
 	Schema json.RawMessage `json:"schema"`
-}
-
-type openaiProviderPreferences struct {
-	RequireParameters bool `json:"require_parameters"`
 }
 
 type openaiChatMessage struct {
@@ -432,9 +416,6 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 				Schema: jsonSchema,
 			},
 		},
-	}
-	if t.requireParameters {
-		payload.Provider = &openaiProviderPreferences{RequireParameters: true}
 	}
 	start := time.Now()
 	entry := openaiDebugEntry{

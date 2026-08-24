@@ -426,22 +426,28 @@ func TestOpenAITranslatorSanitizesAPIErrors(t *testing.T) {
 }
 
 func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
-	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		body, err := io.ReadAll(req.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"reasoning_effort"`) || strings.Contains(string(body), `"provider"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
-			t.Fatalf("request contains unsupported fields: %s", body)
-		}
-		if !strings.Contains(string(body), `"response_format"`) || !strings.Contains(string(body), `"json_schema"`) {
-			t.Fatalf("request missing structured outputs: %s", body)
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
-	})
-	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
-	if err != nil {
-		t.Fatal(err)
+	bases := []string{testOpenAIBaseURL, "https://openrouter.ai/api/v1"}
+	for _, base := range bases {
+		t.Run(base, func(t *testing.T) {
+			client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(body), `"temperature"`) || strings.Contains(string(body), `"reasoning_effort"`) || strings.Contains(string(body), `"provider"`) || strings.Contains(string(body), "guild-1") || strings.Contains(string(body), "message-2") {
+					t.Fatalf("request contains unsupported fields: %s", body)
+				}
+				if !strings.Contains(string(body), `"response_format"`) || !strings.Contains(string(body), `"json_schema"`) {
+					t.Fatalf("request missing structured outputs: %s", body)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
+			})
+			translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(base), "")
+			_, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{GuildID: "guild-1", MessageID: "message-2"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -623,24 +629,6 @@ func assertStrictJSONSchema(t *testing.T, raw json.RawMessage, path string) {
 			t.Fatalf("%s.%s: %v", path, name, err)
 		}
 		assertStrictJSONSchema(t, propJSON, path+"."+name)
-	}
-}
-
-func TestOpenAITranslatorOpenRouterRequiresStructuredOutputParameters(t *testing.T) {
-	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		var input openaiChatCompletionRequest
-		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
-			t.Fatal(err)
-		}
-		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}, 0))
-		if input.Provider == nil || !input.Provider.RequireParameters {
-			t.Fatalf("provider = %#v, want require_parameters=true", input.Provider)
-		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
-	})
-	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL("https://openrouter.ai/api/v1"), "")
-	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
-		t.Fatal(err)
 	}
 }
 

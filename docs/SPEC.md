@@ -275,7 +275,7 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 ### 3.13 翻訳 API（OpenAI 互換 Chat Completions）
 
-翻訳は `OPENAI_BASE_URL` の OpenAI 互換 Chat Completions API（`POST {OPENAI_BASE_URL}/chat/completions`）を呼び出します。モデル ID は `OPENAI_MODEL` で必須設定します。認証は `Authorization: Bearer {OPENAI_API_KEY}` です。Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の JSON Schema で制約付きデコードします。system instruction へ schema を複製しません。OpenRouter では `provider.require_parameters=true` を付け、Structured Outputs 非対応エンドポイントへは送りません。
+翻訳は `OPENAI_BASE_URL` の OpenAI 互換 Chat Completions API（`POST {OPENAI_BASE_URL}/chat/completions`）を呼び出します。モデル ID は `OPENAI_MODEL` で必須設定します。認証は `Authorization: Bearer {OPENAI_API_KEY}` です。Structured Outputs は `response_format.type=json_schema`（`strict: true`）で指定し、用途別の JSON Schema で制約付きデコードします。system instruction へ schema を複製しません。プロバイダ固有のルーティング設定（`provider`）は送らず、エンドポイント選択はプロバイダ側の設定に任せます。
 
 | 項目 | 値 |
 |---|---|
