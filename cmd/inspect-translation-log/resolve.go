@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"regexp"
 	"strings"
@@ -182,21 +181,6 @@ func resolvedCacheKey(entry logEntry) string {
 		return ""
 	}
 	return payload.PromptCacheKey
-}
-
-func resolvedTTLSent(entry logEntry) *bool {
-	if entry.PromptCacheTTLSent != nil {
-		return entry.PromptCacheTTLSent
-	}
-	if len(entry.Request) == 0 {
-		return nil
-	}
-	var payload requestPayload
-	if err := json.Unmarshal(entry.Request, &payload); err != nil {
-		return nil
-	}
-	sent := len(bytes.TrimSpace(payload.PromptCacheOptions)) > 0 && string(payload.PromptCacheOptions) != "null"
-	return &sent
 }
 
 func resolvedCacheHit(entry logEntry, usage loggedUsage) *bool {

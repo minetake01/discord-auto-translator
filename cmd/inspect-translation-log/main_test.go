@@ -70,14 +70,12 @@ func TestPrintDetailOmitsReasoningWhenAbsent(t *testing.T) {
 
 func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 	hit := true
-	ttl := false
 	cached := 800
 	cost := 0.00014
 	entry := logEntry{
 		Model:              "qwen/qwen3.6-35b-a3b",
 		SchemaName:         "message_translations",
 		PromptCacheKey:     "guild:g:group:start1",
-		PromptCacheTTLSent: &ttl,
 		PromptCacheHit:     &hit,
 		DurationMS:         812,
 		WaitMS:             int64Ptr(800),
@@ -100,7 +98,7 @@ func TestPrintDetailShowsCacheHitCostAndPromptSizes(t *testing.T) {
 		"schema: message_translations",
 		"model: qwen/qwen3.6-35b-a3b",
 		"cache_key: guild:g:group:start1",
-		"cache: hit  cached=800/1200  ttl_sent=false",
+		"cache: hit  cached=800/1200",
 		"timing: duration=812ms  wait=800ms  read=5ms  attempt=1  processing=790ms",
 		"cost_usd: $0.00014",
 		"tokens: in=1200 cached=800 out=40",
@@ -140,10 +138,9 @@ func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
 	hit, miss := true, false
 	cachedHit, cachedMiss := 800, 0
 	cost1, cost2 := 0.0002, 0.0001
-	ttlTrue, ttlFalse := true, false
 	entries := []logEntry{
-		{DurationMS: 100, WaitMS: int64Ptr(90), PromptCacheHit: &hit, PromptCacheTTLSent: &ttlTrue, Usage: &loggedUsage{PromptTokens: 1000, CachedTokens: &cachedHit, CompletionTokens: 10, CostUSD: &cost1}},
-		{DurationMS: 300, WaitMS: int64Ptr(280), PromptCacheHit: &miss, PromptCacheTTLSent: &ttlFalse, Usage: &loggedUsage{PromptTokens: 200, CachedTokens: &cachedMiss, CompletionTokens: 5, CostUSD: &cost2}},
+		{DurationMS: 100, WaitMS: int64Ptr(90), PromptCacheHit: &hit, Usage: &loggedUsage{PromptTokens: 1000, CachedTokens: &cachedHit, CompletionTokens: 10, CostUSD: &cost1}},
+		{DurationMS: 300, WaitMS: int64Ptr(280), PromptCacheHit: &miss, Usage: &loggedUsage{PromptTokens: 200, CachedTokens: &cachedMiss, CompletionTokens: 5, CostUSD: &cost2}},
 		{DurationMS: 200, Usage: &loggedUsage{PromptTokens: 50, CompletionTokens: 2}},
 	}
 
@@ -152,7 +149,7 @@ func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
 		"stats (filtered n=3):",
 		"cost_usd=$0.0003 (2/3 reported)",
 		"tokens: prompt=1250 cached=800 (64.0%) completion=17",
-		"cache: hit=1 miss=1 unknown=1 hit_rate=50.0% ttl_writes=1",
+		"cache: hit=1 miss=1 unknown=1 hit_rate=50.0%",
 		"duration_ms: avg=200 min=100 max=300 n=3",
 		"wait_ms: avg=185 min=90 max=280 n=2",
 	} {
@@ -163,7 +160,7 @@ func TestPrintStatsAggregatesCacheAndCost(t *testing.T) {
 }
 
 func TestParseEntryReadsMeasurementFields(t *testing.T) {
-	line := []byte(`{"time":"2026-08-20T05:00:00Z","schema_name":"message_translations","prompt_cache_key":"k","prompt_cache_ttl_sent":false,"prompt_cache_hit":true,"system_instruction":"sys","user_prompt_frozen":"frozen","user_prompt_variable":"var","usage":{"prompt_tokens":9,"cached_tokens":3,"cost_usd":0.001}}`)
+	line := []byte(`{"time":"2026-08-20T05:00:00Z","schema_name":"message_translations","prompt_cache_key":"k","prompt_cache_hit":true,"system_instruction":"sys","user_prompt_frozen":"frozen","user_prompt_variable":"var","usage":{"prompt_tokens":9,"cached_tokens":3,"cost_usd":0.001}}`)
 	entry, err := parseEntry(line)
 	if err != nil {
 		t.Fatal(err)
@@ -171,8 +168,8 @@ func TestParseEntryReadsMeasurementFields(t *testing.T) {
 	if entry.SchemaName != "message_translations" || entry.PromptCacheKey != "k" || entry.SystemInstruction != "sys" {
 		t.Fatalf("entry = %#v", entry)
 	}
-	if entry.PromptCacheTTLSent == nil || *entry.PromptCacheTTLSent || entry.PromptCacheHit == nil || !*entry.PromptCacheHit {
-		t.Fatalf("cache flags = ttl=%v hit=%v", entry.PromptCacheTTLSent, entry.PromptCacheHit)
+	if entry.PromptCacheHit == nil || !*entry.PromptCacheHit {
+		t.Fatalf("prompt_cache_hit = %#v", entry.PromptCacheHit)
 	}
 	if entry.Usage == nil || entry.Usage.PromptTokens != 9 || entry.Usage.CachedTokens == nil || *entry.Usage.CachedTokens != 3 || entry.Usage.CostUSD == nil || *entry.Usage.CostUSD != 0.001 {
 		t.Fatalf("usage = %#v", entry.Usage)

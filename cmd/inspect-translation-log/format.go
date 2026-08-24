@@ -26,9 +26,6 @@ func formatCacheDetail(entry logEntry, usage loggedUsage) string {
 			parts = append(parts, fmt.Sprintf("cached=%d", *usage.CachedTokens))
 		}
 	}
-	if sent := resolvedTTLSent(entry); sent != nil {
-		parts = append(parts, fmt.Sprintf("ttl_sent=%t", *sent))
-	}
 	return strings.Join(parts, "  ")
 }
 

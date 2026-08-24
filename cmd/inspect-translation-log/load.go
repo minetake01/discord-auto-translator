@@ -203,13 +203,6 @@ func parseEntry(line []byte) (logEntry, error) {
 			return logEntry{}, fmt.Errorf("target_languages: %w", err)
 		}
 	}
-	if v, ok := raw["prompt_cache_ttl_sent"]; ok {
-		var sent bool
-		if err := json.Unmarshal(v, &sent); err != nil {
-			return logEntry{}, fmt.Errorf("prompt_cache_ttl_sent: %w", err)
-		}
-		entry.PromptCacheTTLSent = &sent
-	}
 	if v, ok := raw["prompt_cache_hit"]; ok {
 		var hit bool
 		if err := json.Unmarshal(v, &hit); err != nil {

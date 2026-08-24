@@ -116,7 +116,6 @@ func printStats(entries []logEntry) {
 		reasoningSum          int
 		cacheWriteSum         int
 		hits, misses, unknown int
-		ttlWrites             int
 		costTotal             float64
 		cachedKnown           bool
 	)
@@ -146,9 +145,6 @@ func printStats(entries []logEntry) {
 		default:
 			misses++
 		}
-		if sent := resolvedTTLSent(entry); sent != nil && *sent {
-			ttlWrites++
-		}
 	}
 	fmt.Printf("stats (filtered n=%d):\n", len(entries))
 	if costCount > 0 {
@@ -170,8 +166,8 @@ func printStats(entries []logEntry) {
 	if hits+misses > 0 {
 		hitRate = fmt.Sprintf("%.1f%%", 100*float64(hits)/float64(hits+misses))
 	}
-	fmt.Printf("  cache: hit=%d miss=%d unknown=%d hit_rate=%s ttl_writes=%d\n",
-		hits, misses, unknown, hitRate, ttlWrites)
+	fmt.Printf("  cache: hit=%d miss=%d unknown=%d hit_rate=%s\n",
+		hits, misses, unknown, hitRate)
 	printDurationStats("duration_ms", collectInt64(entries, func(e logEntry) (int64, bool) { return e.DurationMS, true }))
 	printDurationStats("wait_ms", collectInt64(entries, func(e logEntry) (int64, bool) {
 		if e.WaitMS == nil {
