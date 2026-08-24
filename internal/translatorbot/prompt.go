@@ -124,17 +124,10 @@ func translationPromptCacheKey(translationContext TranslationContext, kind strin
 	if location == "" {
 		location = "unscoped"
 	}
-	generation := strings.TrimSpace(translationContext.PromptCacheGeneration)
-	if generation == "" {
-		generation = historyGenerationID(translationContext.History, "", "")
-	}
-	if strings.TrimSpace(translationContext.TopicSummary) != "" {
-		generation += ":sum"
-	}
 	if kind == "" {
-		return location + ":" + generation
+		return location
 	}
-	return location + ":" + kind + ":" + generation
+	return location + ":" + kind
 }
 
 func buildTranslationSystemInstruction(taskIntro, sourceLabel string) string {
