@@ -262,8 +262,9 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - 履歴・リプライの `<message>` は `author`（表示名）と原文、任意の `<image>`。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / topic_summary / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は安定ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
+- メッセージ翻訳の system 末尾に固定の日英 Few-shot を置きます（ユーザー XML や用語データではない）。英語は見本の訳先であり、`<target_languages>` の各言語でも同じネイティブのチャット自然さを使います。投票・スレッド作成・話題要約の system には含めません。メッセージ翻訳の system（不変領域）は推定 1200 トークン前後、上限 1500 で、system ブレークポイントだけでキャッシュ下限 1024 を超えます。履歴が空でも TTL write します。
 - メッセージ翻訳の JSON Schema は、翻訳対象の既存 alt があるときだけ各言語オブジェクトで `attachment_descriptions` を required にし、`minItems`/`maxItems` でその件数に固定します。無いときはフィールド自体を出しません。余剰要素は適用しません。ルートのキーはリクエストの target languages です。system は投票・スレッド作成と同様、各言語オブジェクトが `translated_text` を含むこと、`<attachment_alts>` があるときだけ `attachment_descriptions` も含むことを指示します。投票の回答数は schema にも system にも書きません。system に alt の件数は書きません。
-- Chat Completions リクエストは `prompt_cache_key` を付けます。system・安定ユーザー・履歴ユーザーの各テキストパートに `prompt_cache_breakpoint` を置き、`prompt_cache_options.mode=explicit` を送ります。system と安定＋履歴の推定トークンが 1024 以上のとき、そのキーを未保持なら `prompt_cache_options.ttl=1h` を付けます。短いコンテキストでは breakpoint は送り、TTL は付けません。
+- Chat Completions リクエストは `prompt_cache_key` を付けます。system・安定ユーザー・履歴ユーザーの各テキストパートに `prompt_cache_breakpoint` を置き、`prompt_cache_options.mode=explicit` を送ります。system と安定＋履歴の推定トークンが 1024 以上のとき、そのキーを未保持なら `prompt_cache_options.ttl=1h` を付けます。短いコンテキストでは breakpoint は送り、TTL は付けません。メッセージ翻訳は不変領域が約 1200 トークンあるため、履歴が空でも TTL を付けます。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
 
 ---
@@ -414,4 +415,4 @@ const (
 )
 ```
 
-定義は `history.go`。翻訳文脈の直近履歴は同一バーストを append-only に積み、沈黙 15 分・件数 16/8・時間幅 30/15 分・トークン 800/400 で世代を切り替えます。切り捨て確定時に捨てた枠を裏で短く要約し、次の翻訳から `<topic_summary>` として履歴パートへ載せます。引用チェインの最大遡り件数 `translationReplyChainLimit = 3` は `service_context.go` にあり、時間窓は適用しません。明示キャッシュの TTL は 1 時間で、system+安定+履歴が 1024 トークン以上のときだけ write します。
+定義は `history.go`。翻訳文脈の直近履歴は同一バーストを append-only に積み、沈黙 15 分・件数 16/8・時間幅 30/15 分・トークン 800/400 で世代を切り替えます。切り捨て確定時に捨てた枠を裏で短く要約し、次の翻訳から `<topic_summary>` として履歴パートへ載せます。引用チェインの最大遡り件数 `translationReplyChainLimit = 3` は `service_context.go` にあり、時間窓は適用しません。明示キャッシュの TTL は 1 時間で、system+安定+履歴が 1024 トークン以上のときだけ write します。メッセージ翻訳の system（不変領域）は約 1200 トークン（上限 1500）なので、履歴が空でも write します。

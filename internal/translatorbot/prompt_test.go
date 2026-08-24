@@ -7,7 +7,7 @@ import (
 )
 
 func testTranslationSystem() string {
-	return buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>")
+	return buildMessageTranslationSystemInstruction()
 }
 
 func TestBuildTranslationPromptIncludesHistory(t *testing.T) {
@@ -240,6 +240,65 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	}
 	if strings.Contains(got, "primarily readable text") {
 		t.Fatal("system instruction must not ask to generate alt from image text:\n" + got)
+	}
+}
+
+func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T) {
+	const source = "新宿駅の東口だよー！楽しみだね"
+	const translation = "I'm at the east exit of Shinjuku Station! Really looking forward to it."
+	got := testTranslationSystem()
+	if !strings.Contains(got, source) {
+		t.Fatal("message system instruction should include the few-shot source")
+	}
+	if !strings.Contains(got, translation) {
+		t.Fatal("message system instruction should include the few-shot translation")
+	}
+	if !strings.Contains(got, "[SITE:1]") || !strings.Contains(got, "[EMOJI:sparkles]") {
+		t.Fatal("message system instruction should include placeholder few-shot examples")
+	}
+
+	prepared, err := prepareMultiTranslation([]string{"en"}, "hello", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.systemInstruction != got {
+		t.Fatal("prepareMultiTranslation should use the message system instruction with few-shot examples")
+	}
+	if strings.Contains(prepared.userPrompt(), source) {
+		t.Fatalf("few-shot examples belong in the system instruction, not the user prompt:\n%s", prepared.userPrompt())
+	}
+
+	poll, err := preparePollTranslation([]string{"en"}, "Q", []string{"A"}, TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(poll.systemInstruction, source) {
+		t.Fatal("poll system instruction must not include message few-shot examples")
+	}
+
+	thread, err := prepareThreadCreateTranslation([]string{"en"}, "topic", "hello", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(thread.systemInstruction, source) {
+		t.Fatal("thread-create system instruction must not include message few-shot examples")
+	}
+
+	summary, err := prepareTopicSummary(TopicSummaryRequest{
+		Discarded: []ChatContextMessage{{Author: "alice", Content: "hello"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(summary.systemInstruction, source) {
+		t.Fatal("topic summary system instruction must not include message few-shot examples")
+	}
+}
+
+func TestMessageTranslationSystemInstructionStaysWithinInvariantTokenBudget(t *testing.T) {
+	tokens := EstimateTranslationTokens(testTranslationSystem(), "")
+	if tokens > messageTranslationInvariantMaxTokens {
+		t.Fatalf("message system instruction is the invariant cached prefix: estimated tokens = %d, want <= %d (~%d target)", tokens, messageTranslationInvariantMaxTokens, messageTranslationInvariantTargetTokens)
 	}
 }
 

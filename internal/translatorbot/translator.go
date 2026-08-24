@@ -205,7 +205,7 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
 	prepared := preparedTranslation{
 		targetLanguages:    normalized,
-		systemInstruction:  buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>"),
+		systemInstruction:  buildMessageTranslationSystemInstruction(),
 		protector:          p,
 		guildID:            translationContext.GuildID,
 		messageID:          translationContext.MessageID,
