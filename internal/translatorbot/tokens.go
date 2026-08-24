@@ -1,8 +1,8 @@
 package translatorbot
 
 // EstimateTranslationTokens is a character/4 heuristic used for history
-// generation cuts, topic-summary input caps, prompt-cache thresholds, and
-// rate-limit admission. It is not provider-reported usage.
+// generation cuts, topic-summary input caps, and rate-limit admission.
+// It is not provider-reported usage.
 func EstimateTranslationTokens(prompt, response string) int {
 	total := len(prompt) + len(response)
 	if total == 0 {

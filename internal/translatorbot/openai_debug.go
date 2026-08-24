@@ -29,7 +29,6 @@ type openaiDebugEntry struct {
 	ProcessingMS       *int64             `json:"processing_ms,omitempty"`
 	ServerTiming       string             `json:"server_timing,omitempty"`
 	PromptCacheKey     string             `json:"prompt_cache_key,omitempty"`
-	PromptCacheTTLSent bool               `json:"prompt_cache_ttl_sent"`
 	PromptCacheHit     *bool              `json:"prompt_cache_hit,omitempty"`
 	SystemInstruction  string             `json:"system_instruction,omitempty"`
 	UserPromptStable   string             `json:"user_prompt_stable,omitempty"`

@@ -23,7 +23,6 @@ type logEntry struct {
 	HTTPStatus         int
 	Error              string
 	PromptCacheKey     string
-	PromptCacheTTLSent *bool
 	PromptCacheHit     *bool
 	SystemInstruction  string
 	UserPromptStable   string
@@ -53,9 +52,8 @@ type loggedUsage struct {
 }
 
 type requestPayload struct {
-	Messages           []chatMessage   `json:"messages"`
-	PromptCacheKey     string          `json:"prompt_cache_key"`
-	PromptCacheOptions json.RawMessage `json:"prompt_cache_options"`
+	Messages       []chatMessage `json:"messages"`
+	PromptCacheKey string        `json:"prompt_cache_key"`
 }
 
 type chatMessage struct {

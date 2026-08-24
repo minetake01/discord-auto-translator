@@ -22,10 +22,6 @@ const (
 	testOpenAIModel   = "test-model"
 )
 
-func longPromptCacheOverview() string {
-	return strings.Repeat("server overview text ", 80)
-}
-
 type openaiRoundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f openaiRoundTripFunc) Do(req *http.Request) (*http.Response, error) { return f(req) }
@@ -100,9 +96,7 @@ func successfulOpenAIResponse(raw string, inputTokens, outputTokens int) string 
 func fmtInt(value int) string { return strconv.Itoa(value) }
 
 func testTranslator(client openaiHTTPClient) *OpenAITranslator {
-	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL), "")
-	translator.now = func() time.Time { return time.Unix(123, 0) }
-	return translator
+	return newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL(testOpenAIBaseURL), "")
 }
 
 func requireJSONSchemaResponseFormat(t *testing.T, input openaiChatCompletionRequest, name string, schema json.RawMessage) {
@@ -287,8 +281,7 @@ func TestOpenAITranslatorSendsVisionImagesAfterCachedText(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
-		ServerDescription: longPromptCacheOverview(),
-		Attachments:       []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
+		Attachments: []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -646,7 +639,6 @@ func TestOpenAITranslatorOpenRouterRequiresStructuredOutputParameters(t *testing
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
 	translator := newOpenAITranslator(client, testOpenAIAPIKey, testOpenAIModel, joinOpenAIChatCompletionsURL("https://openrouter.ai/api/v1"), "")
-	translator.now = func() time.Time { return time.Unix(123, 0) }
 	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", TranslationContext{}, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -711,7 +703,7 @@ func TestOpenAITranslatorMessageSystemInstructionIgnoresAttachments(t *testing.T
 	}
 }
 
-func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
+func TestOpenAITranslatorSendsExplicitPromptCacheWithoutTTL(t *testing.T) {
 	var bodies []string
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body, err := io.ReadAll(req.Body)
@@ -721,11 +713,8 @@ func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
 		bodies = append(bodies, string(body))
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
 	})
-	now := time.Unix(123, 0)
 	translator := testTranslator(client)
-	translator.now = func() time.Time { return now }
 	tc := TranslationContext{
-		ServerDescription:     longPromptCacheOverview(),
 		PromptCacheLocation:   "guild:g:group",
 		PromptCacheGeneration: "start1",
 	}
@@ -735,30 +724,22 @@ func TestOpenAITranslatorWritesPromptCacheTTLOncePerKey(t *testing.T) {
 	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
 		t.Fatal(err)
 	}
-	now = now.Add(time.Hour + time.Second)
-	if _, err := translateMulti(t, context.Background(), translator, []string{"en"}, "hello", tc, nil); err != nil {
-		t.Fatal(err)
+	if len(bodies) != 2 {
+		t.Fatalf("calls = %d, want 2", len(bodies))
 	}
-	if len(bodies) != 3 {
-		t.Fatalf("calls = %d, want 3", len(bodies))
-	}
-	if !strings.Contains(bodies[0], `"prompt_cache_key":"guild:g:group:start1"`) || !strings.Contains(bodies[0], `"ttl":"1h"`) {
-		t.Fatalf("first request should write cache ttl: %s", bodies[0])
-	}
-	if !strings.Contains(bodies[0], `"prompt_cache_breakpoint"`) {
-		t.Fatalf("first request should mark breakpoint: %s", bodies[0])
-	}
-	if strings.Contains(bodies[1], `"ttl"`) {
-		t.Fatalf("reuse must not send ttl: %s", bodies[1])
-	}
-	if !strings.Contains(bodies[1], `"prompt_cache_options"`) || !strings.Contains(bodies[1], `"explicit"`) {
-		t.Fatalf("reuse must stay in explicit cache mode: %s", bodies[1])
-	}
-	if !strings.Contains(bodies[1], `"prompt_cache_key":"guild:g:group:start1"`) {
-		t.Fatalf("reuse must keep cache key: %s", bodies[1])
-	}
-	if !strings.Contains(bodies[2], `"ttl":"1h"`) {
-		t.Fatalf("expired key should write ttl again: %s", bodies[2])
+	for i, body := range bodies {
+		if !strings.Contains(body, `"prompt_cache_key":"guild:g:group:start1"`) {
+			t.Fatalf("request %d missing cache key: %s", i, body)
+		}
+		if !strings.Contains(body, `"prompt_cache_breakpoint"`) {
+			t.Fatalf("request %d missing breakpoint: %s", i, body)
+		}
+		if !strings.Contains(body, `"prompt_cache_options"`) || !strings.Contains(body, `"explicit"`) {
+			t.Fatalf("request %d must stay in explicit cache mode: %s", i, body)
+		}
+		if strings.Contains(body, `"ttl"`) {
+			t.Fatalf("request %d must not send cache ttl: %s", i, body)
+		}
 	}
 }
 
@@ -783,11 +764,7 @@ func TestOpenAITranslatorMarksBreakpointsWithoutTTLForShortPrefix(t *testing.T) 
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"question":"Q","answers":["A"]}}`, 1, 1)))}, nil
 	})
 	translator := testTranslator(client)
-	translator.now = func() time.Time { return time.Unix(123, 0) }
 	tc := TranslationContext{PromptCacheLocation: "guild:g:group", PromptCacheGeneration: "empty"}
-	// Poll system instruction stays below the explicit TTL threshold. Message
-	// translation sizes its invariant system prefix around 1200 tokens, so it
-	// writes TTL even without history.
 	if _, err := translatePollMulti(t, translator, []string{"en"}, "Q", []string{"A"}, tc, nil); err != nil {
 		t.Fatal(err)
 	}

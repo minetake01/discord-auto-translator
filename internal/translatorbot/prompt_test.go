@@ -296,9 +296,10 @@ func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T
 }
 
 func TestMessageTranslationSystemInstructionStaysWithinInvariantTokenBudget(t *testing.T) {
+	const maxTokens = 1500
 	tokens := EstimateTranslationTokens(testTranslationSystem(), "")
-	if tokens > messageTranslationInvariantMaxTokens {
-		t.Fatalf("message system instruction is the invariant cached prefix: estimated tokens = %d, want <= %d (~%d target)", tokens, messageTranslationInvariantMaxTokens, messageTranslationInvariantTargetTokens)
+	if tokens > maxTokens {
+		t.Fatalf("message system instruction is the invariant cached prefix: estimated tokens = %d, want <= %d (around 1200)", tokens, maxTokens)
 	}
 }
 

@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -20,14 +19,6 @@ const (
 	openaiRequestTimeout = 60 * time.Second
 	openaiRetryAttempts  = 2 // initial attempt + one retry
 	openaiRetryBackoff   = 1 * time.Second
-
-	promptCacheTTL     = time.Hour
-	promptCacheTTLText = "1h"
-	// Breakpoints are always marked. TTL write is omitted until the reusable
-	// prefix is large enough to be worth a cache write on typical providers.
-	// Message translation sizes its invariant system prefix around 1200 tokens
-	// so this threshold is met even without history.
-	promptCacheExplicitMinTokens = 1024
 
 	// Keep TCP probes active and drop idle pooled connections before common
 	// middlebox idle timeouts silently invalidate them. Per-attempt deadlines
@@ -91,10 +82,7 @@ type OpenAITranslator struct {
 	completionsURL    string
 	reasoningEffort   string
 	requireParameters bool
-	now               func() time.Time
 	debugLog          *DebugLog
-	promptCacheMu     sync.Mutex
-	promptCacheExpiry map[string]time.Time
 }
 
 func NewOpenAITranslator(_ context.Context, baseURL, apiKey, model, reasoningEffort string) (*OpenAITranslator, error) {
@@ -184,7 +172,6 @@ func newOpenAITranslator(client openaiHTTPClient, apiKey, model, completionsURL,
 		completionsURL:    completionsURL,
 		reasoningEffort:   reasoningEffort,
 		requireParameters: openaiHostRequiresParameters(completionsURL),
-		now:               time.Now,
 	}
 }
 
@@ -361,7 +348,6 @@ type openaiPromptCacheBreakpoint struct {
 
 type openaiPromptCacheOptions struct {
 	Mode string `json:"mode"`
-	TTL  string `json:"ttl,omitempty"`
 }
 
 type openaiChatCompletionResponse struct {
@@ -450,11 +436,6 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	if t.requireParameters {
 		payload.Provider = &openaiProviderPreferences{RequireParameters: true}
 	}
-	wroteTTL := false
-	if shouldWritePromptCacheTTL(prepared) && t.promptCacheNeedsTTL(prepared.promptCacheKey) {
-		payload.PromptCacheOptions.TTL = promptCacheTTLText
-		wroteTTL = true
-	}
 	start := time.Now()
 	entry := openaiDebugEntry{
 		Time:               start,
@@ -465,7 +446,6 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		TargetLanguages:    prepared.targetLanguages,
 		Attempt:            attempt,
 		PromptCacheKey:     prepared.promptCacheKey,
-		PromptCacheTTLSent: wroteTTL,
 		SystemInstruction:  prepared.systemInstruction,
 		UserPromptStable:   prepared.userPromptStable,
 		UserPromptHistory:  prepared.userPromptHistory,
@@ -520,9 +500,6 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 	entry.ResponseCreated = extractResponseCreated(responseBody)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return "", 0, 0, openaiHTTPError(response, responseBody)
-	}
-	if wroteTTL {
-		t.rememberPromptCache(prepared.promptCacheKey)
 	}
 	var output openaiChatCompletionResponse
 	decoder := json.NewDecoder(bytes.NewReader(responseBody))
@@ -659,35 +636,4 @@ func firstSafeErrorField(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func shouldWritePromptCacheTTL(prepared preparedTranslation) bool {
-	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory, "") >= promptCacheExplicitMinTokens
-}
-
-func (t *OpenAITranslator) promptCacheNeedsTTL(key string) bool {
-	if key == "" {
-		return false
-	}
-	now := t.now()
-	t.promptCacheMu.Lock()
-	defer t.promptCacheMu.Unlock()
-	if t.promptCacheExpiry == nil {
-		return true
-	}
-	expiry, ok := t.promptCacheExpiry[key]
-	return !ok || !now.Before(expiry)
-}
-
-func (t *OpenAITranslator) rememberPromptCache(key string) {
-	if key == "" {
-		return
-	}
-	now := t.now()
-	t.promptCacheMu.Lock()
-	defer t.promptCacheMu.Unlock()
-	if t.promptCacheExpiry == nil {
-		t.promptCacheExpiry = make(map[string]time.Time)
-	}
-	t.promptCacheExpiry[key] = now.Add(promptCacheTTL)
 }
