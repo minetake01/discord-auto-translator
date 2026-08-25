@@ -38,8 +38,8 @@ const (
 		"<translation>Yeah, I set it up to delete older logs once it hits the cap. I'll check it out when I get home.</translation>\n" +
 		"<source>現地参加したいけど、国内開催じゃないと行けないなぁ…まさか海外とは思わないじゃん</source>\n" +
 		"<translation>I'd love to go in person, but I won't be able to make it unless it's held domestically... Nobody would ever expect it to be overseas.</translation>\n" +
-		"<source>クロニーちゃんとハコスちゃんの新曲最高！明日からまた月曜日になりマンデーだけど頑張れる</source>\n" +
-		"<translation>Kronii and Hakos's new song is amazing! Back to the Monday grind tomorrow, but this gives me the energy to push through.</translation>\n" +
+		"<source>推しの新曲最高！明日からまた月曜日になりマンデーだけど頑張れる</source>\n" +
+		"<translation>My fave's new song is amazing! Back to the Monday grind tomorrow, but this gives me the energy to push through.</translation>\n" +
 		"<source>これって誰でも自由に使っていいやつだっけ？（）</source>\n" +
 		"<translation>Wait, is anyone free to use this? lol</translation>\n" +
 		"<source>なんなんだこのキャラ、可愛いがすぎるぞ</source>\n" +
