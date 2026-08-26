@@ -2,64 +2,176 @@
 
 [English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
 
-Bot Discord giúp những người nói các ngôn ngữ khác nhau có thể trò chuyện cùng nhau trong cùng một máy chủ.
+Bot Discord cho phép những người nói các ngôn ngữ khác nhau có thể giao tiếp theo thời gian thực trong cùng một máy chủ Discord, mỗi người sử dụng ngôn ngữ mẹ đẻ của mình.
 
-Liên kết một kênh mỗi ngôn ngữ thành một **nhóm dịch thuật**. Mỗi tin nhắn được đăng trên một kênh sẽ được mô hình Chat Completions tương thích OpenAI dịch ngay lập tức và phản chiếu đến tất cả các kênh khác trong nhóm — giữ nguyên tên và ảnh đại diện của người gửi gốc — để mỗi kênh đọc như một cuộc trò chuyện tự nhiên bằng ngôn ngữ của mình.
+Bằng cách liên kết mỗi kênh đại diện cho một ngôn ngữ vào một **nhóm dịch thuật (Translation Group)**, mọi tin nhắn được gửi trong một kênh sẽ được tự động dịch bởi mô hình ngôn ngữ lớn tương thích OpenAI (Chat Completions API) và chuyển tiếp đến tất cả các kênh khác trong nhóm bằng **tên và ảnh đại diện của người gửi ban đầu**. Mỗi kênh sẽ mang lại trải nghiệm như một cuộc trò chuyện tự nhiên bằng chính ngôn ngữ đó.
 
 ```
-#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-vi (Tiếng Việt)
+#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
 ```
 
-## Tính năng
+---
 
-- **Mọi thứ được đồng bộ hóa** — không chỉ tin nhắn mới: chỉnh sửa, xóa, trả lời, tin nhắn được chuyển tiếp, phản ứng, ghim, chủ đề (kênh văn bản / diễn đàn / phương tiện), thẻ diễn đàn đã ánh xạ và tin nhắn chỉ có tệp đính kèm đều được phản chiếu trên toàn nhóm.
-- **Tin nhắn trông như được gửi bởi chính người gửi** — các tin nhắn phản chiếu được gửi qua webhook với tên và ảnh đại diện của tác giả gốc.
-- **Dịch thuật tự nhiên** — Mô hình dịch sử dụng tên kênh, chủ đề và lịch sử cuộc trò chuyện gần đây làm ngữ cảnh; bảng thuật ngữ theo từng máy chủ cho phép cố định các bản dịch ưa thích cho tên riêng và thuật ngữ chuyên ngành.
-- **Xử lý liên kết thông minh** — các liên kết và lượt đề cập trỏ đến kênh hoặc tin nhắn được quản lý sẽ được viết lại thành các tương đương trong mỗi ngôn ngữ, và các URL có lựa chọn thay thế `hreflang` sẽ được thay bằng phiên bản ngôn ngữ đích.
-- **Hiệu quả và an toàn** — các tin nhắn không có văn bản cần dịch (URL, đề cập, emoji tùy chỉnh, mã) được phản chiếu mà không gọi API dịch; giới hạn tỷ lệ token theo từng máy chủ được áp dụng; URL, đề cập và khối mã được bảo vệ khỏi việc tiêm prompt. Khi dịch thất bại: fail-closed (không phản chiếu, thông báo bản địa hóa ở kênh nguồn).
-- **Giao diện được bản địa hóa** — phản hồi lệnh tuân theo ngôn ngữ ứng dụng Discord của người dùng, và thông báo kênh sử dụng ngôn ngữ được cấu hình cho kênh đó (13 ngôn ngữ, tiếng Anh là dự phòng).
+## 1. Hướng dẫn dành cho Người dùng & Quản trị viên Máy chủ
 
-## Yêu cầu
+### Các tính năng chính & Trải nghiệm Người dùng
 
-- Go 1.24 trở lên
-- Tài khoản bot Discord với intent đặc quyền `MESSAGE CONTENT` được bật
-- Endpoint Chat Completions tương thích OpenAI (base URL, API key và model ID)
+- **Trò chuyện tự nhiên như bình thường**
+  Không cần lệnh đặc biệt hay tiền tố bot. Chỉ cần nhập và gửi tin nhắn như bình thường, bot sẽ tự động dịch và đồng bộ hóa sang các kênh khác trong thời gian thực.
+- **Tin nhắn giữ nguyên danh tính người gửi gốc**
+  Các tin nhắn dịch được gửi thông qua Webhook của Discord, bảo toàn trọn vẹn tên hiển thị và ảnh đại diện của tác giả gốc.
+- **Đồng bộ hóa hai chiều toàn diện theo thời gian thực**
+  - **Tin nhắn mới & Tệp đính kèm**: Hỗ trợ văn bản, hình ảnh (bao gồm cả văn bản thay thế / mô tả hình ảnh) và các loại tệp đính kèm.
+  - **Chỉnh sửa & Xóa tin nhắn**: Chỉnh sửa hoặc xóa tin nhắn gốc sẽ cập nhật hoặc xóa ngay lập tức các phiên bản dịch ở kênh khác.
+  - **Trả lời (Replies)**: Trích dẫn đoạn văn bản của tin nhắn được phản hồi bằng ngôn ngữ đích kèm liên kết đến tin nhắn tương ứng (phản hồi giả lập).
+  - **Tin nhắn chuyển tiếp**: Bảo toàn ngữ cảnh chuyển tiếp với tiêu đề được bản địa hóa.
+  - **Thả cảm xúc (Reactions) & Ghim tin nhắn (Pins)**: Thao tác thêm/xóa reaction emoji và ghim tin nhắn được đồng bộ hóa hai chiều.
+  - **Chủ đề (Threads) & Diễn đàn (Forums)**: Hỗ trợ các thread thông thường, kênh diễn đàn và kênh media, bao gồm cả ánh xạ thẻ tag diễn đàn.
+  - **Bình chọn (Polls)**: Dịch câu hỏi và các lựa chọn sang định dạng Embed, đồng thời thông báo kết quả cuối cùng khi cuộc bình chọn kết thúc.
+- **Tính năng «View Original» (Xem bản gốc)**
+  Nhấp chuột phải (hoặc nhấn giữ trên điện thoại) vào bất kỳ tin nhắn dịch nào, chọn **«Ứng dụng» → «View Original»** để nhận liên kết trực tiếp và xem trích đoạn nội dung gốc (chỉ hiển thị cho bạn).
+- **Xử lý liên kết và đa phương tiện thông minh**
+  - Các liên kết và lượt nhắc (mention) đến kênh, tin nhắn hoặc thread được quản lý sẽ tự động chuyển đổi sang ID tương ứng của ngôn ngữ đích.
+  - Các URL trang web bên ngoài có phiên bản đa ngôn ngữ `hreflang` sẽ tự động được thay thế bằng URL của ngôn ngữ đích.
 
-## Cài đặt
+---
 
-### 1. Chuẩn bị bot Discord
+### Các bước thêm Bot vào Máy chủ
 
-1. Tạo ứng dụng trong [Discord Developer Portal](https://discord.com/developers/applications)
-2. Trên trang **Bot**:
-   - Bật `MESSAGE CONTENT INTENT` (bắt buộc)
-   - Sao chép token bot
-3. Mời bot vào máy chủ của bạn qua **OAuth2 → URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions (như hiển thị trong Developer Portal):
-     - **Chung**: `View Channel`, `Read Message History`
-     - **Tin nhắn**: `Send Messages`, `Send Messages in Threads`
-     - **Kiểm duyệt**: `Pin Messages`
-     - **Webhook**: `Manage Webhooks`
-     - **Chủ đề**: `Create Public Threads`, `Manage Threads`
-     - **Phản ứng**: `Add Reactions`
-   - Số nguyên permissions cho những điều trên là `2252126768139328`
-   - Để cũng đồng bộ hóa phản ứng emoji tùy chỉnh từ các máy chủ khác, hãy cấp thêm `Use External Emojis`; số nguyên permissions sẽ là `2252126768401472`
+#### 1. Mời Bot vào máy chủ
+Tạo liên kết mời trên Discord Developer Portal với các quyền sau:
 
-### 2. Cấu hình API tương thích OpenAI
+- **OAuth2 Scopes**: `bot`, `applications.commands`
+- **Quyền của Bot (Bot Permissions)**:
+  - **Chung**: `View Channels` (Xem kênh), `Read Message History` (Đọc lịch sử tin nhắn)
+  - **Văn bản**: `Send Messages` (Gửi tin nhắn), `Send Messages in Threads` (Gửi tin nhắn trong luồng)
+  - **Quản lý**: `Pin Messages` (Ghim tin nhắn)
+  - **Webhook**: `Manage Webhooks` (Quản lý webhook)
+  - **Luồng**: `Create Public Threads` (Tạo luồng công khai), `Manage Threads` (Quản lý luồng)
+  - **Cảm xúc**: `Add Reactions` (Thêm phản ứng)
+- **Giá trị quyền nguyên vẹn (Permissions Integer)**: `2252126768139328`
+  - *Lưu ý: Để đồng bộ cả cảm xúc emoji tùy chỉnh từ máy chủ khác, hãy bật thêm `Use External Emojis` (Permissions Integer: `2252126768401472`).*
 
-1. Chọn nhà cung cấp Chat Completions tương thích OpenAI và ghi lại base URL (bao gồm `/v1` nếu nhà cung cấp dùng tiền tố đó).
-2. Tạo API key được phép gọi Chat Completions cho mô hình đã chọn.
-3. Đặt `OPENAI_BASE_URL`, `OPENAI_API_KEY` và `OPENAI_MODEL` trong `.env`.
+#### 2. Kích hoạt Privileged Intent
+Đảm bảo rằng `MESSAGE CONTENT INTENT` đã được bật trong tab **Bot** trên Discord Developer Portal.
 
-Timeout và giới hạn đầu ra được cố định trong mã (60s mỗi lần thử, `max_tokens=4096`). Model ID là cấu hình deployment cục bộ bắt buộc. Có thể tùy chỉnh thông lượng token theo máy chủ bằng `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (mặc định `100000`).
+---
 
-### 3. Cấu hình biến môi trường
+### Thiết lập Kênh (Thao tác Cơ bản)
+
+#### Tạo nhóm dịch thuật
+Chạy lệnh `/new-channel` tại kênh tiếng Nhật (ví dụ `#general-ja`):
+
+```
+/new-channel language:ja
+```
+*Lưu ý: Nếu bỏ qua `group`, tên kênh hiện tại sẽ được dùng làm tên nhóm.*
+
+#### Thêm các kênh ngôn ngữ khác
+Chạy lệnh `/join-channel` tại kênh tiếng Anh (ví dụ `#general-en`):
+
+```
+/join-channel group:general language:en
+```
+
+Để thêm kênh tiếng Việt (ví dụ `#general-vi`):
+
+```
+/join-channel group:general language:vi
+```
+
+Bây giờ `#general-ja`, `#general-en` và `#general-vi` đã được liên kết và quá trình tự động dịch sẽ bắt đầu.
+
+#### Rời khỏi nhóm và xóa nhóm
+- Rút một kênh ra khỏi nhóm: `/leave-channel group:general`
+- Xóa hoàn toàn một nhóm dịch thuật: `/delete-group group:general`
+- Xem danh sách các nhóm và kênh hiện có: `/list-groups`
+
+---
+
+### Danh mục Lệnh
+
+#### Lệnh Slash dành cho Quản trị viên
+Theo mặc định, các lệnh quản trị chỉ có thể được thực hiện bởi thành viên có quyền **Administrator**. Để cấp quyền cho các vai trò khác, hãy cấu hình tại: **Cài đặt máy chủ → Tích hợp → (Tên bot) → Quản lý → Quyền của lệnh**.
+
+| Lệnh | Mô tả | Tùy chọn chính |
+|---|---|---|
+| `/new-channel` | Tạo nhóm dịch mới và đăng ký kênh | `language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại)<br>`group` (tùy chọn): Tên nhóm (mặc định: tên kênh) |
+| `/join-channel` | Thêm kênh vào nhóm dịch hiện có | `group` (bắt buộc): Tên nhóm mục tiêu<br>`language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại) |
+| `/leave-channel` | Rút một kênh ra khỏi nhóm dịch | `group` (bắt buộc): Tên nhóm<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại) |
+| `/delete-group` | Xóa hoàn toàn một nhóm dịch thuật | `group` (bắt buộc): Tên nhóm cần xóa |
+| `/list-groups` | Liệt kê tất cả các nhóm dịch và kênh liên kết | Không có |
+| `/set-style` | Đặt phong cách hoặc giọng văn dịch thuật cho nhóm | `group` (bắt buộc): Tên nhóm<br>`preset` (tùy chọn): Phong cách dựng sẵn (xem bảng dưới)<br>`custom` (tùy chọn): Hướng dẫn tùy chỉnh bằng ngôn ngữ tự nhiên (tối đa 200 ký tự) |
+| `/add-glossary` | Đăng ký từ dịch ưu tiên trong bảng thuật ngữ máy chủ | `term` (bắt buộc): Thuật ngữ gốc<br>`translation` (bắt buộc): Bản dịch mong muốn<br>`attribute` (tùy chọn): Phân loại từ (vd: tên người, tiếng lóng)<br>`always_include` (tùy chọn): Luôn đưa vào prompt kể cả khi không khớp từ khóa (mặc định: `false`) |
+| `/list-glossary` | Xem danh sách thuật ngữ của máy chủ | Không có |
+| `/remove-glossary`| Xóa một mục khỏi bảng thuật ngữ | `term` (bắt buộc): Thuật ngữ cần xóa |
+| `/edit-forum-tags` | Chỉnh sửa ánh xạ thẻ tag cho kênh diễn đàn/media | `group` (bắt buộc): Tên nhóm<br>`channel` (tùy chọn): Kênh diễn đàn mục tiêu |
+| `/bot-whitelist` | Quản lý danh sách cho phép bot và webhook tự động | Lệnh con: `add`, `remove`, `list`<br>`source_type`: `bot` hoặc `webhook`<br>`source_id`: ID người dùng bot hoặc ID webhook |
+
+#### Lệnh Tin nhắn (Tất cả thành viên đều dùng được)
+- **`View Original` (Menu Ứng dụng)**
+  Nhấp chuột phải hoặc nhấn giữ vào tin nhắn → **«Ứng dụng» → «View Original»** để nhận liên kết trực tiếp và xem trích đoạn văn bản gốc.
+
+---
+
+### Tùy chỉnh Nâng cao
+
+#### 1. Phong cách Dịch thuật (`/set-style`)
+Điều chỉnh giọng điệu dịch cho phù hợp với cộng đồng máy chủ của bạn (`preset` và `custom` loại trừ lẫn nhau):
+
+| Phong cách | Mô tả & Ứng dụng |
+|---|---|
+| `default` | Giọng đàm thoại tự nhiên như người bản xứ trò chuyện |
+| `casual` | Thoải mái, thân mật phù hợp cho bạn bè và cộng đồng |
+| `gaming` | Tiếng lóng game và phong cách cộng đồng game thủ |
+| `friendly` | Ấm áp, lịch sự và thân thiện |
+| `business` | Ngắn gọn, chuyên nghiệp và trang trọng |
+| `formal` | Trang trọng với đại từ xưng hô tôn kính |
+| `netslang` | Tiếng lóng Internet và phong cách diễn đàn |
+| `tweet` | Ngắn gọn, súc tích theo phong cách mạng xã hội (X / Twitter) |
+| `literal` | Dịch sát nghĩa đen khi có nhiều cách hiểu |
+
+#### 2. Bảng Thuật ngữ Máy chủ (`/add-glossary`)
+Cố định bản dịch cho tên nhân vật, thuật ngữ trò chơi hoặc tiếng lóng riêng của máy chủ (tối đa 50 mục mỗi máy chủ):
+- **Phân loại (`attribute`)**: Các nhãn như "tên người", "địa danh", "tiếng lóng", "từ viết tắt", "thuật ngữ chuyên ngành" giúp AI hiểu đúng ngữ cảnh.
+- **Luôn bao gồm (`always_include`)**: Khi đặt là `true`, thuật ngữ sẽ luôn được cung cấp làm ngữ cảnh cho AI ngay cả khi từ đó không xuất hiện trực tiếp trong tin nhắn.
+
+#### 3. Ánh xạ Thẻ Diễn đàn (`/edit-forum-tags`)
+Khi liên kết các kênh diễn đàn, bạn có thể ánh xạ các thẻ tag tương ứng giữa các ngôn ngữ. Khi một bài đăng có gắn thẻ được tạo, bài đăng nhân bản sẽ tự động nhận thẻ tương ứng.
+
+#### 4. Danh sách cho phép tin nhắn tự động (`/bot-whitelist`)
+Theo mặc định, tin nhắn từ bot và webhook bị bỏ qua để tránh vòng lặp vô hạn. Bạn có thể sử dụng `/bot-whitelist add` để cho phép các bot thông báo, nguồn cấp RSS được dịch và nhân bản.
+
+---
+
+## 2. Hướng dẫn dành cho Nhà phát triển & Tự Lưu trữ (Self-Hosting)
+
+### Yêu cầu Hệ thống & Công nghệ
+
+- **Ngôn ngữ**: Go 1.24 trở lên
+- **Cơ sở dữ liệu**: SQLite (Driver thuần Go qua `modernc.org/sqlite`, không cần CGO)
+- **Thư viện Discord**: `github.com/bwmarrin/discordgo`
+- **Công cụ dịch**: API Chat Completions tương thích OpenAI (OpenAI, OpenRouter, Azure OpenAI, LLM cục bộ, v.v.)
+- **Biên dịch chéo**: Hỗ trợ đầy đủ với `CGO_ENABLED=0` để tạo binary độc lập chạy trên Linux, Windows và macOS.
+
+---
+
+### Quy trình Tự Lưu trữ & Khởi chạy
+
+#### 1. Tạo Bot Discord
+1. Truy cập [Discord Developer Portal](https://discord.com/developers/applications) và tạo một Application mới.
+2. Trong tab **Bot**, bật `MESSAGE CONTENT INTENT` và sao chép Bot Token.
+3. Trong **OAuth2 → URL Generator**, chọn phạm vi `bot` và `applications.commands` cùng các quyền cần thiết rồi mời bot vào máy chủ.
+
+#### 2. Chuẩn bị API tương thích OpenAI
+Lấy URL endpoint API, API key và model ID từ nhà cung cấp LLM của bạn.
+
+#### 3. Cấu hình Biến Môi trường
+Sao chép `.env.example` thành `.env` và điền các tham số:
 
 ```sh
 cp .env.example .env
 ```
-
-Chỉnh sửa `.env` và đặt các giá trị sau:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -69,109 +181,85 @@ OPENAI_MODEL=your-model-id
 # OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
-PUBLIC_BASE_URL=https://your-public-domain.example
+# PUBLIC_BASE_URL=https://your-public-domain.example
 TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
-# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
-| Biến | Bắt buộc | Mô tả |
-|---|---|---|
-| `DISCORD_TOKEN` | Có | Token bot Discord |
-| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
-| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
-| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
-| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
-| `DB_PATH` | Không | Đường dẫn đến tệp SQLite (mặc định: `./translator.db`) |
-| `HTTP_ADDR` | Không | Địa chỉ máy chủ badge ảnh đại diện (mặc định: `:8080`) |
-| `PUBLIC_BASE_URL` | Không | URL cơ sở công khai cho badge vòng ảnh đại diện. Nếu không đặt, tin nhắn phản chiếu dùng URL ảnh đại diện Discord gốc và máy chủ badge không được sử dụng |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Không | Giới hạn token dịch mỗi máy chủ mỗi phút (mặc định: `100000`) |
-| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | Giới hạn yêu cầu mỗi IP mỗi phút cho endpoint badge `/avatar` (mặc định: `120`) |
-| `MESSAGE_LINK_RETENTION_DAYS` | Không | Số ngày giữ `message_links` trong SQLite trước khi dọn tự động. `0` (mặc định) tắt dọn; ví dụ `60` xóa liên kết cũ hơn 60 ngày khi khởi động và mỗi 24 giờ |
-| `GUILD_DATA_RETENTION_DAYS` | Không | Số ngày giữ dữ liệu SQLite của máy chủ sau khi bot bị gỡ. `0` (mặc định) tắt dọn; ví dụ `30` xóa dữ liệu của máy chủ đã gỡ bot quá 30 ngày khi khởi động và mỗi 24 giờ. Tham gia lại trước hạn sẽ hủy lịch xóa |
-| `TRANSLATION_DEBUG_LOG_PATH` | Không | Chỉ để gỡ lỗi. Đường dẫn tệp JSON Lines nhận một bản ghi cho mỗi lượt dịch. Không đặt (mặc định) thì không ghi gì |
+#### 4. Biên dịch & Chạy
 
-### 4. Chạy
-
+Chạy trực tiếp trên máy cục bộ:
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-Hoặc build rồi chạy:
-
+Biên dịch binary độc lập và chạy:
 ```sh
 go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-## Sử dụng
-
-Khi bot khởi động, các lệnh slash được đăng ký trong từng máy chủ.
-
-### Thiết lập kênh
-
-#### Tạo nhóm dịch thuật
-
-Chạy `/new-channel` trong kênh tiếng Nhật của bạn để tạo nhóm dịch thuật:
-
-```
-/new-channel language:ja
+**Kiểm tra trước mô hình (`--model-prewarm`)**:
+Xác thực thông tin đăng nhập API, kết nối mô hình và cấu trúc phản hồi trước khi triển khai:
+```sh
+./discord-auto-translator --model-prewarm
 ```
 
-#### Thêm kênh bằng ngôn ngữ khác
+---
 
-Chạy `/join-channel` trong kênh tiếng Anh của bạn để thêm vào nhóm:
+### Tham khảo Biến Môi trường
 
-```
-/join-channel group:general language:en
-```
+| Biến | Bắt buộc | Mặc định | Mô tả |
+|---|---|---|---|
+| `DISCORD_TOKEN` | **Có** | - | Token xác thực bot Discord |
+| `OPENAI_BASE_URL` | **Có** | - | URL cơ sở của Chat Completions API (vd: `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | **Có** | - | Mã khóa Bearer API |
+| `OPENAI_MODEL` | **Có** | - | ID mô hình LLM mục tiêu |
+| `OPENAI_REASONING_EFFORT` | Không | (chưa đặt) | Tham số `reasoning_effort`. Đặt thành `none` để tắt token suy nghĩ trên các mô hình lai |
+| `DB_PATH` | Không | `./translator.db` | Đường dẫn tệp cơ sở dữ liệu SQLite |
+| `HTTP_ADDR` | Không | `:8080` | Địa chỉ máy chủ HTTP huy hiệu avatar |
+| `PUBLIC_BASE_URL` | Không | (chưa đặt) | URL công khai cho huy hiệu avatar. Hiển thị vòng tròn màu theo vai trò cao nhất |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Không | `100000` | Giới hạn token dịch mỗi phút cho mỗi máy chủ |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | `120` | Giới hạn yêu cầu mỗi phút trên mỗi IP cho `/avatar` |
+| `MESSAGE_LINK_RETENTION_DAYS` | Không | `0` | Thời gian lưu trữ liên kết tin nhắn (ngày). `0` = vô thời hạn |
+| `GUILD_DATA_RETENTION_DAYS` | Không | `0` | Thời gian lưu dữ liệu máy chủ sau khi bot rời khỏi máy chủ (ngày) |
 
-Để thêm cả kênh tiếng Việt:
+---
 
-```
-/join-channel group:general language:vi
-```
+### Kiến trúc & Nguyên lý Thiết kế
 
-Bây giờ `#general-ja`, `#general-en` và `#general-vi` được liên kết.
+#### 1. Quy trình Dịch thuật (Pipeline)
+1. **Thu thập Ngữ cảnh**: Thu thập chủ đề kênh, ngữ cảnh cuộc trò chuyện gần nhất, trích dẫn phản hồi, siêu dữ liệu OGP và hình ảnh đã thu nhỏ.
+2. **Che giấu bằng Ký hiệu (Masking)**: Thay thế lượt nhắc (`<@id>`), emoji (`<:name:id>`), kênh (`<#id>`), URL và khối mã bằng token (`[USER:name]`, `[EMOJI:name]`, `[SITE:N]`, `[CODE]`) để tránh lỗi và chống tấn công Prompt Injection.
+3. **Sắp xếp Prompt & Tối ưu Cache**: Tổ chức prompt thành các lớp tĩnh và động để tận dụng Prefix Prompt Caching của nhà cung cấp AI.
+4. **Tạo Structured Outputs**: Sử dụng `response_format.type=json_schema` (`strict: true`) để nhận kết quả dịch cho tất cả ngôn ngữ đích trong một lần gọi API duy nhất.
+5. **Hậu xử lý & Chuyển tiếp**: Khôi phục các ký hiệu, ghi lại liên kết Discord nội bộ, thay thế URL `hreflang` và phân phối tin nhắn Webhook song song.
 
-### Danh sách lệnh
+#### 2. An toàn & Nguyên tắc Fail-Closed
+- **Chống Prompt Injection**: Toàn bộ nội dung người dùng được thoát ký tự XML và cô lập trong các thẻ riêng biệt.
+- **Nguyên tắc Fail-Closed**: Khi vượt quá giới hạn token (`finish_reason=length`), phản hồi JSON không hợp lệ hoặc lỗi mạng, bot hủy việc chuyển tiếp và gửi thông báo lỗi tại kênh gốc thay vì đăng nội dung hỏng.
 
-Theo mặc định, các lệnh slash quản trị chỉ có thể được chạy bởi **quản trị viên máy chủ**. Để cho phép các vai trò khác sử dụng, vào "Cài đặt Máy chủ" Discord → "Tích hợp" → "Quản lý" của bot → "Quyền lệnh" và cấu hình quyền truy cập toàn cầu hoặc theo từng lệnh. Bot không bao giờ tự thay đổi vai trò hay quyền lệnh.
+#### 3. Độ tin cậy & Tính nhất quán Dữ liệu
+- **Tính Idempotent**: `message_links` và `processed_events` ngăn chặn việc gửi trùng lặp tin nhắn khi nhận các sự kiện Gateway lặp lại.
+- **Giao dịch Bù trừ**: Nếu lưu cơ sở dữ liệu thất bại sau khi gửi Webhook, tin nhắn Discord vừa gửi sẽ bị xóa ngay lập tức.
+- **Đồng bộ Hai chiều**: Cảm xúc và tin nhắn ghim được đồng bộ trên toàn nhóm bất kể thao tác bắt nguồn từ kênh nào.
 
-| Lệnh | Mô tả |
-|---|---|
-| `/new-channel language:[ngôn ngữ] channel:<kênh> group:<nhóm>` | Tạo nhóm dịch thuật mới. Bỏ qua `channel` sẽ dùng kênh hiện tại; bỏ qua `group` sẽ dùng tên kênh |
-| `/join-channel group:[nhóm] language:[ngôn ngữ] channel:<kênh>` | Thêm kênh vào nhóm. Với diễn đàn/phương tiện có peer gắn thẻ trong nhóm, mở UI ánh xạ thẻ. Bỏ qua `channel` sẽ dùng kênh hiện tại |
-| `/leave-channel group:[nhóm] channel:<kênh>` | Xóa kênh khỏi nhóm. Bỏ qua `channel` sẽ dùng kênh hiện tại |
-| `/delete-group group:[nhóm]` | Xóa toàn bộ nhóm |
-| `/list-groups` | Liệt kê các nhóm dịch và kênh trên máy chủ này |
-| `/add-glossary term:[thuật ngữ] translation:[bản dịch] attribute:<thuộc tính> always_include:<bool>` | Đăng ký bản dịch ưa thích trong bảng thuật ngữ của máy chủ. `attribute` là văn bản tự do có gợi ý; `always_include` mặc định là `false` |
-| `/list-glossary` | Liệt kê bảng thuật ngữ của máy chủ |
-| `/remove-glossary term:[thuật ngữ]` | Xóa mục trong bảng thuật ngữ |
-| `/edit-forum-tags group:[nhóm] channel:<diễn đàn>` | Chỉnh ánh xạ thẻ diễn đàn/phương tiện cho một kênh trong nhóm. Bỏ qua `channel` sẽ dùng kênh hiện tại |
-| `/set-style group:[nhóm] preset:<preset> custom:<chỉ dẫn tùy chỉnh>` | Đặt phong cách dịch cho nhóm. Chỉ định `preset` hoặc `custom`, không phải cả hai |
-| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Cho phép nguồn tin nhắn tự động trong máy chủ này. Với `source_type:bot`, `source_id` là ID người dùng bot; với `source_type:webhook`, đó là ID webhook |
-| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Xóa nguồn tin nhắn tự động tương ứng khỏi danh sách cho phép của máy chủ này |
-| `/bot-whitelist list` | Liệt kê các nguồn bot và webhook được cho phép trong máy chủ này |
+---
 
-- Danh sách nguồn được phép được lưu bền vững trong SQLite và giới hạn theo từng máy chủ Discord (guild). Webhook đầu ra do bot dịch quản lý và tin nhắn của chính bot dịch vẫn bị loại trừ ngay cả khi ID của chúng được thêm vào
+### Phát triển & Kiểm thử
 
-- `language` sử dụng mã BCP-47 (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, v.v.)
-- Tối đa 50 mục thuật ngữ mỗi máy chủ
-- `attribute` gợi ý "tên người", "tên địa điểm", "tiếng lóng", "từ viết tắt" và "thuật ngữ kỹ thuật", nhưng có thể nhập bất kỳ giá trị nào tùy ý. Thuộc tính được sử dụng làm ngữ cảnh để mô hình dịch hiểu ý nghĩa của thuật ngữ
-- Các thuật ngữ thông thường chỉ được thêm vào hướng dẫn hệ thống khi nội dung tin nhắn cần dịch có chứa `term` (không phân biệt chữ hoa/thường). Các thuật ngữ có `always_include:true` luôn được thêm vào
-- Nếu tùy chọn `channel` bị bỏ qua, lệnh sẽ áp dụng cho kênh nơi lệnh được chạy
-- Các loại kênh được hỗ trợ: văn bản, tin tức, diễn đàn và phương tiện. Tất cả kênh trong một nhóm phải cùng loại.
-- Ánh xạ thẻ diễn đàn/phương tiện có thể đặt sau `/join-channel` (khi có peer gắn thẻ) hoặc bằng `/edit-forum-tags`. Lưu với “(không ánh xạ)” sẽ xóa cặp đó
-
-## Kiểm thử
-
+#### Chạy kiểm thử
 ```sh
 go test ./...
 ```
 
-## Giấy phép
+#### Danh mục Chuỗi Giao diện Đa ngôn ngữ (i18n)
+Tất cả thông báo hiển thị cho người dùng được quản lý tập trung tại `internal/translatorbot/ui_strings.go` cho 13 ngôn ngữ. Việc thêm chuỗi mới yêu cầu định nghĩa cho tất cả các ngôn ngữ và được kiểm tra bởi `TestUIStringCatalogIsComplete`.
 
-Xem tệp [LICENSE](LICENSE) để biết giấy phép của dự án này.
+---
+
+## 3. Giấy phép
+
+Dự án này được phát hành theo giấy phép [MIT License](LICENSE).

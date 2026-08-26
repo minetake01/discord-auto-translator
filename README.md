@@ -2,64 +2,176 @@
 
 [English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
 
-A Discord bot that lets people who speak different languages chat together in the same server.
+A Discord bot that enables people who speak different languages to communicate seamlessly in real time within the same Discord server, using their own native languages.
 
-Link one channel per language into a **translation group**. Every message posted in one channel is translated by an OpenAI-compatible Chat Completions model and mirrored to all the other channels in the group — with the original sender's name and avatar — so each channel reads like a normal conversation in its own language.
+By linking one channel per language into a **translation group**, any message posted in one channel is automatically translated by an OpenAI-compatible LLM (Chat Completions API) and mirrored across all other channels in the group using the **original sender's name and avatar**. Participants simply read and write in their own language channel for a completely natural conversation.
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
 ```
 
-## Features
+---
 
-- **Everything stays in sync** — not just new messages: edits, deletions, replies, forwarded messages, reactions, pins, threads (text / forum / media channels), mapped forum tags, and attachment-only messages are all mirrored across the group.
-- **Messages look like they came from the sender** — mirrored messages are delivered via webhooks with the original author's name and avatar.
-- **Natural translations** — the model sees the channel name, topic, and recent conversation history as context, and a per-server glossary lets you enforce preferred translations for names and jargon.
-- **Smart link handling** — links and mentions pointing to managed channels or messages are rewritten to each language's counterpart, and URLs with `hreflang` alternates are swapped for the target-language version.
-- **Efficient and safe** — messages with nothing to translate (URLs, mentions, custom emojis, code) are mirrored without calling the translation API, per-server token rate limits apply, and URLs / mentions / code blocks are shielded against prompt injection. Translation failures are fail-closed (no mirror, localized notification in the source channel).
-- **Localized UI** — command responses follow each user's Discord client language, and channel notifications use the channel's configured language (13 languages, English fallback).
+## 1. User & Server Admin Guide
 
-## Requirements
+### Features & User Experience
 
-- Go 1.24 or later
-- A Discord bot account with the `MESSAGE CONTENT` privileged intent enabled
-- An OpenAI-compatible Chat Completions endpoint (base URL, API key, and model ID)
+- **Chat Naturally as Usual**
+  No special commands or bot prefixes required. Simply type and send messages normally, and they will be translated and delivered across linked channels in real time.
+- **Messages Look Like They Came from the Sender**
+  Mirrored messages are delivered via Discord Webhooks with the original author's display name and avatar seamlessly preserved.
+- **Full Real-Time Synchronization**
+  - **New Messages & Attachments**: Syncs text content as well as images (including image descriptions / alt text) and various file attachments.
+  - **Edits & Deletions**: Editing or deleting a message automatically updates or deletes the mirrored messages across all counterpart channels.
+  - **Replies**: Quotes a subtext snippet of the referenced message in the target language and links back to the counterpart message (pseudo-reply).
+  - **Forwarded Messages**: Syncs forwarded messages with localized headers while preserving the snapshot context.
+  - **Reactions & Pins**: Adding/removing emoji reactions and message pins are fully synchronized bidirectionally.
+  - **Threads & Forums**: Supports regular threads as well as forum and media channels, including automated tag mapping.
+  - **Polls**: Translates poll questions and answers into an Embed format and posts the final results when the poll concludes.
+- **"View Original" Message Action**
+  Right-click (or long-press on mobile) any translated message, navigate to **Apps → View Original**, and view an ephemeral jump link to the source message along with an excerpt of the original text.
+- **Smart Link & Media Rewriting**
+  - Links and mentions pointing to managed channels, messages, or threads are automatically rewritten to match the target language counterpart.
+  - External website URLs with `hreflang` alternates are automatically swapped for the target-language version.
 
-## Setup
+---
 
-### 1. Prepare the Discord bot
+### Getting Started for Server Admins
 
-1. Create an application in the [Discord Developer Portal](https://discord.com/developers/applications)
-2. On the **Bot** page:
-   - Enable the `MESSAGE CONTENT INTENT` (required)
-   - Copy the bot token
-3. Invite the bot to your server via **OAuth2 → URL Generator**:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions (as shown in the Developer Portal):
-     - **General**: `View Channel`, `Read Message History`
-     - **Messages**: `Send Messages`, `Send Messages in Threads`
-     - **Moderation**: `Pin Messages`
-     - **Webhooks**: `Manage Webhooks`
-     - **Threads**: `Create Public Threads`, `Manage Threads`
-     - **Reactions**: `Add Reactions`
-   - The permissions integer for the above is `2252126768139328`
-   - To also sync custom emoji reactions from other servers, additionally allow `Use External Emojis`; the permissions integer then becomes `2252126768401472`
+#### 1. Invite the Bot
+Invite the bot to your server using the Discord Developer Portal URL Generator with the following permissions:
 
-### 2. Configure the OpenAI-compatible API
+- **OAuth2 Scopes**: `bot`, `applications.commands`
+- **Bot Permissions**:
+  - **General**: `View Channels`, `Read Message History`
+  - **Text**: `Send Messages`, `Send Messages in Threads`
+  - **Moderation**: `Pin Messages`
+  - **Webhooks**: `Manage Webhooks`
+  - **Threads**: `Create Public Threads`, `Manage Threads`
+  - **Reactions**: `Add Reactions`
+- **Permissions Integer**: `2252126768139328`
+  - *Note: To also sync custom emoji reactions from other servers, grant `Use External Emojis` (Permissions Integer: `2252126768401472`).*
 
-1. Choose any OpenAI-compatible Chat Completions provider and note its base URL (include `/v1` when the provider uses that prefix).
-2. Create an API key with permission to call Chat Completions for your chosen model.
-3. Set `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` in `.env`.
+#### 2. Privileged Intent Requirement
+Ensure that the `MESSAGE CONTENT INTENT` is enabled in the **Bot** tab of the Discord Developer Portal.
 
-Timeout and output limits are fixed in code (`60s` per attempt, `max_tokens=4096`). The model ID is a required deployment-local setting. Optionally tune per-guild token throughput with `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (default `100000`). On hybrid reasoning models, set `OPENAI_REASONING_EFFORT=none` to skip thinking tokens and reduce latency.
+---
 
-### 3. Configure environment variables
+### Channel Setup & Basic Operations
+
+#### Create a Translation Group
+Run `/new-channel` in your Japanese channel (e.g. `#general-ja`):
+
+```
+/new-channel language:ja
+```
+*Note: If `group` is omitted, the current channel name will be used as the group identifier.*
+
+#### Add Channels in Other Languages
+Run `/join-channel` in your English channel (e.g. `#general-en`):
+
+```
+/join-channel group:general language:en
+```
+
+To add a Chinese channel (e.g. `#general-zh`):
+
+```
+/join-channel group:general language:zh-CN
+```
+
+Now `#general-ja`, `#general-en`, and `#general-zh` are linked and mutual auto-translation is active.
+
+#### Leaving a Group and Deleting Groups
+- Remove a channel from a group: `/leave-channel group:general`
+- Delete an entire translation group: `/delete-group group:general`
+- View all active translation groups and channels: `/list-groups`
+
+---
+
+### Command Reference
+
+#### Admin Slash Commands
+By default, administrative slash commands can only be executed by users with **Administrator permissions**. To grant access to specific roles or members, configure command permissions in Discord: **Server Settings → Integrations → (Bot Name) → Manage → Command Permissions**.
+
+| Command | Description | Key Options |
+|---|---|---|
+| `/new-channel` | Create a new translation group and register a channel | `language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel)<br>`group` (optional): Group identifier (defaults to channel name) |
+| `/join-channel` | Add a channel to an existing translation group | `group` (required): Group identifier<br>`language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel) |
+| `/leave-channel` | Remove a channel from a translation group | `group` (required): Group identifier<br>`channel` (optional): Target channel (defaults to current channel) |
+| `/delete-group` | Delete an entire translation group | `group` (required): Group identifier to delete |
+| `/list-groups` | List all translation groups and linked channels | None |
+| `/set-style` | Set translation style or tone for a group | `group` (required): Group identifier<br>`preset` (optional): Style preset (see below)<br>`custom` (optional): Custom natural language instruction (up to 200 chars) |
+| `/add-glossary` | Register a preferred term translation in the server glossary | `term` (required): Source term<br>`translation` (required): Target translation<br>`attribute` (optional): Term category (e.g., person name, slang)<br>`always_include` (optional): Include in prompt even without keyword match (default: `false`) |
+| `/list-glossary` | List registered glossary entries for this server | None |
+| `/remove-glossary`| Remove an entry from the server glossary | `term` (required): Term to remove |
+| `/edit-forum-tags` | Edit forum/media tag mappings for a channel in a group | `group` (required): Group identifier<br>`channel` (optional): Target forum channel |
+| `/bot-whitelist` | Manage translation allowlist for automated bots and webhooks | Subcommands: `add`, `remove`, `list`<br>`source_type`: `bot` or `webhook`<br>`source_id`: Bot user ID or Webhook ID |
+
+#### Message App Command (Available to All Users)
+- **`View Original` (Context Menu)**
+  Right-click or long-press any message → **Apps → View Original** to receive an ephemeral jump link and excerpt of the original message.
+
+---
+
+### Advanced Customization
+
+#### 1. Translation Style (`/set-style`)
+Tailor the tone and style of translations to match your server's community (`preset` and `custom` are mutually exclusive).
+
+| Preset | Description & Usage |
+|---|---|
+| `default` | Natural conversational tone as written by native chat users |
+| `casual` | Friendly and casual tone suitable for friends and communities |
+| `gaming` | Casual gamer slang and gaming community style |
+| `friendly` | Warm, polite, and approachable tone |
+| `business` | Concise, polite, and professional tone |
+| `formal` | Polite and formal tone with honorifics |
+| `netslang` | Internet slang and forum-style language |
+| `tweet` | Short, punchy social media / microblogging style |
+| `literal` | Direct, literal translation when multiple interpretations exist |
+
+#### 2. Server Glossary (`/add-glossary`)
+Enforce translations for character names, game terminology, product names, or server-specific jargon (up to 50 entries per server).
+- **Attributes (`attribute`)**: Adding categories like "person name", "place name", "slang", "abbreviation", or "technical term" helps the model infer the proper context.
+- **Always Include (`always_include`)**: When set to `true`, the term is permanently included in the system prompt context even if the word is not explicitly found in the message body.
+
+#### 3. Forum & Media Tag Mapping (`/edit-forum-tags`)
+When linking forum or media channels, you can map forum tags across languages. When a post is published with a tag in one language, the counterpart forum post automatically receives the mapped tag.
+
+#### 4. Automated Message Whitelist (`/bot-whitelist`)
+By default, automated messages from bots and webhooks are ignored to prevent infinite loops. You can use `/bot-whitelist add` to allow specific announcement bots, RSS feeds, or integrations to be translated and mirrored.
+
+---
+
+## 2. Engineering & Self-Hosting Guide
+
+### Requirements & Tech Stack
+
+- **Language**: Go 1.24 or later
+- **Database**: SQLite (Pure Go driver via `modernc.org/sqlite`, no CGO required)
+- **Discord Library**: `github.com/bwmarrin/discordgo`
+- **Translation Engine**: OpenAI-compatible Chat Completions API (OpenAI, OpenRouter, Azure OpenAI, local LLMs, etc.)
+- **Cross-Compilation**: Fully supported with `CGO_ENABLED=0` for Linux, Windows, and macOS single binaries.
+
+---
+
+### Self-Hosting & Setup
+
+#### 1. Create a Discord Bot
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create a new Application.
+2. Under the **Bot** tab, enable `MESSAGE CONTENT INTENT` and copy the Bot Token.
+3. Under **OAuth2 → URL Generator**, select `bot` and `applications.commands` scopes with the required permissions, and invite the bot to your server.
+
+#### 2. Prepare an OpenAI-Compatible API
+Obtain an API endpoint URL, API key, and model ID from your preferred LLM provider (e.g. OpenAI, OpenRouter, etc.).
+
+#### 3. Configure Environment Variables
+Copy `.env.example` to `.env` and fill in the required parameters:
 
 ```sh
 cp .env.example .env
 ```
-
-Edit `.env` and set the following:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -69,109 +181,85 @@ OPENAI_MODEL=your-model-id
 # OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
-PUBLIC_BASE_URL=https://your-public-domain.example
+# PUBLIC_BASE_URL=https://your-public-domain.example
 TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
-# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
-| Variable | Required | Description |
-|---|---|---|
-| `DISCORD_TOKEN` | Yes | Discord bot token |
-| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
-| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
-| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
-| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
-| `DB_PATH` | No | Path to the SQLite file (default: `./translator.db`) |
-| `HTTP_ADDR` | No | Address of the avatar badge server (default: `:8080`) |
-| `PUBLIC_BASE_URL` | No | Public base URL for avatar ring badges. If unset, mirrored messages use the original Discord avatar URL and the badge server is not used |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | Per-guild translation token limit per minute (default: `100000`) |
-| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | Per-IP request limit per minute for the `/avatar` badge endpoint (default: `120`) |
-| `MESSAGE_LINK_RETENTION_DAYS` | No | Days to retain `message_links` in SQLite before automatic purge. `0` (default) disables purging; set e.g. `60` to delete links older than 60 days at startup and every 24 hours |
-| `GUILD_DATA_RETENTION_DAYS` | No | Days to retain a guild's SQLite data after the bot is removed from that guild. `0` (default) disables purging; set e.g. `30` to purge data for guilds removed more than 30 days ago at startup and every 24 hours. Rejoining before expiry cancels the scheduled purge |
-| `TRANSLATION_DEBUG_LOG_PATH` | No | Debug only. Path of a JSON Lines file that receives one entry per translation round trip. Unset (default) writes nothing |
+#### 4. Build & Run
 
-### 4. Run
-
+Run directly:
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-Or build and run:
-
+Build and run a standalone binary:
 ```sh
 go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-## Usage
-
-Once the bot starts, slash commands are registered in each server.
-
-### Setting up channels
-
-#### Create a translation group
-
-Run `/new-channel` in your Japanese channel to create a translation group:
-
-```
-/new-channel language:ja
+**Model Prewarm Validation (`--model-prewarm`)**:
+You can validate API credentials, model connectivity, and response schema contracts prior to deployment:
+```sh
+./discord-auto-translator --model-prewarm
 ```
 
-#### Add channels in other languages
+---
 
-Run `/join-channel` in your English channel to add it to the group:
+### Configuration Reference
 
-```
-/join-channel group:general language:en
-```
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `DISCORD_TOKEN` | **Yes** | - | Discord bot authentication token |
+| `OPENAI_BASE_URL` | **Yes** | - | Base URL for OpenAI-compatible Chat Completions (e.g. `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | **Yes** | - | Bearer API token |
+| `OPENAI_MODEL` | **Yes** | - | Target LLM model ID |
+| `OPENAI_REASONING_EFFORT` | No | (unset) | Optional `reasoning_effort` for Chat Completions. Set to `none` to disable thinking tokens on hybrid reasoning models |
+| `DB_PATH` | No | `./translator.db` | File path for SQLite database |
+| `HTTP_ADDR` | No | `:8080` | Address for avatar badge HTTP server |
+| `PUBLIC_BASE_URL` | No | (unset) | Public base URL for avatar ring badges. If set, renders top-role color ring around avatars |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | `100000` | Token quota per guild per minute for translation API calls |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | `120` | Per-IP request limit per minute for the `/avatar` badge endpoint |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Retention period in days for message link tracking. `0` disables purge; otherwise purges every 24h |
+| `GUILD_DATA_RETENTION_DAYS` | No | `0` | Data retention period in days after bot leaves a guild. Rejoining cancels scheduled purge |
 
-To add a Chinese channel as well:
+---
 
-```
-/join-channel group:general language:zh-CN
-```
+### Architecture & Design
 
-Now `#general-ja`, `#general-en`, and `#general-zh` are linked.
+#### 1. Translation Pipeline
+1. **Context Assembly**: Collects channel topic, recent conversation bursts, reply references, shared URL OGP metadata, and scaled image attachments.
+2. **Placeholder Masking**: Replaces mentions (`<@id>`), custom emojis (`<:name:id>`), channel tags (`<#id>`), URLs, and code blocks with tokens like `[USER:name]`, `[EMOJI:name]`, `[SITE:N]`, `[CODE]` to prevent prompt injection and broken syntax.
+3. **Prompt Composition & Caching**: Assembles system prompt, stable context, history context, and variable message parts structured for provider prefix prompt caching.
+4. **Structured Outputs Generation**: Uses `response_format.type=json_schema` (`strict: true`) to generate translations for all target languages in a single LLM round trip.
+5. **Post-Processing & Mirroring**: Restores placeholders, rewrites Discord channel/message links to target counterparts, swaps `hreflang` URLs, and fans out webhook posts concurrently.
 
-### Commands
+#### 2. Security & Fail-Closed Behavior
+- **Prompt Injection Defense**: All user content is XML-escaped and quarantined within dedicated context sections. Masked placeholders ensure LLM instructions cannot be hijacked.
+- **Fail-Closed Principle**: If token limits are exceeded (`finish_reason=length`), invalid JSON is returned, or temporary network failures persist, the bot aborts mirroring and posts a localized notification in the source channel instead of posting corrupted content.
 
-By default, the admin slash commands can only be run by **server administrators**. To allow additional roles, go to Discord's "Server Settings" → "Integrations" → the bot's "Manage" → "Command Permissions" and grant access globally or per command. The bot never changes roles or command permissions on its own.
+#### 3. Reliability & Data Consistency
+- **Idempotency**: Message IDs are tracked via `message_links` and `processed_events` to ensure at-most-once processing under duplicate gateway events.
+- **Compensating Transactions**: If database persistence fails after a webhook post, the bot deletes the posted message to prevent orphaned messages.
+- **Bidirectional Sync**: Reactions and message pins are mapped across message links so changes in any language channel mirror across the entire group.
 
-| Command | Description |
-|---|---|
-| `/new-channel language:[lang] channel:<channel> group:<group>` | Create a new translation group. `channel` defaults to the current channel; `group` defaults to the channel name |
-| `/join-channel group:[group] language:[lang] channel:<channel>` | Add a channel to a group. For forum/media channels with tagged peers in the group, opens a tag-mapping UI. `channel` defaults to the current channel |
-| `/leave-channel group:[group] channel:<channel>` | Remove a channel from a group. `channel` defaults to the current channel |
-| `/delete-group group:[group]` | Delete an entire group |
-| `/list-groups` | List translation groups and their channels for this server |
-| `/add-glossary term:[term] translation:[translation] attribute:<attribute> always_include:<bool>` | Register a preferred translation in the server glossary. `attribute` is free-form with suggestions; `always_include` defaults to `false` |
-| `/list-glossary` | List the server's glossary entries |
-| `/remove-glossary term:[term]` | Remove a glossary entry |
-| `/edit-forum-tags group:[group] channel:<forum>` | Edit forum/media tag mappings for a channel in a group. `channel` defaults to the current channel |
-| `/set-style group:[group] preset:<preset> custom:<custom>` | Set translation style for a group. Specify `preset` or `custom`, not both |
-| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Allow an automated message source in this server. For `source_type:bot`, `source_id` is the bot user ID; for `source_type:webhook`, it is the webhook ID |
-| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Remove the matching automated message source from this server's allowlist |
-| `/bot-whitelist list` | List the bot and webhook sources allowed in this server |
+---
 
-- Source allowlists are persisted in SQLite and scoped to each Discord server (guild). Translator-managed output webhooks and messages from this translator bot itself remain excluded even if their IDs are added
+### Development & Testing
 
-- `language` uses BCP-47 codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr`, etc.)
-- Up to 50 glossary entries can be registered per server
-- `attribute` suggests "person name", "place name", "slang", "abbreviation", and "technical term", but any value can be entered. The attribute is used as context for the translation model to understand the term's meaning
-- Regular terms are added to the system instructions only when the message body contains `term` (case-insensitive). Terms with `always_include:true` are always added
-- If the `channel` option is omitted, the command applies to the channel it was run in
-- Supported channel types: text, news, forum, and media. All channels in a group must be the same channel type.
-- Forum/media tag mappings can be set after `/join-channel` (when another tagged forum/media peer exists) or with `/edit-forum-tags`. Saving with “(no mapping)” clears that pair
-
-## Testing
-
+#### Running Tests
 ```sh
 go test ./...
 ```
 
-## License
+#### Multi-Language UI Strings (i18n)
+All user-facing strings, errors, and system notifications are defined in `internal/translatorbot/ui_strings.go` across 13 languages. Adding new strings requires entries for all supported languages, validated by `TestUIStringCatalogIsComplete`.
 
-See the [LICENSE](LICENSE) file for this project's license.
+---
+
+## 3. License
+
+This project is licensed under the [MIT License](LICENSE).

@@ -2,64 +2,176 @@
 
 [English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
 
-Ein Discord-Bot, der es Personen, die verschiedene Sprachen sprechen, ermöglicht, zusammen im selben Server zu chatten.
+Ein Discord-Bot, der es Menschen mit unterschiedlichen Sprachen ermöglicht, in Echtzeit und in ihrer jeweiligen Muttersprache auf demselben Discord-Server miteinander zu kommunizieren.
 
-Verknüpfe je einen Channel pro Sprache zu einer **Übersetzungsgruppe**. Jede Nachricht, die in einem Channel gepostet wird, wird sofort von ein OpenAI-kompatibles Chat-Completions-Modell übersetzt und in alle anderen Channels der Gruppe gespiegelt — mit dem Namen und Avatar des Originalsenders — sodass sich jeder Channel wie eine natürliche Unterhaltung in der jeweiligen Sprache liest.
+Indem für jede Sprache ein eigener Kanal zu einer **Übersetzungsgruppe** verknüpft wird, wird jede Nachricht automatisch durch ein OpenAI-kompatibles LLM (Chat Completions API) übersetzt und mit dem **Namen und Avatar des ursprünglichen Absenders** in alle anderen Kanäle der Gruppe gespiegelt. So liest sich jeder Kanal wie ein ganz normales Gespräch in der eigenen Sprache.
 
 ```
-#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-de (Deutsch)
+#chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
 ```
 
-## Funktionen
+---
 
-- **Alles bleibt synchronisiert** — nicht nur neue Nachrichten: Bearbeitungen, Löschungen, Antworten, weitergeleitete Nachrichten, Reaktionen, Pins, Threads (Text- / Forum- / Medien-Channel), gemappte Forum-Tags und Nachrichten, die nur Anhänge enthalten, werden alle in der Gruppe gespiegelt.
-- **Nachrichten sehen aus, als kämen sie vom Absender** — gespiegelte Nachrichten werden über Webhooks mit dem Namen und Avatar des ursprünglichen Autors gesendet.
-- **Natürliche Übersetzungen** — the translation model verwendet Channel-Name, Thema und den jüngsten Gesprächsverlauf als Kontext; ein serverseitiges Glossar erlaubt es, bevorzugte Übersetzungen für Namen und Fachbegriffe festzulegen.
-- **Intelligente Link-Behandlung** — Links und Erwähnungen, die auf verwaltete Channel oder Nachrichten zeigen, werden in die jeweiligen Entsprechungen jeder Sprache umgeschrieben; URLs mit `hreflang`-Alternativen werden durch die Zielsprachversion ersetzt.
-- **Effizient und sicher** — Nachrichten ohne übersetzbaren Text (URLs, Erwähnungen, benutzerdefinierte Emojis, Code) werden gespiegelt, ohne die Übersetzungs-API aufzurufen; pro Server gelten Token-Ratenlimits; URLs, Erwähnungen und Code-Blöcke sind gegen Prompt-Injection geschützt. Bei Übersetzungsfehlern fail-closed (kein Spiegeln, lokalisierte Benachrichtigung im Quell-Channel).
-- **Lokalisierte Benutzeroberfläche** — Befehlsantworten richten sich nach der Discord-Client-Sprache des Nutzers, Channel-Benachrichtigungen verwenden die für den Channel konfigurierte Sprache (13 Sprachen, Englisch als Fallback).
+## 1. Benutzer- & Server-Administrator-Handbuch
 
-## Voraussetzungen
+### Hauptfunktionen & Benutzererlebnis
 
-- Go 1.24 oder neuer
-- Ein Discord-Bot-Konto mit aktiviertem privilegierten Intent `MESSAGE CONTENT`
-- Ein OpenAI-kompatibler Chat-Completions-Endpunkt (Basis-URL, API-Schlüssel und Modell-ID)
+- **Ganz natürlich wie gewohnt chatten**
+  Keine speziellen Befehle oder Präfixe erforderlich. Sende deine Nachrichten wie gewohnt – sie werden automatisch in Echtzeit übersetzt und an alle verknüpften Kanäle übertragen.
+- **Nachrichten behalten das Profil des Absenders**
+  Gespiegelte Nachrichten werden über Discord-Webhooks versendet, sodass Name und Avatar des Originalautors unverändert erhalten bleiben.
+- **Vollständige bidirektionale Synchronisierung in Echtzeit**
+  - **Neue Nachrichten & Anhänge**: Unterstützt Texte, Bilder (inklusive Bildbeschreibungen / Alt-Texte) und Datei-Anhänge.
+  - **Bearbeitungen & Löschungen**: Das Bearbeiten oder Löschen einer Nachricht wird sofort auf alle übersetzten Versionen übertragen.
+  - **Antworten (Replies)**: Zitiert einen Ausschnitt der referenzierten Nachricht in der Zielsprache und verlinkt auf die entsprechende Nachricht (Pseudo-Antwort).
+  - **Weitergeleitete Nachrichten**: Synchronisiert weitergeleitete Inhalte mit lokalisierten Kopfzeilen.
+  - **Reaktionen & Pins**: Emoji-Reaktionen und das Anpinnen von Nachrichten werden in beide Richtungen synchronisiert.
+  - **Threads & Foren**: Unterstützt normale Threads sowie Forums- und Medienkanäle inklusive automatischer Tag-Zuordnung.
+  - **Umfragen (Polls)**: Übersetzt Fragen und Auswahlmöglichkeiten in ein Embed-Format und postet das Endergebnis nach Abschluss der Umfrage.
+- **„View Original“ (Original anzeigen)**
+  Klicke mit der rechten Maustaste (oder tippe auf dem Smartphone lange) auf eine übersetzte Nachricht und wähle **„Apps“ → „View Original“**, um einen direkten Link zur Originalnachricht und eine Textvorschau (nur für dich sichtbar) zu erhalten.
+- **Intelligente Link- und Medienverarbeitung**
+  - Links und Erwähnungen von verwalteten Kanälen, Nachrichten oder Threads werden automatisch auf die IDs der Zielsprache umgeschrieben.
+  - Externe Web-Links mit `hreflang`-Sprachversionen werden automatisch durch die Version in der Zielsprache ersetzt.
 
-## Einrichtung
+---
 
-### 1. Discord-Bot vorbereiten
+### Server-Einrichtung
 
-1. Erstelle eine Anwendung im [Discord Developer Portal](https://discord.com/developers/applications)
-2. Auf der **Bot**-Seite:
-   - Aktiviere den `MESSAGE CONTENT INTENT` (erforderlich)
-   - Kopiere den Bot-Token
-3. Lade den Bot über **OAuth2 → URL Generator** auf deinen Server ein:
-   - Scopes: `bot`, `applications.commands`
-   - Berechtigungen (wie im Developer Portal angezeigt):
-     - **Allgemein**: `View Channel`, `Read Message History`
-     - **Nachrichten**: `Send Messages`, `Send Messages in Threads`
-     - **Moderation**: `Pin Messages`
-     - **Webhooks**: `Manage Webhooks`
-     - **Threads**: `Create Public Threads`, `Manage Threads`
-     - **Reaktionen**: `Add Reactions`
-   - Der Berechtigungsganzzahlwert für das Obige ist `2252126768139328`
-   - Um auch benutzerdefinierte Emoji-Reaktionen von anderen Servern zu synchronisieren, erteile zusätzlich `Use External Emojis`; der Berechtigungsganzzahlwert wird dann `2252126768401472`
+#### 1. Bot einladen
+Erstelle im Discord Developer Portal einen Einladungslink mit folgenden Berechtigungen:
 
-### 2. OpenAI-kompatible API einrichten
+- **OAuth2 Scopes**: `bot`, `applications.commands`
+- **Bot-Berechtigungen (Bot Permissions)**:
+  - **Allgemein**: `View Channels` (Kanäle ansehen), `Read Message History` (Nachrichtenverlauf lesen)
+  - **Text**: `Send Messages` (Nachrichten senden), `Send Messages in Threads` (Nachrichten in Threads senden)
+  - **Moderation**: `Pin Messages` (Nachrichten anpinnen)
+  - **Webhooks**: `Manage Webhooks` (Webhooks verwalten)
+  - **Threads**: `Create Public Threads` (Öffentliche Threads erstellen), `Manage Threads` (Threads verwalten)
+  - **Reaktionen**: `Add Reactions` (Reaktionen hinzufügen)
+- **Berechtigungs-Integer**: `2252126768139328`
+  - *Hinweis: Um auch benutzerdefinierte Emoji-Reaktionen von externen Servern zu synchronisieren, aktiviere zusätzlich `Use External Emojis` (Berechtigungs-Integer: `2252126768401472`).*
 
-1. Wähle einen OpenAI-kompatiblen Chat-Completions-Anbieter und notiere die Basis-URL (inkl. `/v1`, falls der Anbieter dieses Präfix verwendet).
-2. Erstelle einen API-Schlüssel mit Berechtigung für Chat Completions und dein gewähltes Modell.
-3. Setze `OPENAI_BASE_URL`, `OPENAI_API_KEY` und `OPENAI_MODEL` in `.env`.
+#### 2. Privilegierten Intent aktivieren
+Stelle sicher, dass im Discord Developer Portal unter dem Reiter **Bot** der `MESSAGE CONTENT INTENT` aktiviert ist.
 
-Timeout und Ausgabelimit sind im Code festgelegt (60s pro Versuch, `max_tokens=4096`). Die Modell-ID ist eine erforderliche lokale Deployment-Einstellung. Optional kannst du den Token-Durchsatz pro Server mit `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` (Standard `100000`) anpassen.
+---
 
-### 3. Umgebungsvariablen konfigurieren
+### Kanal-Konfiguration (Grundlegende Befehle)
+
+#### Übersetzungsgruppe erstellen
+Führe im japanischen Kanal (z. B. `#general-ja`) den Befehl `/new-channel` aus:
+
+```
+/new-channel language:ja
+```
+*Hinweis: Wenn `group` weggelassen wird, dient der aktuelle Kanalname als Gruppenname.*
+
+#### Weitere Sprachkanäle hinzufügen
+Führe im englischen Kanal (z. B. `#general-en`) `/join-channel` aus:
+
+```
+/join-channel group:general language:en
+```
+
+Um einen deutschen Kanal hinzuzufügen (z. B. `#general-de`):
+
+```
+/join-channel group:general language:de
+```
+
+Jetzt sind `#general-ja`, `#general-en` und `#general-de` miteinander verknüpft und die automatische Übersetzung ist aktiv.
+
+#### Kanäle entfernen und Gruppen löschen
+- Kanal aus Gruppe entfernen: `/leave-channel group:general`
+- Eine Übersetzungsgruppe vollständig löschen: `/delete-group group:general`
+- Aktive Gruppen und Kanäle auflisten: `/list-groups`
+
+---
+
+### Befehlsreferenz
+
+#### Slash-Befehle für Administratoren
+Standardmäßig können administrative Befehle nur von Benutzern mit **Administrator-Rechten** ausgeführt werden. Weitere Rollen können in Discord unter **Servereinstellungen → Integrationen → (Bot-Name) → Verwalten → Befehlsberechtigungen** freigeschaltet werden.
+
+| Befehl | Beschreibung | Wichtige Optionen |
+|---|---|---|
+| `/new-channel` | Erstellt eine neue Übersetzungsgruppe und registriert einen Kanal | `language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal)<br>`group` (optional): Gruppenname (Standard: Kanalname) |
+| `/join-channel` | Fügt einen Kanal zu einer bestehenden Gruppe hinzu | `group` (erforderlich): Gruppenname<br>`language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal) |
+| `/leave-channel` | Entfernt einen Kanal aus einer Gruppe | `group` (erforderlich): Gruppenname<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal) |
+| `/delete-group` | Löscht eine Übersetzungsgruppe vollständig | `group` (erforderlich): Name der zu löschenden Gruppe |
+| `/list-groups` | Listet alle Übersetzungsgruppen und verknüpften Kanäle auf | Keine |
+| `/set-style` | Legt den Übersetzungsstil oder Tonfall für eine Gruppe fest | `group` (erforderlich): Gruppenname<br>`preset` (optional): Stil-Voreinstellung (siehe unten)<br>`custom` (optional): Eigene Anweisung in natürlicher Sprache (max. 200 Zeichen) |
+| `/add-glossary` | Registriert eine bevorzugte Begriff-Übersetzung im Server-Glossar | `term` (erforderlich): Quellbegriff<br>`translation` (erforderlich): Bevorzugte Übersetzung<br>`attribute` (optional): Begriffskategorie (z. B. Personenname, Slang)<br>`always_include` (optional): Auch ohne Treffer immer im Prompt übergeben (Standard: `false`) |
+| `/list-glossary` | Zeigt alle Glossareinträge des Servers an | Keine |
+| `/remove-glossary`| Entfernt einen Eintrag aus dem Glossar | `term` (erforderlich): Zu entfernender Begriff |
+| `/edit-forum-tags` | Bearbeitet Tag-Zuordnungen für Forums-/Medienkanäle | `group` (erforderlich): Gruppenname<br>`channel` (optional): Ziel-Forumskanal |
+| `/bot-whitelist` | Verwaltet die Whitelist für automatisierte Bots und Webhooks | Unterbefehle: `add`, `remove`, `list`<br>`source_type`: `bot` oder `webhook`<br>`source_id`: Bot-Benutzer-ID oder Webhook-ID |
+
+#### Nachrichten-Befehl (Für alle Benutzer)
+- **`View Original` (App-Menü)**
+  Rechtsklick oder langes Antippen einer Nachricht → **„Apps“ → „View Original“**, um einen direkten Link zur Originalnachricht und eine Vorschau des Originaltextes zu erhalten.
+
+---
+
+### Erweiterte Anpassungen
+
+#### 1. Übersetzungsstil (`/set-style`)
+Passe den Ton der Übersetzung an die Atmosphäre deines Servers an (`preset` und `custom` schließen sich gegenseitig aus):
+
+| Voreinstellung | Beschreibung & Verwendung |
+|---|---|
+| `default` | Natürlicher Konversationsstil von Muttersprachlern im Chat |
+| `casual` | Entspannter und freundschaftlicher Umgangston |
+| `gaming` | Gamer-Slang und Gaming-Community-Stil |
+| `friendly` | Herzlicher, höflicher und sympathischer Tonfall |
+| `business` | Prägnanter, sachlicher und professioneller Stil |
+| `formal` | Formelle Sprache mit Siezen und Höflichkeitsformen |
+| `netslang` | Internet-Slang und Foren-Stil |
+| `tweet` | Kurzer, prägnanter Social-Media-Stil (X / Twitter) |
+| `literal` | Wörtliche Übersetzung bei mehrdeutigen Formulierungen |
+
+#### 2. Server-Glossar (`/add-glossary`)
+Lege Übersetzungen für Charakternamen, Gaming-Begriffe oder Community-Jargon fest (bis zu 50 Einträge pro Server):
+- **Attribute (`attribute`)**: Die Angabe von Kategorien wie „Personenname“, „Ortsname“, „Slang“, „Abkürzung“ oder „Fachbegriff“ hilft der KI, den Kontext präzise zu verstehen.
+- **Immer einschließen (`always_include`)**: Wenn auf `true` gesetzt, wird der Begriff dauerhaft als Kontext übergeben, auch wenn das Wort nicht direkt in der Nachricht vorkommt.
+
+#### 3. Tag-Zuordnung für Foren (`/edit-forum-tags`)
+Beim Verknüpfen von Forums- oder Medienkanälen können Tags sprachübergreifend zugeordnet werden. Erstellt ein Benutzer einen Beitrag mit einem Tag, erhält der gespiegelte Beitrag automatisch das entsprechende Partner-Tag.
+
+#### 4. Whitelist für Bots & Webhooks (`/bot-whitelist`)
+Standardmäßig werden Nachrichten von Bots und Webhooks ignoriert, um Endlosschleifen zu verhindern. Mit `/bot-whitelist add` können Ankündigungs-Bots, RSS-Feeds oder Benachrichtigungen explizit für die Übersetzung freigeschaltet werden.
+
+---
+
+## 2. Entwickler- & Self-Hosting-Handbuch
+
+### Systemanforderungen & Tech-Stack
+
+- **Programmiersprache**: Go 1.24 oder neuer
+- **Datenbank**: SQLite (Reiner Go-Treiber via `modernc.org/sqlite`, kein CGO erforderlich)
+- **Discord-Bibliothek**: `github.com/bwmarrin/discordgo`
+- **Übersetzungs-Engine**: OpenAI-kompatible Chat Completions API (OpenAI, OpenRouter, Azure OpenAI, lokale LLMs etc.)
+- **Cross-Compilation**: Vollständige Unterstützung mit `CGO_ENABLED=0` für schlanke Standalone-Binaries auf Linux, Windows und macOS.
+
+---
+
+### Self-Hosting & Inbetriebnahme
+
+#### 1. Discord-Bot erstellen
+1. Öffne das [Discord Developer Portal](https://discord.com/developers/applications) und erstelle eine neue Application.
+2. Aktiviere im Tab **Bot** den `MESSAGE CONTENT INTENT` und kopiere das Bot-Token.
+3. Wähle unter **OAuth2 → URL Generator** die Scopes `bot` und `applications.commands` mit den erforderlichen Berechtigungen aus und lade den Bot auf deinen Server ein.
+
+#### 2. OpenAI-kompatible API vorbereiten
+Beschaffe API-Endpunkt-URL, API-Schlüssel und Modell-ID deines bevorzugten LLM-Anbieters.
+
+#### 3. Umgebungsvariablen konfigurieren
+Kopiere `.env.example` nach `.env` und passe die Einstellungen an:
 
 ```sh
 cp .env.example .env
 ```
-
-Bearbeite `.env` und setze folgende Werte:
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -69,109 +181,85 @@ OPENAI_MODEL=your-model-id
 # OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
-PUBLIC_BASE_URL=https://your-public-domain.example
+# PUBLIC_BASE_URL=https://your-public-domain.example
 TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
-# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
-| Variable | Erforderlich | Beschreibung |
-|---|---|---|
-| `DISCORD_TOKEN` | Ja | Discord-Bot-Token |
-| `OPENAI_BASE_URL` | Yes | OpenAI-compatible Chat Completions base URL (for example `https://api.openai.com/v1`) |
-| `OPENAI_API_KEY` | Yes | Bearer API key for the Chat Completions endpoint |
-| `OPENAI_MODEL` | Yes | Model ID accepted by the provider |
-| `OPENAI_REASONING_EFFORT` | No | Optional Chat Completions `reasoning_effort`. Unset omits the field. Set to `none` to skip thinking tokens on hybrid reasoning models |
-| `DB_PATH` | Nein | Pfad zur SQLite-Datei (Standard: `./translator.db`) |
-| `HTTP_ADDR` | Nein | Adresse des Avatar-Badge-Servers (Standard: `:8080`) |
-| `PUBLIC_BASE_URL` | Nein | Öffentliche Basis-URL für Avatar-Ring-Badges. Wenn nicht gesetzt, verwenden gespiegelte Nachrichten die ursprüngliche Discord-Avatar-URL und der Badge-Server wird nicht genutzt |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Nein | Übersetzungs-Token-Limit pro Server und Minute (Standard: `100000`) |
-| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | Anfrage-Limit pro IP und Minute für den `/avatar`-Badge-Endpunkt (Standard: `120`) |
-| `MESSAGE_LINK_RETENTION_DAYS` | Nein | Aufbewahrungsdauer von `message_links` in SQLite in Tagen vor automatischer Bereinigung. `0` (Standard) deaktiviert die Bereinigung; z. B. `60` löscht Links älter als 60 Tage beim Start und alle 24 Stunden |
-| `GUILD_DATA_RETENTION_DAYS` | Nein | Tage, die SQLite-Daten eines Servers nach Entfernung des Bots aufbewahrt werden. `0` (Standard) deaktiviert die Bereinigung; z. B. `30` löscht Daten von seit mehr als 30 Tagen entfernten Servern beim Start und alle 24 Stunden. Ein erneuter Beitritt vor Ablauf hebt die geplante Löschung auf |
-| `TRANSLATION_DEBUG_LOG_PATH` | Nein | Nur zur Fehlersuche. Pfad einer JSON-Lines-Datei, die pro Übersetzungsvorgang einen Eintrag erhält. Nicht gesetzt (Standard) schreibt nichts |
+#### 4. Bauen & Ausführen
 
-### 4. Starten
-
+Direkte lokale Ausführung:
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-Oder kompilieren und ausführen:
-
+Als eigenständige Binary kompilieren und starten:
 ```sh
 go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-## Verwendung
-
-Nach dem Start des Bots werden Slash-Befehle in jedem Server registriert.
-
-### Channel einrichten
-
-#### Eine Übersetzungsgruppe erstellen
-
-Führe `/new-channel` im japanischen Channel aus, um eine Übersetzungsgruppe zu erstellen:
-
-```
-/new-channel language:ja
+**Modell-Vorabprüfung (`--model-prewarm`)**:
+Überprüft vor dem Deployment API-Authentifizierung, Modellverbindung und JSON-Schema-Verträge (startet keinen Discord- oder HTTP-Dienst):
+```sh
+./discord-auto-translator --model-prewarm
 ```
 
-#### Channels in anderen Sprachen hinzufügen
+---
 
-Führe `/join-channel` im englischen Channel aus, um ihn zur Gruppe hinzuzufügen:
+### Umgebungsvariablen-Referenz
 
-```
-/join-channel group:general language:en
-```
+| Variable | Erforderlich | Standard | Beschreibung |
+|---|---|---|---|
+| `DISCORD_TOKEN` | **Ja** | - | Discord-Bot-Authentifizierungstoken |
+| `OPENAI_BASE_URL` | **Ja** | - | Basis-URL der OpenAI-kompatiblen Chat Completions API (z. B. `https://api.openai.com/v1`) |
+| `OPENAI_API_KEY` | **Ja** | - | Bearer-API-Schlüssel |
+| `OPENAI_MODEL` | **Ja** | - | Modell-ID beim LLM-Anbieter |
+| `OPENAI_REASONING_EFFORT` | Nein | (nicht gesetzt) | Optionaler `reasoning_effort` Parameter. Auf `none` setzen, um Denk-Tokens bei Hybrid-Modellen zu deaktivieren |
+| `DB_PATH` | Nein | `./translator.db` | Pfad zur SQLite-Datenbankdatei |
+| `HTTP_ADDR` | Nein | `:8080` | Adresse für den Avatar-Badge-HTTP-Server |
+| `PUBLIC_BASE_URL` | Nein | (nicht gesetzt) | Öffentliche Basis-URL für Avatar-Farbringe. Rendert einen Ring in der Farbe der höchsten Serverrolle |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Nein | `100000` | Token-Limit pro Server (Guild) pro Minute |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | `120` | Anfragelimit pro Minute pro IP für den `/avatar`-Endpunkt |
+| `MESSAGE_LINK_RETENTION_DAYS` | Nein | `0` | Aufbewahrungsdauer für Nachrichtenverknüpfungen in Tagen. `0` = unbegrenzt |
+| `GUILD_DATA_RETENTION_DAYS` | Nein | `0` | Aufbewahrungsdauer für Serverdaten nach Verlassen des Bots |
 
-Um auch einen deutschen Channel hinzuzufügen:
+---
 
-```
-/join-channel group:general language:de
-```
+### Architektur & Design
 
-Jetzt sind `#general-ja`, `#general-en` und `#general-de` verknüpft.
+#### 1. Übersetzungspipeline
+1. **Kontextsammlung**: Erfasst Kanalthemen, Gesprächsverlauf-Bursts, Zitate, OGP-Metadaten von URLs und skalierte Bildanhänge.
+2. **Platzhalter-Maskierung**: Ersetzt Erwähnungen (`<@id>`), Emojis (`<:name:id>`), Kanäle (`<#id>`), URLs und Codeblöcke durch Tokens wie `[USER:name]`, `[EMOJI:name]`, `[SITE:N]`, `[CODE]`, um Prompt-Injection und fehlerhafte Übersetzungen zu verhindern.
+3. **Prompt-Zusammensetzung & Caching**: Schichtet System-Prompt, stabilen Kontext und dynamischen Inhalt, um Prefix Prompt Caching der KI-Anbieter optimal zu nutzen.
+4. **Structured Outputs**: Nutzt `response_format.type=json_schema` (`strict: true`), um alle Zielsprachen in einem einzigen API-Aufruf strukturiert als JSON abzurufen.
+5. **Nachbereitung & Versand**: Stellt Platzhalter wieder her, passt interne Discord-Links an, ersetzt `hreflang`-URLs und verteilt die Webhook-Nachrichten parallel.
 
-### Befehle
+#### 2. Sicherheit & Fail-Closed-Verhalten
+- **Schutz vor Prompt-Injection**: Alle Benutzereingaben werden XML-escaped und in isolierten Tags verpackt.
+- **Fail-Closed-Prinzip**: Bei Token-Überschreitung (`finish_reason=length`), ungültigem JSON oder Netzwerkfehlern wird keine fehlerhafte Nachricht gespiegelt, sondern eine lokalisierte Fehlermeldung im Quellkanal gepostet.
 
-Standardmäßig können die Admin-Slash-Befehle nur von **Server-Administratoren** ausgeführt werden. Um weiteren Rollen den Zugriff zu erlauben, gehe in den Discord-„Servereinstellungen" → „Integrationen" → „Verwalten" des Bots → „Befehlsberechtigungen" und konfiguriere den Zugriff global oder pro Befehl. Der Bot ändert niemals selbstständig Rollen oder Befehlsberechtigungen.
+#### 3. Zuverlässigkeit & Datenkonsistenz
+- **Idempotenz**: Verhindert doppelte Nachrichten bei mehrfach empfangenen Gateway-Events über `message_links` und `processed_events`.
+- **Kompensationstransaktionen**: Schlägt das Speichern in der Datenbank nach einem Webhook-Post fehl, wird die gesendete Discord-Nachricht sofort wieder gelöscht.
+- **Bidirektionale Synchronisierung**: Reaktionen und Pins werden anhand der Nachrichtenverknüpfungen in allen Kanälen der Gruppe synchron gehalten.
 
-| Befehl | Beschreibung |
-|---|---|
-| `/new-channel language:[Sprache] channel:<Channel> group:<Gruppe>` | Neue Übersetzungsgruppe erstellen. `channel` ist standardmäßig der aktuelle Channel; `group` ist standardmäßig der Channel-Name |
-| `/join-channel group:[Gruppe] language:[Sprache] channel:<Channel>` | Channel zu einer Gruppe hinzufügen. Bei Forum/Media mit getaggten Peers in der Gruppe öffnet sich die Tag-Zuordnungs-UI. `channel` ist standardmäßig der aktuelle Channel |
-| `/leave-channel group:[Gruppe] channel:<Channel>` | Channel aus einer Gruppe entfernen. `channel` ist standardmäßig der aktuelle Channel |
-| `/delete-group group:[Gruppe]` | Gesamte Gruppe löschen |
-| `/list-groups` | Übersetzungsgruppen und Channels dieses Servers anzeigen |
-| `/add-glossary term:[Begriff] translation:[Übersetzung] attribute:<Attribut> always_include:<Bool>` | Bevorzugte Übersetzung im Server-Glossar registrieren. `attribute` ist Freitext mit Vorschlägen; `always_include` ist standardmäßig `false` |
-| `/list-glossary` | Glossar des Servers anzeigen |
-| `/remove-glossary term:[Begriff]` | Glossareintrag entfernen |
-| `/edit-forum-tags group:[Gruppe] channel:<Forum>` | Forum-/Media-Tag-Zuordnungen für einen Channel in der Gruppe bearbeiten. `channel` ist standardmäßig der aktuelle Channel |
-| `/set-style group:[Gruppe] preset:<Voreinstellung> custom:<eigene Anweisung>` | Übersetzungsstil für eine Gruppe festlegen. `preset` oder `custom` angeben, nicht beides |
-| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | Eine automatisierte Nachrichtenquelle auf diesem Server zulassen. Bei `source_type:bot` ist `source_id` die Bot-Benutzer-ID, bei `source_type:webhook` die Webhook-ID |
-| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | Die entsprechende automatisierte Nachrichtenquelle aus der Zulassungsliste dieses Servers entfernen |
-| `/bot-whitelist list` | Die auf diesem Server zugelassenen Bot- und Webhook-Quellen anzeigen |
+---
 
-- Quellen-Zulassungslisten werden in SQLite gespeichert und gelten jeweils nur für einen Discord-Server (eine Guild). Vom Übersetzer verwaltete Ausgabe-Webhooks und Nachrichten dieses Übersetzungsbots selbst bleiben ausgeschlossen, auch wenn ihre IDs hinzugefügt werden
+### Entwicklung & Tests
 
-- `language` verwendet BCP-47-Codes (`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` usw.)
-- Maximal 50 Glossareinträge pro Server
-- `attribute` schlägt „Personenname", „Ortsname", „Slang", „Abkürzung" und „Fachbegriff" vor, aber jeder Wert kann frei eingegeben werden. Das Attribut wird als Kontext genutzt, damit the translation model die Bedeutung des Begriffs versteht
-- Normale Begriffe werden den Systemanweisungen nur hinzugefügt, wenn die zu übersetzende Nachricht `term` enthält (Groß-/Kleinschreibung ignoriert). Begriffe mit `always_include:true` werden immer hinzugefügt
-- Wird die Option `channel` weggelassen, gilt der Befehl für den Channel, in dem er ausgeführt wurde
-- Unterstützte Channel-Typen: Text, Ankündigungen, Forum und Medien. Alle Kanäle in einer Gruppe müssen denselben Typ haben.
-- Forum-/Media-Tag-Zuordnungen können nach `/join-channel` (wenn ein getaggter Peer existiert) oder mit `/edit-forum-tags` bearbeitet werden. Speichern mit „(keine Zuordnung)“ entfernt das Paar
-
-## Tests
-
+#### Tests ausführen
 ```sh
 go test ./...
 ```
 
-## Lizenz
+#### Mehrsprachiger UI-Katalog (i18n)
+Alle Benutzeroberflächen-Texte und Fehlermeldungen werden in `internal/translatorbot/ui_strings.go` für 13 Sprachen verwaltet. Neue Texte müssen für alle Sprachen definiert und durch `TestUIStringCatalogIsComplete` geprüft werden.
 
-Die Lizenz dieses Projekts findest du in der Datei [LICENSE](LICENSE).
+---
+
+## 3. Lizenz
+
+Dieses Projekt ist unter der [MIT License](LICENSE) lizenziert.
