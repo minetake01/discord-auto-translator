@@ -2,64 +2,176 @@
 
 [English](README.md) | [日本語](README-ja.md) | [简体中文](README-zh-CN.md) | [繁體中文](README-zh-TW.md) | [한국어](README-ko.md) | [Français](README-fr.md) | [Deutsch](README-de.md) | [Español](README-es.md) | [Português (Brasil)](README-pt-BR.md) | [Italiano](README-it.md) | [Bahasa Indonesia](README-id.md) | [ไทย](README-th.md) | [Tiếng Việt](README-vi.md)
 
-異なる言語を話すユーザーが、同じ Discord サーバー内で一緒に会話できるようにするボットです。
+異なる言語を話すユーザーが、同じ Discord サーバー内でそれぞれの母国語を使ってリアルタイムに会話できるようにする Discord ボットです。
 
-言語ごとに 1 チャンネルを用意して**翻訳グループ**として連携させると、あるチャンネルに投稿されたメッセージが OpenAI 互換 Chat Completions モデルで翻訳され、グループ内の他のすべてのチャンネルへ、投稿者本人の名前とアバターのままミラーリングされます。各チャンネルは、それぞれの言語での自然な会話として読めます。
+言語ごとにチャンネルを用意して**翻訳グループ**として連携させると、いずれかのチャンネルに投稿されたメッセージが OpenAI 互換の LLM（Chat Completions API）によって自動翻訳され、グループ内の全チャンネルへ**送信者本人の名前とアバター**でミラーリングされます。参加者は母国語のチャンネルを見るだけで、自然な会話を楽しむことができます。
 
 ```
 #chat-ja (日本語)  ⇄  #chat-en (English)  ⇄  #chat-zh (中文)
 ```
 
-## 特徴
+---
 
-- **すべてが同期される** — 新規メッセージだけでなく、編集・削除・リプライ・転送メッセージ・リアクション・ピン留め・スレッド（テキスト / フォーラム / メディア）・対応付けたフォーラムタグ・添付ファイルのみのメッセージも、グループ全体にミラーリングされます。
-- **本人が投稿したように見える** — ミラーメッセージはウェブフック経由で、元の投稿者の名前とアバターで送信されます。
-- **自然な翻訳** — 翻訳モデルはチャンネル名・トピック・直近の会話履歴を文脈として参照します。サーバー単位の用語集で、人名や専門用語の訳語を固定することもできます。
-- **リンクの賢い扱い** — 管理対象のチャンネルやメッセージへのリンク・メンションは各言語の対応先に書き換えられ、`hreflang` 代替版のある URL は対象言語版に差し替えられます。
-- **効率的で安全** — 翻訳すべきテキストがない本文（URL・メンション・カスタム絵文字・コードのみ）は翻訳 API を使わずにミラーリングされ、サーバーごとのトークンレート制限が適用されます。URL・メンション・コードブロックはプロンプトインジェクションから保護されます。翻訳失敗時は fail-closed（ミラーリングせず、投稿元チャンネルへローカライズ通知）。
-- **多言語 UI** — コマンド応答は実行者の Discord クライアント言語、チャンネル通知はチャンネルの登録言語で表示されます（13 言語対応・未対応言語は英語）。
+## 1. ユーザー & サーバー管理者向けガイド
 
-## 必要なもの
+### 主な特徴とユーザー体験
 
-- Go 1.24 以上
-- Discord ボットアカウント（`MESSAGE CONTENT` 特権インテントを有効化済み）
-- OpenAI 互換の Chat Completions エンドポイント（ベース URL・API キー・モデル ID）
+- **いつも通りチャットするだけ**
+  特別なコマンドを入力することなく、普段通りメッセージを送信するだけで自動的に他言語チャンネルへ翻訳・送信されます。
+- **本人が投稿したような自然な表示**
+  ミラーリングされたメッセージは Webhook 経由で送信され、元の投稿者の表示名とアバター画像がそのまま引き継がれます。
+- **すべての操作をリアルタイムに完全同期**
+  - **新規メッセージ・添付ファイル**: テキストだけでなく、画像（代替テキスト含む）や各種添付ファイルも同期されます。
+  - **メッセージの編集と削除**: 原文を編集・削除すると、連動して他言語の翻訳メッセージも即座に編集・削除されます。
+  - **返信（リプライ）**: 返信元メッセージの引用スニペットを送信先言語で付与して同期します（疑似リプライ）。
+  - **転送メッセージ**: 転送元の情報を保ったまま、見出しをローカライズして同期します。
+  - **リアクション・ピン留め**: メッセージにつけられたリアクションやピン留め操作も双方向で同期されます。
+  - **スレッド・フォーラム**: 通常スレッドのほか、フォーラムチャンネルやメディアチャンネルのスレッド・タグも同期されます。
+  - **投票（Polls）**: 投票メッセージは質問と選択肢が翻訳されて Embed 形式でミラーリングされ、投票終了時には結果も通知されます。
+- **「View Original」（原文の確認）機能**
+  翻訳されたメッセージを右クリック（スマートフォンでは長押し）して「アプリ」→「View Original」を選択すると、元のメッセージへのジャンプリンクと原文のスニペットを自分だけに表示（エフェメラル表示）できます。
+- **スマートなリンクとメディア処理**
+  - 翻訳グループ内の別言語チャンネルやメッセージへのリンク・メンションは、送信先言語に対応するチャンネル・メッセージ ID へ自動的に書き換えられます。
+  - 外部 Web サイトへの URL に `hreflang` による多言語版が存在する場合、自動的に送信先言語の URL に差し替えられます。
 
-## セットアップ
+---
 
-### 1. Discord ボットの準備
+### サーバーへの導入手順
 
-1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリケーションを作成
-2. **Bot** ページで:
-   - `MESSAGE CONTENT INTENT` を有効化（必須）
-   - ボットトークンをコピー
-3. **OAuth2 → URL Generator** でボットをサーバーに招待:
-   - Scopes: `bot`, `applications.commands`
-   - Permissions（Developer Portal の表示名）:
-     - **基本**: `View Channel`, `Read Message History`
-     - **メッセージ**: `Send Messages`, `Send Messages in Threads`
-     - **モデレーション**: `Pin Messages`
-     - **ウェブフック**: `Manage Webhooks`
-     - **スレッド**: `Create Public Threads`, `Manage Threads`
-     - **リアクション**: `Add Reactions`
-   - 上記の permissions 整数は `2252126768139328` です
-   - 外部サーバー由来のカスタム絵文字リアクションも同期する場合は、追加で `Use External Emojis` を許可してください。その場合の permissions 整数は `2252126768401472` です
+#### 1. Bot をサーバーに招待する
+以下のリンク生成手順に従い、必要な権限を付与して Bot をサーバーに招待します。
 
-### 2. OpenAI 互換 API の設定
+- **OAuth2 Scopes**: `bot`, `applications.commands`
+- **必要な権限（Bot Permissions）**:
+  - **一般**: `View Channels`（チャンネルを見る）, `Read Message History`（メッセージ履歴を読む）
+  - **テキスト**: `Send Messages`（メッセージを送信）, `Send Messages in Threads`（スレッドでメッセージを送信）
+  - **モデレーション**: `Pin Messages`（メッセージをピン留め）
+  - **Webhook**: `Manage Webhooks`（ウェブフックの管理）
+  - **スレッド**: `Create Public Threads`（公開スレッドの作成）, `Manage Threads`（スレッドの管理）
+  - **リアクション**: `Add Reactions`（リアクションの追加）
+- **権限整数**: `2252126768139328`
+  - ※別サーバー由来のカスタム絵文字リアクションも同期したい場合は、追加で `Use External Emojis`（外部絵文字の使用）を許可してください（権限整数: `2252126768401472`）。
 
-1. OpenAI 互換の Chat Completions プロバイダを選び、ベース URL（プロバイダが `/v1` を使う場合はそれも含める）を確認します。
-2. 選択したモデルで Chat Completions を呼べる API キーを作成します。
-3. `.env` に `OPENAI_BASE_URL`、`OPENAI_API_KEY`、`OPENAI_MODEL` を設定します。
+#### 2. 特権インテントの確認
+Bot アカウント側で `MESSAGE CONTENT INTENT`（メッセージコンテンツ特権インテント）が有効化されている必要があります。
 
-タイムアウトと出力上限はコード固定です（試行ごと 60 秒、`max_tokens=4096`）。モデル ID は必須のローカル設定です。任意で `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN`（デフォルト `100000`）によりギルドごとのトークン上限を調整できます。ハイブリッド推論モデルでは `OPENAI_REASONING_EFFORT=none` で思考トークンを省略し、遅延を下げられます。
+---
 
-### 3. 環境変数の設定
+### チャンネル設定（基本操作）
+
+#### 翻訳グループを作成する
+日本語チャンネル（例: `#general-ja`）で `/new-channel` を実行し、翻訳グループを作成します：
+
+```
+/new-channel language:ja
+```
+*※ `group` を省略すると現在のチャンネル名がグループ名になります。*
+
+#### 他の言語チャンネルを追加する
+英語チャンネル（例: `#general-en`）で `/join-channel` を実行し、先ほど作成したグループに参加させます：
+
+```
+/join-channel group:general language:en
+```
+
+同様に中国語チャンネル（例: `#general-zh`）を追加する場合：
+
+```
+/join-channel group:general language:zh-CN
+```
+
+これで `#general-ja`、`#general-en`、`#general-zh` が連携され、相互の自動翻訳が開始されます。
+
+#### チャンネルの離脱とグループの削除
+- チャンネルをグループから外す場合: `/leave-channel group:general`
+- グループ自体を完全に削除する場合: `/delete-group group:general`
+- 現在のグループとチャンネルの構成を確認する場合: `/list-groups`
+
+---
+
+### コマンドリファレンス
+
+#### スラッシュコマンド（管理者向け）
+管理用コマンドは、デフォルトで**サーバー管理者（Administrator 権限）**のみが実行可能です。追加のロールに実行を許可したい場合は、Discord の「サーバー設定」→「連携サービス」→対象 Bot の「管理」→「コマンド権限」から設定してください。
+
+| コマンド | 説明 | 主なオプション |
+|---|---|---|
+| `/new-channel` | 新しい翻訳グループを作成し、チャンネルを登録 | `language`（必須）: BCP-47 言語コード<br>`channel`（任意）: 対象チャンネル（省略時は現在のチャンネル）<br>`group`（任意）: グループ識別名（省略時はチャンネル名） |
+| `/join-channel` | 既存の翻訳グループにチャンネルを追加 | `group`（必須）: 参加先グループ名<br>`language`（必須）: BCP-47 言語コード<br>`channel`（任意）: 対象チャンネル（省略時は現在のチャンネル） |
+| `/leave-channel` | 翻訳グループからチャンネルを離脱 | `group`（必須）: グループ名<br>`channel`（任意）: 対象チャンネル（省略時は現在のチャンネル） |
+| `/delete-group` | 翻訳グループを完全に削除 | `group`（必須）: 削除するグループ名 |
+| `/list-groups` | サーバー内の翻訳グループとチャンネル一覧を表示 | なし |
+| `/set-style` | 翻訳グループの文体やトーンを設定 | `group`（必須）: グループ名<br>`preset`（任意）: スタイルプリセット（下記参照）<br>`custom`（任意）: 自然言語によるカスタム指示（最大200文字） |
+| `/add-glossary` | サーバー専用の用語集（優先訳）を登録 | `term`（必須）: 原文の用語<br>`translation`（必須）: 優先する訳語<br>`attribute`（任意）: 用語の属性（人名、地名、スラングなど）<br>`always_include`（任意）: 本文に含まれなくても常にプロンプトへ含めるか（既定値: `false`） |
+| `/list-glossary` | 登録されている用語集一覧を表示 | なし |
+| `/remove-glossary`| 登録済みの用語集エントリを削除 | `term`（必須）: 削除する用語 |
+| `/edit-forum-tags` | フォーラム／メディアチャンネルのタグ対応付けを編集 | `group`（必須）: グループ名<br>`channel`（任意）: 対象フォーラムチャンネル |
+| `/bot-whitelist` | 他の Bot や Webhook からのメッセージの翻訳許可を管理 | サブコマンド: `add`（追加）, `remove`（削除）, `list`（一覧）<br>`source_type`: `bot` または `webhook`<br>`source_id`: Bot ユーザー ID または Webhook ID |
+
+#### メッセージコマンド（一般ユーザー利用可能）
+- **`View Original`（アプリメニュー）**
+  任意のメッセージを右クリックまたは長押し →「アプリ」→「View Original」を実行することで、翻訳元メッセージの URL と原文プレビューを取得できます。
+
+---
+
+### 高度なカスタマイズ
+
+#### 1. 翻訳スタイルの設定 (`/set-style`)
+グループの会話の雰囲気に合わせて、翻訳時のデフォルトの文体を指定できます（プリセットとカスタム指示は排他指定）。
+
+| プリセット | 特徴・用途 |
+|---|---|
+| `default` | ネイティブがチャットで実際に使う自然な会話スタイル |
+| `casual` | 友達同士のようなカジュアルで親しみやすい口調 |
+| `gaming` | ゲームコミュニティ向けのカジュアルな表現 |
+| `friendly` | 温かく親切な口調 |
+| `business` | ビジネスに適した簡潔で礼儀正しい表現 |
+| `formal` | 丁寧語・敬語を用いたフォーマルな文体 |
+| `netslang` | ネットスラングや掲示板風の文体 |
+| `tweet` | SNS（X / Twitter）のつぶやきのような短い表現 |
+| `literal` | 複数の訳し方がある場合に直訳に近い表現を選択 |
+
+#### 2. サーバー用語集の登録 (`/add-glossary`)
+固有名詞、ゲーム内の用語、キャラクター名、サーバー独自のスラングなどを登録することで、意図しない誤訳を防ぐことができます（最大 50 件）。
+- **属性（`attribute`）**: 「人名」「地名」「スラング」「略語」「専門用語」などの属性を付与することで、AI が文脈をより正確に把握します。
+- **常時適用（`always_include`）**: `true` に設定すると、メッセージ内にその単語が含まれていない場合でも常にコンテキストとして LLM に渡されます。
+
+#### 3. フォーラム／メディアチャンネルのタグ連携 (`/edit-forum-tags`)
+フォーラムチャンネル同士をグループ化する場合、言語ごとに異なるタグ ID を対応付けることができます。ある言語のフォーラムでタグ付きの投稿が行われると、ミラー先のフォーラムでも対応するタグが自動付与されます。
+
+#### 4. 自動送信元の許可 (`/bot-whitelist`)
+通常、Bot や Webhook による発言は無限ループ防止のため自動翻訳の対象外となりますが、`/bot-whitelist add` を使用して特定の Bot や Webhook を明示的に許可することで、アナウンス用 Bot や RSS 通知なども翻訳・ミラーリングすることが可能です。
+
+---
+
+## 2. エンジニア & セルフホスト向けガイド
+
+### システム要件 & 技術スタック
+
+- **言語**: Go 1.24 以上
+- **データベース**: SQLite（`modernc.org/sqlite` による CGO 不要の純 Go 実装）
+- **Discord ライブラリ**: `github.com/bwmarrin/discordgo`
+- **翻訳エンジン**: OpenAI 互換 Chat Completions API（OpenAI, OpenRouter, Azure OpenAI, ローカル LLM 等）
+- **クロスコンパイル**: CGO 不要（`CGO_ENABLED=0`）で Linux / Windows / macOS 向けにシングルバイナリを容易にビルド可能
+
+---
+
+### セルフホスト & 起動手順
+
+#### 1. Discord Bot の作成
+1. [Discord Developer Portal](https://discord.com/developers/applications) で新しい Application を作成します。
+2. **Bot** タブで `MESSAGE CONTENT INTENT` を有効化し、Bot Token を取得します。
+3. **OAuth2 → URL Generator** で `bot`, `applications.commands` スコープと必要な権限を選択し、招待リンクを作成してサーバーに追加します。
+
+#### 2. OpenAI 互換 API の準備
+利用する LLM プロバイダ（OpenAI, OpenRouter 等）のエンドポイント URL、API キー、モデル ID を用意します。
+
+#### 3. 環境変数の設定
+`.env.example` をコピーして `.env` を作成し、必要なパラメータを設定します。
 
 ```sh
 cp .env.example .env
 ```
-
-`.env` を編集して以下を設定します：
 
 ```env
 DISCORD_TOKEN=your-discord-bot-token
@@ -69,109 +181,85 @@ OPENAI_MODEL=your-model-id
 # OPENAI_REASONING_EFFORT=none
 DB_PATH=./translator.db
 HTTP_ADDR=:8080
-PUBLIC_BASE_URL=https://your-public-domain.example
+# PUBLIC_BASE_URL=https://your-public-domain.example
 TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN=100000
 AVATAR_RATE_LIMIT_REQUESTS_PER_MIN=120
 # MESSAGE_LINK_RETENTION_DAYS=60
 # GUILD_DATA_RETENTION_DAYS=30
-# TRANSLATION_DEBUG_LOG_PATH=./translation-debug.log
 ```
 
-| 変数 | 必須 | 説明 |
-|---|---|---|
-| `DISCORD_TOKEN` | 必須 | Discord ボットトークン |
-| `OPENAI_BASE_URL` | 必須 | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
-| `OPENAI_API_KEY` | 必須 | Chat Completions 用の Bearer API キー |
-| `OPENAI_MODEL` | 必須 | プロバイダ側のモデル ID |
-| `OPENAI_REASONING_EFFORT` | 任意 | Chat Completions の `reasoning_effort`。未設定ではフィールドを送らない。ハイブリッド推論モデルでは `none` で思考トークンを省略できる |
-| `DB_PATH` | 任意 | SQLite ファイルのパス（デフォルト: `./translator.db`） |
-| `HTTP_ADDR` | 任意 | アバターバッジサーバーのアドレス（デフォルト: `:8080`） |
-| `PUBLIC_BASE_URL` | 任意 | アバターリングバッジ用の公開ベース URL。未設定時は Discord の元アバター URL をそのまま使い、バッジサーバーは参照されません |
-| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | ギルドごとの翻訳トークン上限/分（デフォルト: `100000`） |
-| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `/avatar` バッジエンドポイントの IP ごとのリクエスト上限/分（デフォルト: `120`） |
-| `MESSAGE_LINK_RETENTION_DAYS` | 任意 | SQLite の `message_links` を保持する日数。`0`（デフォルト）で自動削除を無効。例: `60` で 60 日より古いリンクを起動時および 24 時間ごとに削除 |
-| `GUILD_DATA_RETENTION_DAYS` | 任意 | Bot がギルドから削除された後、そのギルドの SQLite データを保持する日数。`0`（デフォルト）で自動削除を無効。例: `30` で削除から 30 日を超えたギルドのデータを起動時および 24 時間ごとに削除。期限前に再参加すると削除予定を取り消す |
-| `TRANSLATION_DEBUG_LOG_PATH` | 任意 | デバッグ専用。翻訳の1往復ごとに1エントリを追記する JSON Lines ファイルのパス。未設定（デフォルト）では何も出力しない |
+#### 4. ビルドと実行
 
-### 4. 起動
-
+ローカルで直接実行する場合:
 ```sh
 go run ./cmd/discord-auto-translator
 ```
 
-または、ビルドして実行：
-
+バイナリをビルドして実行する場合:
 ```sh
 go build -o discord-auto-translator ./cmd/discord-auto-translator
 ./discord-auto-translator
 ```
 
-## 使い方
-
-ボットを起動するとスラッシュコマンドが各サーバーに登録されます。
-
-### チャンネルの設定
-
-#### 翻訳グループを作成する
-
-日本語チャンネルで `/new-channel` を実行して翻訳グループを作成します：
-
-```
-/new-channel language:ja
+**モデル接続検証オプション (`--model-prewarm`)**:
+デプロイ時などに LLM プロバイダへの接続・認証およびレスポンス契約を事前に検証して終了するモードです（Discord や HTTP サーバーは起動しません）。
+```sh
+./discord-auto-translator --model-prewarm
 ```
 
-#### 他の言語チャンネルを追加する
+---
 
-英語チャンネルで `/join-channel` を実行してグループに参加させます：
+### 環境変数リファレンス
 
-```
-/join-channel group:general language:en
-```
+| 変数名 | 必須 | デフォルト値 | 説明 |
+|---|---|---|---|
+| `DISCORD_TOKEN` | **必須** | - | Discord ボットのトークン |
+| `OPENAI_BASE_URL` | **必須** | - | OpenAI 互換 Chat Completions のベース URL（例: `https://api.openai.com/v1`） |
+| `OPENAI_API_KEY` | **必須** | - | API Bearer トークン |
+| `OPENAI_MODEL` | **必須** | - | プロバイダ側で指定するモデル ID |
+| `OPENAI_REASONING_EFFORT` | 任意 | (未設定) | Chat Completions の `reasoning_effort`。ハイブリッド推論モデルで思考トークンを抑制してレイテンシを下げたい場合は `none` を指定 |
+| `DB_PATH` | 任意 | `./translator.db` | SQLite データベースファイルの保存パス |
+| `HTTP_ADDR` | 任意 | `:8080` | アバターバッジサーバー用のアドレス |
+| `PUBLIC_BASE_URL` | 任意 | (未設定) | アバターリングバッジ用の公開ベース URL。設定するとアバター画像の周囲に最上位ロール色ボーダーを付与します（未設定時は元画像を直接利用） |
+| `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 任意 | `100000` | サーバー（ギルド）ごとの 1 分間あたりの翻訳トークン上限 |
+| `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 任意 | `120` | アバターエンドポイントに対する IP 単位の 1 分間あたりのリクエスト上限 |
+| `MESSAGE_LINK_RETENTION_DAYS` | 任意 | `0` | メッセージリンクデータの保持日数。`0` は無期限保持。数値を指定すると期限切れデータを 24 時間ごとに自動パージ |
+| `GUILD_DATA_RETENTION_DAYS` | 任意 | `0` | Bot が退出したギルドのデータ保持日数。期限内に再参加すると削除予定はキャンセルされます |
 
-中国語チャンネルも追加する場合：
+---
 
-```
-/join-channel group:general language:zh-CN
-```
+### アーキテクチャ & 設計思想
 
-これで `#general-ja`, `#general-en`, `#general-zh` が連携されます。
+#### 1. 翻訳パイプライン
+1. **文脈収集 (Context Assembly)**: チャンネルのトピック、直近の会話履歴バースト、リプライ先メッセージ、共有 URL の OGP メタデータ、添付画像を収集します。
+2. **プレースホルダー保護 (Placeholder Masking)**: メンション（`<@id>`）、絵文字（`<:name:id>`）、チャンネルリンク（`<#id>`）、URL、インラインコード・コードブロックなどを `[USER:name]`, `[EMOJI:name]`, `[SITE:N]`, `[CODE]` などの形式に一時置換し、誤翻訳やプロンプトインジェクションを防止します。
+3. **プロンプト合成 & キャッシュ最適化**: システムプロンプト、安定コンテキスト、履歴コンテキスト、可変コンテンツに整理し、LLM 側のプレフィックスプロンプトキャッシュが効きやすい構造で送信します。
+4. **Structured Outputs による一括生成**: `response_format.type=json_schema`（`strict: true`）を用いて、全対象言語への翻訳結果を 1 回の API 呼び出しで構造化 JSON として取得します。
+5. **後処理 & ミラーリング**: プレースホルダーを復元し、グループ内の Discord リンク書き換えや `hreflang` 代替 URL 置換を適用した上で、Webhook 経由で対象チャンネルへ並行配信します。
 
-### コマンド一覧
+#### 2. 安全性 & Fail-Closed 設計
+- **プロンプトインジェクション対策**: すべてのユーザー入力は XML エスケープされ、信頼できない入力として隔離されます。プレースホルダー化によりシステム指示の上書きを防止します。
+- **Fail-Closed 原則**: トークン数超過（`finish_reason=length`）、不正な JSON、一時的な通信エラー等が発生した場合は、誤った内容や中途半端なメッセージをミラーリングせず、送信元チャンネルへローカライズされたエラー通知を返します。
 
-管理用スラッシュコマンドは、デフォルトでは**サーバー管理者**のみが実行できます。追加のロールに実行を許可する場合は、Discord の「サーバー設定」→「連携サービス」→対象 Bot の「管理」→「コマンド権限」で、全コマンド共通またはコマンド単位の許可を設定してください。Bot はロールやコマンド権限を自動変更しません。
+#### 3. 信頼性とデータ整合性
+- **冪等性 (Idempotency)**: イベントの重複受信や並行処理に対応するため、`message_links` と `processed_events` による二重配信防止機構を備えています。
+- **補償トランザクション**: Webhook 投稿成功後に DB 保存が失敗した場合、投稿した Discord メッセージを即座に削除して孤児メッセージの発生を防ぎます。
+- **双方向同期**: ピン留めやリアクションは、送信元・ミラー先のどちらで操作されても、全ペアメッセージ間で状態が自動同期されます。
 
-| コマンド | 説明 |
-|---|---|
-| `/new-channel language:[言語] channel:<チャンネル> group:<グループ>` | 翻訳グループを新規作成。`channel` を省略すると実行したチャンネル、`group` を省略するとチャンネル名が使われます |
-| `/join-channel group:[グループ] language:[言語] channel:<チャンネル>` | グループにチャンネルを追加。タグ付きの他フォーラム／メディアがグループ内にある場合はタグ対応付け UI を表示。`channel` を省略すると実行したチャンネルが対象になります |
-| `/leave-channel group:[グループ] channel:<チャンネル>` | グループからチャンネルを離脱。`channel` を省略すると実行したチャンネルが対象になります |
-| `/delete-group group:[グループ]` | グループ全体を削除 |
-| `/list-groups` | このサーバーの翻訳グループとチャンネルを一覧表示 |
-| `/add-glossary term:[用語] translation:[訳] attribute:<属性> always_include:<常時使用>` | サーバー用語集に優先訳を登録。`attribute` は候補付き自由入力です。`always_include` の既定値は `false` です |
-| `/list-glossary` | サーバーの用語集を一覧表示 |
-| `/remove-glossary term:[用語]` | 用語集エントリを削除 |
-| `/edit-forum-tags group:[グループ] channel:<フォーラム>` | グループ内チャンネルのフォーラム／メディアタグ対応付けを編集。`channel` を省略すると実行したチャンネルが対象になります |
-| `/set-style group:[グループ] preset:<プリセット> custom:<カスタム指示>` | グループの翻訳スタイルを設定。`preset` か `custom` のどちらか一方を指定してください |
-| `/bot-whitelist add source_type:[bot\|webhook] source_id:[ID]` | このサーバーで自動送信元を許可。`source_type:bot` の `source_id` は Bot ユーザー ID、`source_type:webhook` では Webhook ID です |
-| `/bot-whitelist remove source_type:[bot\|webhook] source_id:[ID]` | このサーバーの許可リストから一致する自動送信元を削除 |
-| `/bot-whitelist list` | このサーバーで許可されている Bot と Webhook の送信元を一覧表示 |
+---
 
-- 送信元許可リストは SQLite に永続化され、Discord サーバー（ギルド）ごとに分離されます。翻訳 Bot が管理する出力 Webhook と翻訳 Bot 自身のメッセージは、ID を追加しても引き続き除外されます
+### 開発 & テスト
 
-- `language` は BCP-47 形式（`en`, `ja`, `zh-CN`, `pt-BR`, `ko`, `fr` など）
-- 用語集はサーバーごとに最大 50 件まで登録できます
-- `attribute` には「人名」「地名」「スラング」「略語」「専門用語」が候補表示され、任意の属性も自由入力できます。指定した属性は翻訳モデルが用語の意味を判断する文脈として使われます
-- 通常の用語は翻訳対象本文に `term` が大文字・小文字を無視して含まれる場合だけシステム指示に追加されます。`always_include:true` の用語は常に追加されます
-- `channel` オプションを省略すると、コマンドを実行したチャンネルが対象になります
-- 対応チャンネルタイプ: テキスト、ニュース、フォーラム、メディア。グループ内のチャンネルはすべて同じチャンネルタイプである必要があります。
-- フォーラム／メディアのタグ対応付けは `/join-channel` 成功時（タグ付きピアがある場合）または `/edit-forum-tags` で編集できます。「対応なし」を選んで保存するとその対応を解除します
-
-## テスト
-
+#### テストの実行
 ```sh
 go test ./...
 ```
 
-## ライセンス
+#### 多言語 UI カタログ (i18n)
+ユーザー向けのエラーメッセージや通知文言はすべて `internal/translatorbot/ui_strings.go` で一元管理されており、13 言語に対応しています。新しい文言を追加する場合はカタログの全言語分を定義し、網羅性テスト（`TestUIStringCatalogIsComplete`）でフォーマットの整合性を検証します。
 
-このプロジェクトのライセンスについては [LICENSE](LICENSE) ファイルを参照してください。
+---
+
+## 3. ライセンス
+
+本プロジェクトは [MIT License](LICENSE) のもとで公開されています。
