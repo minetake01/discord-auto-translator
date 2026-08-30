@@ -200,15 +200,15 @@ snapshot の画像添付は通常メッセージと同じく再アップロー�
 
 | ケース | 動作 |
 |---|---|
-| テキスト/ニュースチャンネルのメッセージから作成されたスレッド | ターゲットにも同じ親メッセージから `CreateThreadFromMessage` で作成。親メッセージリンクが未存在の場合は `THREAD_STARTER_MESSAGE` まで遅延 |
-| スタンドアロンスレッド（メッセージなし） | ターゲットに `ThreadStart` で作成 |
-| フォーラム/メディアポスト | タイトルと初期本文を1回の翻訳リクエストで翻訳して `ForumThreadStart` で作成。ソースの `applied_tags` は `forum_tag_maps` で対応付けたタグ ID に変換して付与する。未マップのタグは省略。宛先が `REQUIRE_TAG` でマップ結果が空のときはそのターゲット作成を失敗させる |
-| スレッド内メッセージ | ウェブフック実行時に `thread_id` を指定して対応スレッドへ投稿 |
+| テキスト/ニュースチャンネルのメッセージから作成されたスレッド | ターゲットにも同じ親メッセージから `CreateThreadFromMessage` で作成。親メッセージリンクが未存在の場合は翻訳せず `THREAD_STARTER_MESSAGE` まで遅延 |
+| スタンドアロンスレッド（メッセージなし） | ターゲットに `ThreadStart` で作成。Gateway の `THREAD_CREATE` 時点では作成せず、最初の本文で作成する |
+| フォーラム/メディアポスト | タイトルと初期本文を1回の翻訳リクエストで翻訳して `ForumThreadStart` で作成。ソースの `applied_tags` は `forum_tag_maps` で対応付けたタグ ID に変換して付与する。未マップのタグは省略。宛先が `REQUIRE_TAG` でマップ結果が空のときはそのターゲット作成を失敗させる。Gateway の `THREAD_CREATE` で初回本文がまだ無いときは翻訳せず遅延する |
+| スレッド内メッセージ | ウェブフック実行時に `thread_id` を指定して対応スレッドへ投稿。ミラー先スレッドへの投稿は既存 `thread_links` を逆向きに辿って元スレッドへ戻す。新規スレッドは作らない |
 | スレッド名変更 | 翻訳した名前で対象スレッドを `EditThread` |
 | フォーラムタグ変更 | `THREAD_UPDATE` の `applied_tags` 差分をマップして対象スレッドへ同期。マップ後の集合が既存と同一なら no-op |
 | スレッド削除 | 対象スレッドを `DeleteThread` し DB のリンクを削除 |
 
-スレッド作成処理は `sync.Mutex` でシリアライズされ、重複作成を防ぎます。スレッド作成時のタイトルと初期本文は構造化レスポンス（`name` / `message`）でまとめて翻訳し、投票がある場合だけ別リクエストにします。名前変更はタイトルのみの既存翻訳パスを使います。
+スレッド作成処理は `sync.Mutex` でシリアライズされ、重複作成を防ぎます。すでに `thread_links` の source または target として記録されているスレッドでは対向を新規作成しません。スレッド作成時のタイトルと初期本文は、作成が確定してから構造化レスポンス（`name` / `message`）でまとめて翻訳し、投票がある場合だけ別リクエストにします。名前変更はタイトルのみの既存翻訳パスを使います。
 
 ### 3.8 翻訳品質のための文脈収集
 
@@ -471,8 +471,8 @@ Discordゲートウェイ
         ├── MessageCreate
         │       ├── ボット/ウェブフック → スキップ
         │       ├── ThreadStarterMessage → ensureThreadSynced のみ
-        │       ├── ensureThreadSynced（スレッド内の初回メッセージ）
-        │       ├── handleThreadMessageCreate（スレッド内メッセージ）
+        │       ├── ensureThreadSynced（未リンクのスレッドだけ対向を作成）
+        │       ├── handleThreadMessageCreate（スレッド内メッセージ。ミラー先も逆向きに同期）
         │       └── 通常メッセージ → Translate → SendWebhook → SaveMessageLink
         │
         ├── MessageUpdate → Translate → EditWebhook

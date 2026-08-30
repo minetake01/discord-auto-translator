@@ -91,9 +91,31 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 	return createdWithInitialMessage, nil
 }
 
+type targetThreadAction int
+
+const (
+	targetThreadDefer targetThreadAction = iota
+	targetThreadFromMessage
+	targetThreadStandalone
+	targetThreadForum
+)
+
+type targetThreadPlan struct {
+	action        targetThreadAction
+	fromMessageID string
+}
+
 // createThreadForTarget translates the thread name and initial message in one
 // call for one target channel, creates the thread there, and records the links.
 func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel) (bool, error) {
+	plan, err := s.resolveTargetThreadPlan(ctx, source.GroupID, req, target)
+	if err != nil {
+		return false, err
+	}
+	if plan.action == targetThreadDefer {
+		return false, nil
+	}
+
 	languages := []string{target.Language}
 	contextFn := func() TranslationContext {
 		messageID := req.InitialMessageID
@@ -148,12 +170,12 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, true)
 	}
 
-	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds)
+	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds, plan)
 	if err != nil {
 		return false, err
 	}
 	if threadID == "" {
-		return false, nil
+		return false, fmt.Errorf("create target thread in %s: empty thread id", target.ChannelID)
 	}
 	err = s.store.SaveThreadLink(ctx, ThreadLink{
 		GroupID: source.GroupID, SourceThreadID: req.SourceThreadID, SourceChannelID: req.SourceChannelID,
@@ -187,12 +209,44 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 	return false, nil
 }
 
+func threadCreateHasInitialPayload(req threadCreateRequest) bool {
+	return strings.TrimSpace(req.InitialMessageText) != "" || req.InitialMessagePoll != nil || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0
+}
+
+// resolveTargetThreadPlan decides how to create the mirrored thread before any
+// translation. Gateway THREAD_CREATE defers when the parent message link is
+// missing or a forum/media post has no initial payload yet.
+func (s *Service) resolveTargetThreadPlan(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel) (targetThreadPlan, error) {
+	if isThreadOnlyChannelType(target.ChannelType) {
+		if req.DeferWithoutSourceMsg && !threadCreateHasInitialPayload(req) {
+			return targetThreadPlan{action: targetThreadDefer}, nil
+		}
+		return targetThreadPlan{action: targetThreadForum}, nil
+	}
+	if req.SourceMessageID != "" {
+		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
+		if err != nil {
+			return targetThreadPlan{}, err
+		}
+		for _, link := range links {
+			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
+				return targetThreadPlan{action: targetThreadFromMessage, fromMessageID: link.TargetMessageID}, nil
+			}
+		}
+		if req.DeferWithoutSourceMsg {
+			return targetThreadPlan{action: targetThreadDefer}, nil
+		}
+	}
+	return targetThreadPlan{action: targetThreadStandalone}, nil
+}
+
 // createTargetThread creates the mirrored thread in one target channel.
 // For forum/media targets the thread starts with the translated initial
 // message. For text/news targets it is attached to the mirrored source
-// message when one exists, or deferred when DeferWithoutSourceMsg is set.
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed) (string, string, error) {
-	if isThreadOnlyChannelType(target.ChannelType) {
+// message when one exists.
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed, plan targetThreadPlan) (string, string, error) {
+	switch plan.action {
+	case targetThreadForum:
 		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
 		if err != nil {
 			return "", "", err
@@ -204,9 +258,6 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		}
 		files := webhookFilesForImages(loaded, nil)
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
-			if req.DeferWithoutSourceMsg {
-				return "", "", nil
-			}
 			content = name
 		}
 		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
@@ -214,24 +265,15 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 			return "", "", err
 		}
 		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags, files)
+	case targetThreadFromMessage:
+		threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, plan.fromMessageID, name)
+		return threadID, "", err
+	case targetThreadStandalone:
+		threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
+		return threadID, "", err
+	default:
+		return "", "", fmt.Errorf("unhandled target thread action %d", plan.action)
 	}
-	if req.SourceMessageID != "" {
-		links, err := s.store.MessagePeers(ctx, req.SourceChannelID, req.SourceMessageID)
-		if err != nil {
-			return "", "", err
-		}
-		for _, link := range links {
-			if link.GroupID == groupID && link.TargetChannelID == target.ChannelID {
-				threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, link.TargetMessageID, name)
-				return threadID, "", err
-			}
-		}
-		if req.DeferWithoutSourceMsg {
-			return "", "", nil
-		}
-	}
-	threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
-	return threadID, "", err
 }
 
 func (s *Service) mappedAppliedTagsForTarget(ctx context.Context, guildID, groupID, sourceChannelID string, target GroupChannel, sourceApplied []string) ([]string, error) {
@@ -276,13 +318,14 @@ func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, paren
 }
 
 // ensureThreadSynced creates peer threads for a message that arrives inside
-// a not-yet-synced thread. Returns whether the thread was created together
-// with this message as its initial message.
+// a not-yet-synced thread. Threads already stored as a source or a target
+// are left to message mirroring. Returns whether the thread was created
+// together with this message as its initial message.
 func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (bool, error) {
 	if m.ParentChannelID == "" || m.ThreadName == "" {
 		return false, nil
 	}
-	if existing, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err != nil {
+	if existing, err := s.store.ThreadTargets(ctx, m.ChannelID); err != nil {
 		return false, err
 	} else if len(existing) > 0 {
 		return false, nil

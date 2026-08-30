@@ -115,7 +115,8 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 
 	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000006", "topic", nil); err != nil {
@@ -123,6 +124,9 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	}
 	if len(discord.threads) != 0 {
 		t.Fatalf("thread should wait for source message link: %#v", discord.threads)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("deferred gateway create must not translate: %#v", translator.contexts)
 	}
 
 	if err := store.SaveMessageLink(ctx, MessageLink{
@@ -183,11 +187,15 @@ func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
-	service := NewService(store, discord, &echoTranslator{})
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 
 	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
 		t.Fatal(err)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("deferred gateway create must not translate: %#v", translator.contexts)
 	}
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
 		ID: "100000000000000021", ChannelID: "100000000000000005", GuildID: "guild", ParentChannelID: "ja", ThreadName: "topic",
@@ -202,6 +210,46 @@ func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing
 	}
 	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
 		t.Fatalf("sent messages: %#v", discord.sent)
+	}
+	if len(translator.contexts) != 2 {
+		t.Fatalf("expected one thread-create translation and one message translation: %#v", translator.contexts)
+	}
+}
+
+func TestMessageInMirroredThreadDoesNotCreateReverseThread(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	if err := service.SyncThreadCreate(ctx, "guild", "ja", "100000000000000005", "topic", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.threads) != 1 {
+		t.Fatalf("threads: %#v", discord.threads)
+	}
+	createCalls := len(translator.contexts)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000030", ChannelID: "thread-1", GuildID: "guild", ParentChannelID: "en", ThreadName: "topic",
+		AuthorID: "u", AuthorDisplayName: "u", Content: "target reply",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.threads) != 1 {
+		t.Fatalf("posting in the mirrored thread created another thread: %#v", discord.threads)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if got := discord.sent[0]; got.ThreadID != "100000000000000005" || got.Content != "[ja] target reply" {
+		t.Fatalf("unexpected reverse mirror: %#v", got)
+	}
+	if len(translator.contexts) != createCalls+1 {
+		t.Fatalf("expected one message translation after create, got %#v", translator.contexts)
 	}
 }
 
@@ -278,6 +326,34 @@ func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
 	}
 	if got := discord.threads[0]; got.channelID != "en" || got.channelType != int(discordgo.ChannelTypeGuildForum) || got.name != "[en] 議題" || got.content != "[en] 議題" {
 		t.Fatalf("unexpected forum thread sync: %#v", got)
+	}
+}
+
+func TestGatewayForumThreadCreateDefersTranslationUntilInitialMessage(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.JoinChannel(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", ChannelType: int(discordgo.ChannelTypeGuildForum), Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.SyncThreadCreateFromGateway(ctx, "guild", "ja", "100000000000000007", "議題", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.threads) != 0 {
+		t.Fatalf("forum gateway create should wait for the initial message: %#v", discord.threads)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("deferred forum gateway create must not translate: %#v", translator.contexts)
 	}
 }
 
