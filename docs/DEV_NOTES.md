@@ -193,7 +193,7 @@ translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
           メッセージAの翻訳がない場合 → DEFER（THREAD_STARTER_MESSAGE イベントまで待機）
 ```
 
-`DeferWithoutSourceMsg = true` のとき、`createTargetThread` は空文字列を返してスキップし、後続の `THREAD_STARTER_MESSAGE` イベントで `ensureThreadSynced` が再試行します。
+`DeferWithoutSourceMsg = true` のとき、親メッセージリンクが無い（またはフォーラム/メディアの初回本文がまだ無い）ターゲットは翻訳も作成もせずスキップし、後続の `THREAD_STARTER_MESSAGE` または最初の本文で `ensureThreadSynced` が再試行します。
 
 ### ミューテックスによる直列化
 
