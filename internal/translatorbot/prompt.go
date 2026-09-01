@@ -126,6 +126,10 @@ func translationPromptCacheKey(translationContext TranslationContext, kind strin
 	return location + ":" + kind
 }
 
+// buildTranslationSystemInstruction keeps Discord-editable text out of system
+// authority. Server names, topics, history, and message bodies belong in the
+// user XML; moving them into the system instruction would treat untrusted
+// content as rules.
 func buildTranslationSystemInstruction(taskIntro, sourceLabel string) string {
 	var b strings.Builder
 	b.WriteString(taskIntro)

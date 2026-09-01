@@ -36,7 +36,7 @@ func TestCurrentUserIDUsesRESTBeforeGatewayOpen(t *testing.T) {
 	}
 }
 
-// DEV_NOTES 8: Discord forbids webhook names containing "discord".
+// Discord forbids webhook names containing "discord".
 func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
 	got := sanitizeWebhookName("Discord Auto Translator")
 	if got == "" {
@@ -47,7 +47,7 @@ func TestSanitizeWebhookNameAvoidsDiscordReservedWord(t *testing.T) {
 	}
 }
 
-// DEV_NOTES 8: blank names fall back to a non-empty safe webhook name.
+// Blank names fall back to a non-empty safe webhook name.
 func TestSanitizeWebhookNameUsesFallbackForBlankNames(t *testing.T) {
 	got := sanitizeWebhookName("   ")
 	if got == "" {

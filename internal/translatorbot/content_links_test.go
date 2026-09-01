@@ -1,4 +1,4 @@
-// SPEC 3.10: Discord link and mention rewriting.
+// Discord link and mention rewriting.
 package translatorbot
 
 import (

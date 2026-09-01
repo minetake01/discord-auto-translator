@@ -1,7 +1,5 @@
 package translatorbot
 
-// SPEC 3.2 message mirroring
-
 import (
 	"context"
 	"errors"
@@ -12,7 +10,6 @@ import (
 	"testing"
 )
 
-// SPEC 3.2 message mirroring
 func TestMessageSourceAllowlistAppliesToCreateAndUpdate(t *testing.T) {
 	const botID = "123456789012345678"
 	const webhookID = "234567890123456789"
@@ -78,7 +75,6 @@ func TestMessageSourceAllowlistAppliesToCreateAndUpdate(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageSourcePolicyAlwaysExcludesSelfAndManagedWebhooks(t *testing.T) {
 	ctx := context.Background()
 	const selfID = "123456789012345678"
@@ -127,7 +123,6 @@ func TestMessageSourcePolicyAlwaysExcludesSelfAndManagedWebhooks(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageSourcePolicyFailsClosedOnDatabaseErrors(t *testing.T) {
 	ctx := context.Background()
 	for _, operation := range []string{"create", "update"} {
@@ -170,7 +165,6 @@ func TestMessageSourcePolicyFailsClosedOnDatabaseErrors(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMirroredMessageBodyStripsGeneratedHeaders(t *testing.T) {
 	input := "-# Forwarded · https://discord.com/channels/g/c/m\n> quote · [Source](https://discord.com/channels/g/c/q)\n\nbody\nsecond"
 	if got, want := mirroredMessageBody(input), "body\nsecond"; got != want {
@@ -178,7 +172,6 @@ func TestMirroredMessageBodyStripsGeneratedHeaders(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -206,7 +199,6 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsFailedImageFetchWithoutNotice(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -238,7 +230,6 @@ func TestHandleMessageCreateSkipsFailedImageFetchWithoutNotice(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateTranslatesExistingImageAltText(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -260,7 +251,6 @@ func TestHandleMessageCreateTranslatesExistingImageAltText(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -288,7 +278,6 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateTranslatesImageOnlyExistingAltText(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -314,7 +303,6 @@ func TestHandleMessageCreateTranslatesImageOnlyExistingAltText(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsEmptyMessageWithoutPoll(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -331,7 +319,6 @@ func TestHandleMessageCreateSkipsEmptyMessageWithoutPoll(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndRewritesHreflang(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -360,7 +347,6 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndRewritesHreflang
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsTranslationForStickerOnly(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -382,7 +368,6 @@ func TestHandleMessageCreateSkipsTranslationForStickerOnly(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateTranslatesMarkdownLinkLabel(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -402,7 +387,6 @@ func TestHandleMessageCreateTranslatesMarkdownLinkLabel(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageContentAppendsUnsignedBareURLsForAllAttachments(t *testing.T) {
 	content, err := messageContentWithAssetURLs("translated", []DiscordAttachment{
 		{URL: "https://cdn.discordapp.com/attachments/1/2/image.png?ex=1&is=2&hm=3", ContentType: "image/png"},
@@ -417,7 +401,6 @@ func TestMessageContentAppendsUnsignedBareURLsForAllAttachments(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageContentRejectsInvalidAttachmentURL(t *testing.T) {
 	_, err := messageContentWithAssetURLs("", []DiscordAttachment{{URL: "javascript:alert(1)", Filename: "bad"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "invalid HTTP URL") {
@@ -425,7 +408,6 @@ func TestMessageContentRejectsInvalidAttachmentURL(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageContentRejectsDiscordContentLimit(t *testing.T) {
 	_, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.zip", ContentType: "application/zip"}}, nil)
 	if err == nil || !strings.Contains(err.Error(), "Discord limit") {
@@ -433,7 +415,6 @@ func TestMessageContentRejectsDiscordContentLimit(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -473,7 +454,6 @@ func TestHandleMessageUpdateInThreadPassesThreadIDToWebhookEdit(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateKeepsHreflangRewrite(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -508,7 +488,6 @@ func TestHandleMessageUpdateKeepsHreflangRewrite(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -550,7 +529,6 @@ func TestHandleMessageUpdateSkipsTranslationForURLOnlyContent(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -587,7 +565,6 @@ func TestHandleMessageDeleteInThreadPassesThreadIDToWebhookDelete(t *testing.T) 
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsThreadSystemMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -607,7 +584,6 @@ func TestHandleMessageCreateSkipsThreadSystemMessage(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -634,7 +610,6 @@ func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateDuplicateDelivery(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -656,7 +631,6 @@ func TestHandleMessageCreateDuplicateDelivery(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -686,7 +660,6 @@ func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -719,7 +692,6 @@ func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -775,7 +747,6 @@ func noticeReplyIDs(calls []channelMessageCall) []string {
 	return ids
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -839,7 +810,6 @@ func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testin
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateKeepsPerMessageNoticesForNonProviderFailures(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
@@ -862,7 +832,6 @@ func TestHandleMessageCreateKeepsPerMessageNoticesForNonProviderFailures(t *test
 
 const rateLimitOversizeContent = "this message should exceed the tiny rate limit"
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -930,7 +899,6 @@ func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) 
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -956,7 +924,6 @@ func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -998,7 +965,6 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1037,7 +1003,6 @@ func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateForwardsTTS(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1056,7 +1021,6 @@ func TestHandleMessageCreateForwardsTTS(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageContentUsesStickerCDNWithoutDownload(t *testing.T) {
 	content, err := messageContentWithAssetURLs("", nil, []DiscordSticker{{ID: "9", Name: "wave", FormatType: stickerFormatPNG}})
 	if err != nil {
@@ -1067,7 +1031,6 @@ func TestMessageContentUsesStickerCDNWithoutDownload(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestMessageContentUsesLottiePNGCDN(t *testing.T) {
 	content, err := messageContentWithAssetURLs("", nil, []DiscordSticker{{ID: "lottie-1", Name: "wave", FormatType: stickerFormatLottie}})
 	if err != nil {
@@ -1078,7 +1041,6 @@ func TestMessageContentUsesLottiePNGCDN(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 message mirroring
 func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

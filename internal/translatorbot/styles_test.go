@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// SPEC 3.1: custom overrides preset; default/casual-family presets use native chat
+// Custom overrides preset; default/casual-family presets use native chat
 // phrasing; formal/literal do not; unknown presets are rejected.
 func TestResolveStyleInstructions(t *testing.T) {
 	custom := "短くカジュアルに"
@@ -50,7 +50,7 @@ func TestResolveStyleInstructions(t *testing.T) {
 	}
 }
 
-// SPEC 3.1: custom style instructions are bounded (non-empty, max 200 runes).
+// Custom style instructions are bounded (non-empty, max 200 runes).
 func TestValidateStyleCustom(t *testing.T) {
 	if err := ValidateStyleCustom(""); err == nil {
 		t.Fatal("expected error for empty custom")

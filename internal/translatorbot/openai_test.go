@@ -1,4 +1,4 @@
-// SPEC 3.13: OpenAI-compatible Chat Completions translation API client.
+// OpenAI-compatible Chat Completions translation API client.
 package translatorbot
 
 import (
