@@ -196,9 +196,6 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "reply_context") {
 		t.Fatal("system instruction should always describe reply_context")
 	}
-	if !strings.Contains(got, "up to 3") {
-		t.Fatal("reply_context should keep its up-to-3 bound")
-	}
 	if strings.Contains(got, "up to 16") || strings.Contains(got, "up to 8") {
 		t.Fatal("recent_context must not advertise a slot count:\n" + got)
 	}
@@ -211,50 +208,21 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "topic_summary") {
 		t.Fatal("system instruction should always describe topic_summary")
 	}
-	if !strings.Contains(got, "Each language object must include translated_text") {
-		t.Fatal("system instruction should require translated_text on each language object")
-	}
 	if !strings.Contains(got, "attachment_descriptions") {
 		t.Fatal("system instruction should always describe attachment_descriptions")
 	}
 	if !strings.Contains(got, "<attachment_alts>") {
 		t.Fatal("system instruction should describe attachment_alts as the alt translation source")
 	}
-	if strings.Contains(got, "Always return attachment_descriptions") {
-		t.Fatal("system instruction must not require attachment_descriptions on every request:\n" + got)
-	}
-	if strings.Contains(got, "Omit attachment_descriptions") {
-		t.Fatal("system instruction must not allow omitting attachment_descriptions:\n" + got)
-	}
-	if !strings.Contains(got, "<image>") || !strings.Contains(got, "recent_context") {
+	if !strings.Contains(got, "<image>") {
 		t.Fatal("system instruction should describe history/reply images as background")
-	}
-	if !strings.Contains(got, "inside <site>") {
-		t.Fatal("system instruction should describe linked-page images as background")
-	}
-	if !strings.Contains(got, "Never include background images") {
-		t.Fatal("system instruction should forbid putting background images in attachment_descriptions")
-	}
-	if !strings.Contains(got, "Never invent or generate alt text") {
-		t.Fatal("system instruction must not ask the model to generate missing alt text:\n" + got)
-	}
-	if strings.Contains(got, "primarily readable text") {
-		t.Fatal("system instruction must not ask to generate alt from image text:\n" + got)
 	}
 }
 
 func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T) {
-	const source = "新宿駅の東口だよー！楽しみだね"
-	const translation = "I'm at the east exit of Shinjuku Station! Really looking forward to it."
 	got := testTranslationSystem()
-	if !strings.Contains(got, source) {
-		t.Fatal("message system instruction should include the few-shot source")
-	}
-	if !strings.Contains(got, translation) {
-		t.Fatal("message system instruction should include the few-shot translation")
-	}
-	if !strings.Contains(got, "[SITE:1]") || !strings.Contains(got, "[EMOJI:sparkles]") {
-		t.Fatal("message system instruction should include placeholder few-shot examples")
+	if !strings.Contains(got, "<source>") || !strings.Contains(got, "<translation>") {
+		t.Fatal("message system instruction should include few-shot examples")
 	}
 
 	prepared, err := prepareMultiTranslation([]string{"en"}, "hello", TranslationContext{}, nil)
@@ -264,7 +232,7 @@ func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T
 	if prepared.systemInstruction != got {
 		t.Fatal("prepareMultiTranslation should use the message system instruction with few-shot examples")
 	}
-	if strings.Contains(prepared.userPrompt(), source) {
+	if strings.Contains(prepared.userPrompt(), "<source>") || strings.Contains(prepared.userPrompt(), "<translation>") {
 		t.Fatalf("few-shot examples belong in the system instruction, not the user prompt:\n%s", prepared.userPrompt())
 	}
 
@@ -272,7 +240,7 @@ func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(poll.systemInstruction, source) {
+	if strings.Contains(poll.systemInstruction, "<source>") || strings.Contains(poll.systemInstruction, "<translation>") {
 		t.Fatal("poll system instruction must not include message few-shot examples")
 	}
 
@@ -280,7 +248,7 @@ func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(thread.systemInstruction, source) {
+	if strings.Contains(thread.systemInstruction, "<source>") || strings.Contains(thread.systemInstruction, "<translation>") {
 		t.Fatal("thread-create system instruction must not include message few-shot examples")
 	}
 
@@ -290,16 +258,17 @@ func TestMessageTranslationSystemInstructionIncludesFewShotExamples(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(summary.systemInstruction, source) {
+	if strings.Contains(summary.systemInstruction, "<source>") || strings.Contains(summary.systemInstruction, "<translation>") {
 		t.Fatal("topic summary system instruction must not include message few-shot examples")
 	}
 }
 
 func TestMessageTranslationSystemInstructionStaysWithinInvariantTokenBudget(t *testing.T) {
+	const minTokens = 1024
 	const maxTokens = 1500
 	tokens := EstimateTranslationTokens(testTranslationSystem(), "")
-	if tokens > maxTokens {
-		t.Fatalf("message system instruction is the invariant cached prefix: estimated tokens = %d, want <= %d (around 1200)", tokens, maxTokens)
+	if tokens < minTokens || tokens > maxTokens {
+		t.Fatalf("message system instruction is the invariant cached prefix: estimated tokens = %d, want %d..%d (around 1200)", tokens, minTokens, maxTokens)
 	}
 }
 

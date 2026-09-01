@@ -261,7 +261,7 @@ PATCH /webhooks/{webhook.id}/{webhook.token}/messages/{message.id}?thread_id={th
 - 履歴・リプライの `<message>` は `author`（表示名）と原文、任意の `<image>`。`lang` 属性は付けません。
 - `<final_message>` はメッセージ翻訳時に `author` 属性へ投稿者表示名を付与します（スレッド名など author が無い場合は省略）。
 - システムインストラクションはコンテンツを「信頼できない」として扱うよう明示的に指示しています。history / topic_summary / reply / site / style / glossary の適用方法は常に入れ、用語の実データは system に置きません。`always_include` glossary は安定ユーザーパート、本文マッチ glossary は可変ユーザーパートへ出します。
-- メッセージ翻訳の system 末尾に固定の日英 Few-shot を置きます（ユーザー XML や用語データではない）。英語は見本の訳先であり、`<target_languages>` の各言語でも同じネイティブのチャット自然さを使います。投票・スレッド作成・話題要約の system には含めません。メッセージ翻訳の system（不変領域）は推定 1200 トークン前後、上限 1500 で、system ブレークポイントだけでキャッシュ下限 1024 を超えます。
+- メッセージ翻訳の system 末尾に固定の日英 Few-shot を置きます（ユーザー XML や用語データではない）。短文リアクション、プレースホルダの文字どおり保持、ネット口語の見本を含みます。英語は見本の訳先であり、`<target_languages>` の各言語でも同じネイティブのチャット自然さを使います。投票・スレッド作成・話題要約の system には含めません。メッセージ翻訳の system（不変領域）は推定 1200 トークン前後、上限 1500 で、system ブレークポイントだけでキャッシュ下限 1024 を超えます。
 - メッセージ翻訳の JSON Schema は、翻訳対象の既存 alt があるときだけ各言語オブジェクトで `attachment_descriptions` を required にし、`minItems`/`maxItems` でその件数に固定します。無いときはフィールド自体を出しません。余剰要素は適用しません。ルートのキーはリクエストの target languages です。system は投票・スレッド作成と同様、各言語オブジェクトが `translated_text` を含むこと、`<attachment_alts>` があるときだけ `attachment_descriptions` も含むことを指示します。投票の回答数は schema にも system にも書きません。system に alt の件数は書きません。
 - Chat Completions リクエストは会話ロケーションの `prompt_cache_key` を付けます（投票・スレッド作成は kind 付き。世代や要約では分けない）。system・安定ユーザー・履歴ユーザーの各テキストパートに `prompt_cache_breakpoint` を置き、`prompt_cache_options.mode=explicit` を送ります。TTL は送らず、キャッシュ寿命はプロバイダーの自動キャッシュに任せます。
 - temperatureはリクエストから省略し、プロバイダー既定値を使用します。`reasoning_effort` は `OPENAI_REASONING_EFFORT` 未設定時は省略します。`max_tokens` はアプリケーション上限として `4096` 固定です。
