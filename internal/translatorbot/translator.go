@@ -190,19 +190,19 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	protected := p.Protect(content)
 	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
 	protectedAlts := make([]string, len(attachments))
-	glossaryContent := content
+	glossaryParts := []string{content}
 	altCount := 0
 	for i, attachment := range attachments {
 		if !hasTranslatableText(attachment.Description) {
 			continue
 		}
 		protectedAlts[i] = p.Protect(attachment.Description)
-		glossaryContent += "\n" + protectedAlts[i]
+		glossaryParts = append(glossaryParts, protectedAlts[i])
 		altCount++
 	}
 	translationContext.Attachments = attachments
 	assignSiteContext(p, &translationContext)
-	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
+	alwaysGlossary, matchedGlossary := splitGlossaryEntries(strings.Join(glossaryParts, "\n"), glossary)
 	prepared := preparedTranslation{
 		targetLanguages:    normalized,
 		systemInstruction:  buildMessageTranslationSystemInstruction(),
@@ -345,10 +345,7 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 		protectedAnswers[i] = p.Protect(answer)
 	}
 	assignSiteContext(p, &translationContext)
-	glossaryContent := question
-	for _, answer := range answers {
-		glossaryContent += "\n" + answer
-	}
+	glossaryContent := strings.Join(append([]string{question}, answers...), "\n")
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
 	prepared := preparedTranslation{
 		targetLanguages:    normalized,

@@ -991,7 +991,7 @@ func TestGlossaryCRUDAndLimit(t *testing.T) {
 	if len(entries) != 1 || entries[0].PreferredTranslation != "Updated" || entries[0].Attribute != "自由入力の属性" || entries[0].AlwaysInclude {
 		t.Fatalf("expected upsert overwrite, got %#v", entries)
 	}
-	for i := 0; i < glossaryMaxEntries-1; i++ {
+	for i := range glossaryMaxEntries - 1 {
 		if err := s.UpsertGlossaryEntry(ctx, "g1", fmt.Sprintf("term%d", i), "value", "", "u", false); err != nil {
 			t.Fatal(err)
 		}

@@ -392,7 +392,7 @@ func TestMergeConsecutiveMessagesStopsAtCombinedLength(t *testing.T) {
 func TestMergeConsecutiveMessagesStopsAtCountLimit(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, mergeMaxCount+1)
-	for i := 0; i < mergeMaxCount+1; i++ {
+	for i := range mergeMaxCount + 1 {
 		links = append(links, historyLink(now.Add(time.Duration(-mergeMaxCount+i)*time.Minute), uint64(i+1), "Alice", "msg"))
 	}
 	got := mergedHistory(links)
@@ -452,7 +452,7 @@ func historySlotTimes(history []ChatContextMessage) (oldest, newest time.Time) {
 func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, 17)
-	for i := 0; i < 17; i++ {
+	for i := range 17 {
 		links = append(links, historyLink(now.Add(time.Duration(i)*30*time.Second), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
 	}
 	current := snowflakeForTime(now.Add(17*30*time.Second), 99)
@@ -475,7 +475,7 @@ func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 func TestSelectRecentHistoryCompressesSpanOverflow(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, 12)
-	for i := 0; i < 12; i++ {
+	for i := range 12 {
 		links = append(links, historyLink(now.Add(time.Duration(i)*3*time.Minute), uint64(i+1), fmt.Sprintf("user-%d", i), "msg"))
 	}
 	current := snowflakeForTime(now.Add(12*3*time.Minute), 99)
@@ -907,7 +907,7 @@ func TestHandleMessageCreateReservesVisionSlotsForCurrentAttachments(t *testing.
 func seedCountOverflowHistory(t *testing.T, store *Store, now time.Time) {
 	t.Helper()
 	ctx := context.Background()
-	for i := 0; i < 17; i++ {
+	for i := range 17 {
 		if err := store.SaveMessageLink(ctx, MessageLink{
 			SourceMessageID:         snowflakeForTime(now.Add(time.Duration(i)*30*time.Second), uint64(i+1)),
 			SourceChannelID:         "ja",

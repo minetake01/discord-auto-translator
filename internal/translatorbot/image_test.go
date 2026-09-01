@@ -16,8 +16,8 @@ import (
 func largeTestJPEG(t *testing.T, width, height int) []byte {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for y := 0; y < height; y++ {
-		for x := 0; x < width; x++ {
+	for y := range height {
+		for x := range width {
 			img.Set(x, y, color.RGBA{R: uint8(x), G: uint8(y), B: 80, A: 255})
 		}
 	}

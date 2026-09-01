@@ -4,6 +4,7 @@ import (
 	"context"
 	"html"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -238,9 +239,7 @@ func cloneURLPageInfo(info urlPageInfo) urlPageInfo {
 	out := info
 	if info.Hreflangs != nil {
 		out.Hreflangs = make(map[string]string, len(info.Hreflangs))
-		for k, v := range info.Hreflangs {
-			out.Hreflangs[k] = v
-		}
+		maps.Copy(out.Hreflangs, info.Hreflangs)
 	}
 	return out
 }

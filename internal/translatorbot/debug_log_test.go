@@ -87,12 +87,12 @@ func TestDebugLogKeepsConcurrentEntriesIntact(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
-		go func(index int) {
+		go func() {
 			defer wg.Done()
-			debugLog.writeEntry(map[string]int{"index": index})
-		}(i)
+			debugLog.writeEntry(map[string]int{"index": i})
+		}()
 	}
 	wg.Wait()
 	if err := debugLog.Close(); err != nil {

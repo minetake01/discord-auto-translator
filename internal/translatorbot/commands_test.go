@@ -288,7 +288,7 @@ func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
-	for n := 0; n < glossaryMaxEntries; n++ {
+	for n := range glossaryMaxEntries {
 		term := fmt.Sprintf("term-%02d", n)
 		if err := store.UpsertGlossaryEntry(ctx, "g1", term, strings.Repeat("訳", 100), "専門用語", "u1", false); err != nil {
 			t.Fatal(err)

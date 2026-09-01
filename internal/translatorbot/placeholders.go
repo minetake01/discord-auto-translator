@@ -88,8 +88,8 @@ func (p *Protector) tokenFor(match string) string {
 
 	case strings.HasPrefix(match, "</"):
 		rest := match[2 : len(match)-1]
-		if idx := strings.Index(rest, ":"); idx >= 0 {
-			return p.nextToken("CMD", sanitizeLabel(rest[:idx]))
+		if name, _, ok := strings.Cut(rest, ":"); ok {
+			return p.nextToken("CMD", sanitizeLabel(name))
 		}
 		return p.nextToken("CMD", "")
 
@@ -172,10 +172,11 @@ func emojiName(match string) string {
 	default:
 		return ""
 	}
-	if idx := strings.Index(inner, ":"); idx >= 0 {
-		return inner[:idx]
+	name, _, ok := strings.Cut(inner, ":")
+	if !ok {
+		return ""
 	}
-	return ""
+	return name
 }
 
 func sanitizeLabel(s string) string {

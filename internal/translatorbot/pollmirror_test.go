@@ -171,7 +171,7 @@ func TestWithPollStartedHeader(t *testing.T) {
 	if got := withPollStartedHeader(body, "ja", guildID, channelID, messageID, false); got != body {
 		t.Fatalf("without poll = %q", got)
 	}
-	headerLine := strings.SplitN(got, "\n", 2)[0]
+	headerLine, _, _ := strings.Cut(got, "\n")
 	if !isPseudoReplyLine(headerLine) {
 		t.Fatalf("poll header should be recognized as a pseudo-reply line: %q", headerLine)
 	}

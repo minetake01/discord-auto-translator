@@ -243,25 +243,35 @@ func (s *Store) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *Store) ensureColumn(ctx context.Context, table, column, declaration string) error {
+func (s *Store) tableColumnTypes(ctx context.Context, table string) (map[string]string, error) {
 	rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer rows.Close()
+	found := make(map[string]string)
 	for rows.Next() {
 		var cid, notNull, primaryKey int
 		var name, declaredType string
 		var defaultValue any
 		if err := rows.Scan(&cid, &name, &declaredType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return err
+			return nil, err
 		}
-		if name == column {
-			return nil
-		}
+		found[name] = strings.ToUpper(declaredType)
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+func (s *Store) ensureColumn(ctx context.Context, table, column, declaration string) error {
+	types, err := s.tableColumnTypes(ctx, table)
+	if err != nil {
 		return err
+	}
+	if _, ok := types[column]; ok {
+		return nil
 	}
 	_, err = s.db.ExecContext(ctx, `ALTER TABLE `+table+` ADD COLUMN `+column+` `+declaration)
 	return err
@@ -278,24 +288,8 @@ func (s *Store) validateOptimizedSchema(ctx context.Context) error {
 		"topic_summaries":        {"created_at": "INTEGER"},
 	}
 	for table, columns := range required {
-		rows, err := s.db.QueryContext(ctx, `PRAGMA table_info(`+table+`)`)
+		found, err := s.tableColumnTypes(ctx, table)
 		if err != nil {
-			return err
-		}
-		found := make(map[string]string, len(columns))
-		for rows.Next() {
-			var cid, notNull, primaryKey int
-			var name, declaredType string
-			var defaultValue any
-			if err := rows.Scan(&cid, &name, &declaredType, &notNull, &defaultValue, &primaryKey); err != nil {
-				_ = rows.Close()
-				return err
-			}
-			if _, ok := columns[name]; ok {
-				found[name] = strings.ToUpper(declaredType)
-			}
-		}
-		if err := rows.Close(); err != nil {
 			return err
 		}
 		for column, want := range columns {
