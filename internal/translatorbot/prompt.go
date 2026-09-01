@@ -77,10 +77,22 @@ func writeXMLAttributeValue(b *strings.Builder, text string) {
 	}
 }
 
+func writeXMLOpen(b *strings.Builder, name string) {
+	b.WriteByte('<')
+	b.WriteString(name)
+	b.WriteByte('>')
+}
+
+func writeXMLClose(b *strings.Builder, name string) {
+	b.WriteString("</")
+	b.WriteString(name)
+	b.WriteByte('>')
+}
+
 func writeXMLElement(b *strings.Builder, name, text string) {
-	fmt.Fprintf(b, "<%s>", name)
+	writeXMLOpen(b, name)
 	writeXMLText(b, text)
-	fmt.Fprintf(b, "</%s>", name)
+	writeXMLClose(b, name)
 }
 
 func splitGlossaryEntries(content string, glossary []GlossaryEntry) (always, matched []GlossaryEntry) {
@@ -159,11 +171,11 @@ func buildMessageTranslationSystemInstruction() string {
 }
 
 func writeContextSection(b *strings.Builder, section string, messages []ChatContextMessage) {
-	b.WriteString("<" + section + ">")
+	writeXMLOpen(b, section)
 	for _, h := range messages {
 		writeContextMessage(b, h)
 	}
-	b.WriteString("</" + section + ">")
+	writeXMLClose(b, section)
 }
 
 func writeAttachmentContext(b *strings.Builder, attachments []TranslationAttachment) {
@@ -232,15 +244,16 @@ func writeContextMessage(b *strings.Builder, msg ChatContextMessage) {
 }
 
 func writeAttributedElement(b *strings.Builder, tag, author, content string) {
-	b.WriteString("<" + tag)
+	b.WriteByte('<')
+	b.WriteString(tag)
 	if strings.TrimSpace(author) != "" {
 		b.WriteString(` author="`)
 		writeXMLAttributeValue(b, author)
 		b.WriteString(`"`)
 	}
-	b.WriteString(">")
+	b.WriteByte('>')
 	writeXMLText(b, content)
-	b.WriteString("</" + tag + ">")
+	writeXMLClose(b, tag)
 }
 
 func buildTranslationUserPromptParts(targetLanguages []string, translationContext TranslationContext, alwaysGlossary, matchedGlossary []GlossaryEntry, writeSource func(*strings.Builder)) (stable, history, variable string) {

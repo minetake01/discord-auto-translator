@@ -129,7 +129,7 @@ func TestProtectorOpaqueSiteIgnoresMessyTitle(t *testing.T) {
 func TestProtectorRestorePrefersLongerSiteTokens(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	var b strings.Builder
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if i > 0 {
 			b.WriteByte(' ')
 		}

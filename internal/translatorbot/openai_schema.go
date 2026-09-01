@@ -3,6 +3,7 @@ package translatorbot
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 )
 
 func openaiObjectSchema(required []string, properties map[string]any) map[string]any {
@@ -18,10 +19,8 @@ func requireSchemaLanguages(targetLanguages []string) error {
 	if len(targetLanguages) == 0 {
 		return errors.New("translation JSON schema requires target languages")
 	}
-	for _, lang := range targetLanguages {
-		if lang == "" {
-			return errors.New("translation JSON schema has an empty language")
-		}
+	if slices.Contains(targetLanguages, "") {
+		return errors.New("translation JSON schema has an empty language")
 	}
 	return nil
 }

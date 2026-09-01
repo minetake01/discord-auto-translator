@@ -31,7 +31,7 @@ func readDotEnvValue(path, key string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	for _, rawLine := range strings.Split(string(data), "\n") {
+	for rawLine := range strings.SplitSeq(string(data), "\n") {
 		line := strings.TrimSpace(rawLine)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

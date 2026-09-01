@@ -68,9 +68,9 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 	case "add-glossary":
 		h.handleAddGlossary(s, i, data)
 	case "list-groups":
-		h.handleListGroups(s, i, data)
+		h.handleListGroups(s, i)
 	case "list-glossary":
-		h.handleListGlossary(s, i, data)
+		h.handleListGlossary(s, i)
 	case "remove-glossary":
 		h.handleRemoveGlossary(s, i, data)
 	case "set-style":
@@ -328,7 +328,7 @@ func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.Inte
 	}
 }
 
-func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	ctx := context.Background()
 	groups, err := h.store.Groups(ctx, i.GuildID, "", 100)
 	if err != nil {
@@ -418,7 +418,7 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 	h.reply(s, i, uiKeyGlossaryAdded, strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode)
 }
 
-func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	ctx := context.Background()
 	lang := commandLocale(i)
 	entries, err := h.store.ListGlossaryEntries(ctx, i.GuildID)

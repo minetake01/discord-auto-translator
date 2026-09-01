@@ -103,7 +103,7 @@ func printPromptSection(name, body string) {
 		fmt.Printf("  (empty)\n")
 		return
 	}
-	for _, line := range strings.Split(body, "\n") {
+	for line := range strings.SplitSeq(body, "\n") {
 		fmt.Printf("  %s\n", line)
 	}
 }

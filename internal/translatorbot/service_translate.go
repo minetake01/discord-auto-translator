@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -147,15 +148,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 
 func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question string, answers []string, languages []string, contextFn func() TranslationContext) (map[string]PollTranslation, error) {
 	translations := make(map[string]PollTranslation, len(languages))
-	needsTranslation := hasTranslatableText(question)
-	if !needsTranslation {
-		for _, answer := range answers {
-			if hasTranslatableText(answer) {
-				needsTranslation = true
-				break
-			}
-		}
-	}
+	needsTranslation := hasTranslatableText(question) || slices.ContainsFunc(answers, hasTranslatableText)
 	if !needsTranslation {
 		for _, language := range languages {
 			copied := make([]string, len(answers))
@@ -164,10 +157,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 		}
 		return translations, nil
 	}
-	pollText := question
-	for _, answer := range answers {
-		pollText += "\n" + answer
-	}
+	pollText := strings.Join(append([]string{question}, answers...), "\n")
 	prepared, err := s.prepareTranslation(ctx, guildID, pollText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return preparePollTranslation(langs, question, answers, tc, glossary)
 	}, nil)

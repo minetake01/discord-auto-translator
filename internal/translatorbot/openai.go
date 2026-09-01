@@ -263,7 +263,7 @@ func (t *OpenAITranslator) WarmUp(ctx context.Context) error {
 
 func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared preparedTranslation, schemaName string, jsonSchema json.RawMessage) (text string, inputTokens, outputTokens int, err error) {
 	var lastErr error
-	for attempt := 0; attempt < openaiRetryAttempts; attempt++ {
+	for attempt := range openaiRetryAttempts {
 		attemptCtx, cancel := context.WithTimeout(ctx, openaiRequestTimeout)
 		text, inputTokens, outputTokens, err = t.invokePrepared(attemptCtx, prepared, schemaName, jsonSchema, attempt+1)
 		cancel()

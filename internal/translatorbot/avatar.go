@@ -132,8 +132,8 @@ func renderAvatarWithRing(src image.Image, borderColor color.Color) image.Image 
 	outer := float64(avatarSize) / 2
 	inner := outer - avatarBorderWidth
 
-	for y := 0; y < avatarSize; y++ {
-		for x := 0; x < avatarSize; x++ {
+	for y := range avatarSize {
+		for x := range avatarSize {
 			dx := float64(x) - cx
 			dy := float64(y) - cy
 			dist2 := dx*dx + dy*dy

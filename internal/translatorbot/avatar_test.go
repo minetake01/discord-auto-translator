@@ -98,8 +98,8 @@ func newAvatarSourceServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		img := image.NewNRGBA(image.Rect(0, 0, 4, 4))
-		for y := 0; y < 4; y++ {
-			for x := 0; x < 4; x++ {
+		for y := range 4 {
+			for x := range 4 {
 				img.Set(x, y, color.RGBA{R: 20, G: 40, B: 60, A: 255})
 			}
 		}

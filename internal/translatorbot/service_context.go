@@ -3,6 +3,7 @@ package translatorbot
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 )
@@ -337,8 +338,8 @@ func capDiscardedForSummary(messages []ChatContextMessage) []ChatContextMessage 
 	}
 	total := 0
 	start := len(messages)
-	for i := len(messages) - 1; i >= 0; i-- {
-		n := EstimateTranslationTokens(messages[i].Content, "")
+	for i, msg := range slices.Backward(messages) {
+		n := EstimateTranslationTokens(msg.Content, "")
 		if total+n > topicSummarySourceTokenLimit && start < len(messages) {
 			break
 		}

@@ -1259,9 +1259,10 @@ func resolveUILanguage(language string) string {
 			return code
 		}
 	}
-	primary := strings.SplitN(language, "-", 2)[0]
+	primary, _, _ := strings.Cut(language, "-")
 	for code := range uiStrings {
-		if strings.EqualFold(primary, strings.SplitN(code, "-", 2)[0]) {
+		codePrimary, _, _ := strings.Cut(code, "-")
+		if strings.EqualFold(primary, codePrimary) {
 			return code
 		}
 	}

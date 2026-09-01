@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -344,10 +345,8 @@ type selectiveFailTranslator struct {
 }
 
 func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
-	for _, lang := range prepared.targetLanguages {
-		if lang == s.failLanguage {
-			return MultiTranslationResult{}, errors.New("translation failed")
-		}
+	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
+		return MultiTranslationResult{}, errors.New("translation failed")
 	}
 	out := make(map[string]string, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
@@ -356,10 +355,8 @@ func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, prepared p
 	return MultiTranslationResult{Translations: out}, nil
 }
 func (s *selectiveFailTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
-	for _, lang := range prepared.targetLanguages {
-		if lang == s.failLanguage {
-			return PollMultiTranslationResult{}, errors.New("translation failed")
-		}
+	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
+		return PollMultiTranslationResult{}, errors.New("translation failed")
 	}
 	out := make(map[string]PollTranslation, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
@@ -372,10 +369,8 @@ func (s *selectiveFailTranslator) TranslatePollMulti(ctx context.Context, prepar
 	return PollMultiTranslationResult{Translations: out}, nil
 }
 func (s *selectiveFailTranslator) TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error) {
-	for _, lang := range prepared.targetLanguages {
-		if lang == s.failLanguage {
-			return ThreadCreateMultiTranslationResult{}, errors.New("translation failed")
-		}
+	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
+		return ThreadCreateMultiTranslationResult{}, errors.New("translation failed")
 	}
 	out := make(map[string]ThreadCreateTranslation, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {

@@ -217,7 +217,7 @@ func TestURLPageCacheConcurrentAccess(t *testing.T) {
 	})}
 	cache := newURLPageCache(client, 24*time.Hour, time.Now)
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

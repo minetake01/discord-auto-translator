@@ -24,7 +24,7 @@ func isDiscordRetryable(err error) bool {
 
 func withDiscordRetry(fn func() error) error {
 	var err error
-	for attempt := 0; attempt < discordRetryAttempts; attempt++ {
+	for attempt := range discordRetryAttempts {
 		err = fn()
 		if err == nil || !isDiscordRetryable(err) || attempt == discordRetryAttempts-1 {
 			return err
@@ -39,7 +39,7 @@ func withDiscordRetryValue[T any](fn func() (T, error)) (T, error) {
 		value T
 		err   error
 	)
-	for attempt := 0; attempt < discordRetryAttempts; attempt++ {
+	for attempt := range discordRetryAttempts {
 		value, err = fn()
 		if err == nil || !isDiscordRetryable(err) || attempt == discordRetryAttempts-1 {
 			return value, err
