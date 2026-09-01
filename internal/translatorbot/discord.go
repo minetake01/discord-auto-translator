@@ -279,6 +279,8 @@ func sanitizeWebhookAvatarURL(avatarURL string) string {
 	return avatarURL
 }
 
+// sanitizeWebhookName strips the reserved substring "discord" (Discord rejects
+// webhook usernames that contain it) and caps the name at 80 runes.
 func sanitizeWebhookName(name string) string {
 	name = strings.TrimSpace(name)
 	name = reservedWebhookNamePattern.ReplaceAllString(name, "D-scord")
@@ -338,6 +340,8 @@ func (d DiscordGoAPI) webhookMessageEditInThread(webhookID, token, messageID, th
 	return &msg, nil
 }
 
+// webhookMessageURL adds thread_id for webhook edit/delete inside threads.
+// discordgo v0.29.0 WebhookMessageEdit/Delete do not take thread_id.
 func webhookMessageURL(webhookID, token, messageID, threadID string) string {
 	uri := discordgo.EndpointWebhookMessage(webhookID, token, messageID)
 	if threadID == "" {

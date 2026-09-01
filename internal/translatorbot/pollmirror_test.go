@@ -1,7 +1,5 @@
 package translatorbot
 
-// SPEC 3.2 polls
-
 import (
 	"context"
 	"fmt"
@@ -12,7 +10,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// SPEC 3.2 polls
 func TestHandleMessageCreateMirrorsPollAsEmbedWithVoteLink(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -70,7 +67,6 @@ func TestHandleMessageCreateMirrorsPollAsEmbedWithVoteLink(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestHandleMessageCreateKeepsPollVoteLinkAfterDiscordRefRewrite(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -111,7 +107,6 @@ func TestHandleMessageCreateKeepsPollVoteLinkAfterDiscordRefRewrite(t *testing.T
 	}
 }
 
-// SPEC 3.2 polls
 func TestFormatTranslatedPollAnswers(t *testing.T) {
 	poll := &DiscordPoll{
 		Question: "好きな色は？",
@@ -128,7 +123,6 @@ func TestFormatTranslatedPollAnswers(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestFormatPollSnapshot(t *testing.T) {
 	got := formatPollSnapshot(&DiscordPoll{
 		Question: "Q",
@@ -140,7 +134,6 @@ func TestFormatPollSnapshot(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestBuildPollEmbed(t *testing.T) {
 	embed := buildPollEmbed("Question", "1. A\n2. B", 0x112233)
 	if embed == nil || embed.Title != "Question" || embed.Description != "1. A\n2. B" || embed.Color != 0x112233 {
@@ -156,7 +149,6 @@ func TestBuildPollEmbed(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestWithPollStartedHeader(t *testing.T) {
 	const (
 		body      = "body"
@@ -185,7 +177,6 @@ func TestWithPollStartedHeader(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestContentWithEmbedQuoteText(t *testing.T) {
 	got := contentWithEmbedQuoteText(
 		"> -# 投票を開始しました。 · [投票する](https://discord.com/channels/g/c/m)",
@@ -200,7 +191,6 @@ func TestContentWithEmbedQuoteText(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 polls
 func TestParsePollTranslationResponse(t *testing.T) {
 	protector := NewProtector(NameMaps{})
 	raw := `{"en":{"question":"Favorite?","answers":["Red","Blue"]}}`
@@ -217,7 +207,6 @@ func TestParsePollTranslationResponse(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 poll results
 func TestPollResultPercent(t *testing.T) {
 	if got := pollResultPercent(3, 5); got != 60 {
 		t.Fatalf("3/5 = %d, want 60", got)
@@ -230,7 +219,6 @@ func TestPollResultPercent(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 poll results
 func TestHandleMessageCreateCachesPollTranslationsAndMirrorsResult(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -277,7 +265,7 @@ func TestHandleMessageCreateCachesPollTranslationsAndMirrorsResult(t *testing.T)
 		ReferencedMessageID: "100000000000000050", ReferencedMessageChannelID: "ja",
 		PollResult: &DiscordPollResult{
 			HasEmbed: true, VictorAnswerID: 1, VictorAnswerText: "赤",
-			VictorEmoji: &DiscordPollEmoji{Name: "🔴"},
+			VictorEmoji:       &DiscordPollEmoji{Name: "🔴"},
 			VictorAnswerVotes: 3, TotalVotes: 5,
 		},
 	})
@@ -303,7 +291,6 @@ func TestHandleMessageCreateCachesPollTranslationsAndMirrorsResult(t *testing.T)
 	}
 }
 
-// SPEC 3.2 poll results
 func TestHandleMessageCreatePollResultNoWinner(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -329,7 +316,6 @@ func TestHandleMessageCreatePollResultNoWinner(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 poll results
 func TestHandleMessageCreatePollResultWithoutEmbed(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -355,7 +341,6 @@ func TestHandleMessageCreatePollResultWithoutEmbed(t *testing.T) {
 	}
 }
 
-// SPEC 3.2 poll results
 func TestHandleMessageCreateSkipsPollCacheWithoutExpiry(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

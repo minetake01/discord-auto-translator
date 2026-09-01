@@ -318,8 +318,9 @@ func isThreadOnlySourceMessage(ctx context.Context, store *Store, guildID, paren
 }
 
 // ensureThreadSynced creates peer threads for a message that arrives inside
-// a not-yet-synced thread. Threads already stored as a source or a target
-// are left to message mirroring. Returns whether the thread was created
+// a not-yet-synced thread. ThreadTargets includes reverse links, so a thread
+// already stored as a source or a target is left to message mirroring and
+// must not spawn a second family. Returns whether the thread was created
 // together with this message as its initial message.
 func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (bool, error) {
 	if m.ParentChannelID == "" || m.ThreadName == "" {

@@ -1,7 +1,5 @@
 package translatorbot
 
-// SPEC 3.8
-
 import (
 	"context"
 	"fmt"
@@ -25,7 +23,6 @@ func historyLink(t time.Time, increment uint64, author, content string) MessageL
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -55,7 +52,6 @@ func TestHandleMessageCreatePassesGuildDescriptionAndChannelTopic(t *testing.T) 
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreatePassesGroupStyleInstructions(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -83,7 +79,6 @@ func TestHandleMessageCreatePassesGroupStyleInstructions(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateIncludesSiteMetaInTranslationContext(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -124,7 +119,6 @@ func TestHandleMessageCreateIncludesSiteMetaInTranslationContext(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateTagsLoadedOGPImagesAndDoesNotApplyTheirAlts(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -173,7 +167,6 @@ func TestHandleMessageCreateTagsLoadedOGPImagesAndDoesNotApplyTheirAlts(t *testi
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReusesPromptCacheGenerationAcrossBurst(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -211,7 +204,6 @@ func TestHandleMessageCreateReusesPromptCacheGenerationAcrossBurst(t *testing.T)
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateStartsNewPromptCacheGenerationAfterIdleGap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -247,7 +239,6 @@ func TestHandleMessageCreateStartsNewPromptCacheGenerationAfterIdleGap(t *testin
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -280,7 +271,6 @@ func TestHandleMessageCreatePassesRecentHistory(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateExcludesHistoryAcrossIdleGap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -323,7 +313,6 @@ func TestHandleMessageCreateExcludesHistoryAcrossIdleGap(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryDropsIdleBeforeCurrent(t *testing.T) {
 	now := time.Now().UTC()
 	current := snowflakeForTime(now, 2)
@@ -350,7 +339,6 @@ func mergedHistory(links []MessageLink) []ChatContextMessage {
 	return out
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesCombinesShortMessages(t *testing.T) {
 	now := time.Now().UTC()
 	got := mergedHistory([]MessageLink{
@@ -365,7 +353,6 @@ func TestMergeConsecutiveMessagesCombinesShortMessages(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesSkipsLongMessage(t *testing.T) {
 	now := time.Now().UTC()
 	longContent := strings.Repeat("あ", mergeShortMessageMaxRunes+1)
@@ -381,7 +368,6 @@ func TestMergeConsecutiveMessagesSkipsLongMessage(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesStopsAtCombinedLength(t *testing.T) {
 	now := time.Now().UTC()
 	first := strings.Repeat("a", 100)
@@ -403,7 +389,6 @@ func TestMergeConsecutiveMessagesStopsAtCombinedLength(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesStopsAtCountLimit(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, mergeMaxCount+1)
@@ -423,7 +408,6 @@ func TestMergeConsecutiveMessagesStopsAtCountLimit(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesRespectsTimeWindow(t *testing.T) {
 	now := time.Now().UTC()
 	got := mergedHistory([]MessageLink{
@@ -438,7 +422,6 @@ func TestMergeConsecutiveMessagesRespectsTimeWindow(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestMergeConsecutiveMessagesStartsNewSlotForDifferentAuthor(t *testing.T) {
 	now := time.Now().UTC()
 	got := mergedHistory([]MessageLink{
@@ -466,7 +449,6 @@ func historySlotTimes(history []ChatContextMessage) (oldest, newest time.Time) {
 	return oldest, newest
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, 17)
@@ -490,7 +472,6 @@ func TestSelectRecentHistoryCompressesCountOverflow(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryCompressesSpanOverflow(t *testing.T) {
 	now := time.Now().UTC()
 	links := make([]MessageLink, 0, 12)
@@ -508,7 +489,6 @@ func TestSelectRecentHistoryCompressesSpanOverflow(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryKeepsFrozenMergedContentStable(t *testing.T) {
 	now := time.Now().UTC()
 	alice1 := historyLink(now.Add(-6*time.Minute), 1, "Alice", "こんにちは")
@@ -527,7 +507,6 @@ func TestSelectRecentHistoryKeepsFrozenMergedContentStable(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryKeepsFrozenReplyOverlap(t *testing.T) {
 	now := time.Now().UTC()
 	reply := historyLink(now.Add(-4*time.Minute), 1, "Alice", "返信先")
@@ -549,7 +528,6 @@ func TestSelectRecentHistoryKeepsFrozenReplyOverlap(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageDeleteExcludesDeletedMessageFromTranslationContext(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -584,7 +562,6 @@ func TestHandleMessageDeleteExcludesDeletedMessageFromTranslationContext(t *test
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateIncludesCrossChannelOriginalHistory(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -617,7 +594,6 @@ func TestHandleMessageCreateIncludesCrossChannelOriginalHistory(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -656,7 +632,6 @@ func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -707,7 +682,6 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -752,7 +726,6 @@ func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -787,7 +760,6 @@ func TestHandleMessageCreateReplyChainUsesOriginalWhenReplyingToMirror(t *testin
 	}
 }
 
-// SPEC 3.8
 func TestSelectRecentHistoryKeepsImageOnlyMessages(t *testing.T) {
 	now := time.Now().UTC()
 	image := []DiscordAttachment{{URL: "https://cdn.discordapp.com/photo.png", Filename: "photo.png", ContentType: "image/png"}}
@@ -819,7 +791,6 @@ func historyImageLink(t time.Time, increment uint64, author, content string, ima
 	return link
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateIncludesHistoryImagesInTranslationContext(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -857,7 +828,6 @@ func TestHandleMessageCreateIncludesHistoryImagesInTranslationContext(t *testing
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateIncludesReplyImagesInTranslationContext(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -897,7 +867,6 @@ func TestHandleMessageCreateIncludesReplyImagesInTranslationContext(t *testing.T
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateReservesVisionSlotsForCurrentAttachments(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -959,7 +928,6 @@ func currentAfterOverflow(now time.Time, extra int) (id string) {
 	return snowflakeForTime(now.Add(time.Duration(17+extra)*30*time.Second), uint64(90+extra))
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateInsertsTopicSummaryOnNextMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1006,7 +974,6 @@ func TestHandleMessageCreateInsertsTopicSummaryOnNextMessage(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateDoesNotWaitForInFlightTopicSummary(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1068,7 +1035,6 @@ func TestHandleMessageCreateDoesNotWaitForInFlightTopicSummary(t *testing.T) {
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateRollsPreviousTopicSummaryIntoNextGeneration(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1097,7 +1063,6 @@ func TestHandleMessageCreateRollsPreviousTopicSummaryIntoNextGeneration(t *testi
 	}
 }
 
-// SPEC 3.8
 func TestHandleMessageCreateOmitsTopicSummaryAcrossIdleGap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

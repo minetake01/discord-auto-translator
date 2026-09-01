@@ -1,4 +1,4 @@
-// SPEC 3.8 / 4 / DEV_NOTES 6: translation prompt construction, XML escaping, and response parsing.
+// Translation prompt construction, XML escaping, and response parsing.
 package translatorbot
 
 import (

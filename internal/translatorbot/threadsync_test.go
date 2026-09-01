@@ -1,7 +1,5 @@
 package translatorbot
 
-// SPEC 3.7
-
 import (
 	"context"
 	"strings"
@@ -10,7 +8,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// SPEC 3.7
 func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -86,7 +83,6 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -110,7 +106,6 @@ func TestThreadStarterMessageIsSkippedWhenExistingMessageStartsThread(t *testing
 	}
 }
 
-// SPEC 3.7
 func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -155,7 +150,6 @@ func TestGatewayThreadCreateDefersUntilStarterWhenParentMessageIsNotLinked(t *te
 	}
 }
 
-// SPEC 3.7
 func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -182,7 +176,6 @@ func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *t
 	}
 }
 
-// SPEC 3.7
 func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -253,7 +246,6 @@ func TestMessageInMirroredThreadDoesNotCreateReverseThread(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadCreateIsIdempotent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -273,7 +265,6 @@ func TestSyncThreadCreateIsIdempotent(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -300,7 +291,6 @@ func TestSyncThreadCreateFromMessageUsesTranslatedMessageAndTitle(t *testing.T) 
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadCreateInForumTargetUsesThreadOnlyChannelType(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -357,7 +347,6 @@ func TestGatewayForumThreadCreateDefersTranslationUntilInitialMessage(t *testing
 	}
 }
 
-// SPEC 3.7
 func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -407,7 +396,6 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -430,7 +418,6 @@ func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -471,7 +458,6 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -507,7 +493,6 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 	}
 }
 
-// SPEC 3.7
 func TestForumInitialMessageSkipsTranslationForProtectedOnlyContent(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

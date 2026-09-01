@@ -23,6 +23,8 @@ type gatewayMessageAttachments struct {
 	} `json:"message_snapshots"`
 }
 
+// attachmentDescriptionsFromRaw reads attachments[].description from Gateway
+// RawData. discordgo v0.29.0 MessageAttachment has no Description field.
 func attachmentDescriptionsFromRaw(raw json.RawMessage) (descriptions []string, snapshotDescriptions []string) {
 	var parsed gatewayMessageAttachments
 	if err := json.Unmarshal(raw, &parsed); err != nil {

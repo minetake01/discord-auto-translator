@@ -1,13 +1,10 @@
 package translatorbot
 
-// SPEC 3.4
-
 import (
 	"context"
 	"testing"
 )
 
-// SPEC 3.4
 func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -44,7 +41,6 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	}
 }
 
-// SPEC 3.4
 func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -76,7 +72,6 @@ func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	}
 }
 
-// SPEC 3.4
 func TestForwardWithoutTranslatableTextSkipsTranslation(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -100,7 +95,6 @@ func TestForwardWithoutTranslatableTextSkipsTranslation(t *testing.T) {
 	}
 }
 
-// SPEC 3.4
 func TestForwardMirrorsIntoThread(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

@@ -1,7 +1,5 @@
 package translatorbot
 
-// SPEC 3.3
-
 import (
 	"context"
 	"errors"
@@ -9,7 +7,6 @@ import (
 	"testing"
 )
 
-// SPEC 3.3
 func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -53,7 +50,6 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 	store := newTestStore(t)
 	translator := &echoTranslator{}
@@ -73,7 +69,6 @@ func TestReplyQuoteUsesGatewayContentWithoutTranslation(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
 	m := DiscordMessage{
@@ -102,7 +97,6 @@ func TestReplyQuoteLocalizesLinkForTargetChannelLanguage(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
 	tests := []struct {
 		name string
@@ -126,7 +120,6 @@ func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteConvertsMarkdownHeaderSnippet(t *testing.T) {
 	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
@@ -142,7 +135,6 @@ func TestReplyQuoteConvertsMarkdownHeaderSnippet(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -188,7 +180,6 @@ func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -212,7 +203,6 @@ func TestReplyQuoteFallsBackToGatewayReferencedMessage(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -236,7 +226,6 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -264,7 +253,6 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	}
 }
 
-// SPEC 3.3
 func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -291,7 +279,6 @@ func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *t
 	}
 }
 
-// SPEC 3.3
 func TestFirstLineWithoutPseudoReply(t *testing.T) {
 	tests := []struct {
 		name    string

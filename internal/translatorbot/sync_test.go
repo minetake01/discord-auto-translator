@@ -1,13 +1,10 @@
 package translatorbot
 
-// SPEC 3.5/3.6
-
 import (
 	"context"
 	"testing"
 )
 
-// SPEC 3.5/3.6
 func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -33,7 +30,6 @@ func TestSyncReactionFromTranslatedMessageSyncsBackToSource(t *testing.T) {
 	}
 }
 
-// SPEC 3.5/3.6
 func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -58,7 +54,6 @@ func TestSyncReactionRemoveUsesOwnReaction(t *testing.T) {
 	}
 }
 
-// SPEC 3.5/3.6
 func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -85,7 +80,6 @@ func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
 	}
 }
 
-// SPEC 3.5/3.6
 func TestHandleMessagePinUpdateSyncsOnceAndSkipsEcho(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -112,7 +106,6 @@ func TestHandleMessagePinUpdateSyncsOnceAndSkipsEcho(t *testing.T) {
 	}
 }
 
-// SPEC 3.5/3.6
 func TestHandleMessagePinUpdateInitialFalseOnlySeedsState(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

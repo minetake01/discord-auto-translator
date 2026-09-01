@@ -1,4 +1,4 @@
-// SPEC 4: prompt-injection protection (placeholders, escaping, translatable text).
+// Prompt-injection protection (placeholders, escaping, translatable text).
 package translatorbot
 
 import (

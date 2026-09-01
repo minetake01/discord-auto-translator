@@ -7,6 +7,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// defaultAdminCommandPermissions is the Discord-side default for setup
+// commands. Handlers do not re-check permissions; extra grants are configured
+// in the server's application command permissions UI. View Original is exempt.
 var defaultAdminCommandPermissions int64 = discordgo.PermissionAdministrator
 
 const (
