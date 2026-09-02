@@ -176,11 +176,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	}
 
 	languages := destinationLanguages(dests)
-	loaded, err := s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))
-	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-		return err
-	}
+	loaded := s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))
 	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, loaded, languages, contextFn)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)

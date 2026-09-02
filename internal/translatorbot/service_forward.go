@@ -75,11 +75,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 
 	var loaded []loadedImageAttachment
 	if len(translateDests) > 0 || anyForwardNeedsAssets(prepared) {
-		var err error
-		loaded, err = s.loadImageAttachments(ctx, imageAttachmentsOnly(forwarded.Attachments))
-		if err != nil {
-			return nil, err
-		}
+		loaded = s.loadImageAttachments(ctx, imageAttachmentsOnly(forwarded.Attachments))
 	}
 
 	if len(translateDests) > 0 {

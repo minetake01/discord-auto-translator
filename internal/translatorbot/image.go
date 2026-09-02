@@ -206,30 +206,23 @@ func (s *Service) downloadImageOriginals(ctx context.Context, attachments []Disc
 	return loaded
 }
 
-func (s *Service) loadImageAttachments(ctx context.Context, attachments []DiscordAttachment) ([]loadedImageAttachment, error) {
-	if len(attachments) == 0 {
-		return nil, nil
-	}
-	if len(attachments) > visionMaxImages {
-		return nil, fmt.Errorf("too many image attachments: %d (max %d)", len(attachments), visionMaxImages)
-	}
-	client := s.imageHTTPClient()
-	loaded := make([]loadedImageAttachment, 0, len(attachments))
+func (s *Service) loadImageAttachments(ctx context.Context, attachments []DiscordAttachment) []loadedImageAttachment {
+	loaded := s.downloadImageOriginals(ctx, attachments)
+	visionCount := 0
 	totalVisionBytes := 0
-	for _, attachment := range attachments {
-		original, err := fetchImageBytes(ctx, client, attachment.URL)
-		if err != nil {
+	for i := range loaded {
+		if visionCount >= visionMaxImages {
+			break
+		}
+		jpegBytes, err := resizeImageForVision(loaded[i].Original)
+		if err != nil || totalVisionBytes+len(jpegBytes) > visionMaxTotalBytes {
 			continue
 		}
-		item := loadedImageAttachment{Attachment: attachment, Original: original}
-		jpegBytes, err := resizeImageForVision(original)
-		if err == nil && totalVisionBytes+len(jpegBytes) <= visionMaxTotalBytes {
-			totalVisionBytes += len(jpegBytes)
-			item.Vision = visionImage{DataURL: jpegDataURL(jpegBytes)}
-		}
-		loaded = append(loaded, item)
+		totalVisionBytes += len(jpegBytes)
+		loaded[i].Vision = visionImage{DataURL: jpegDataURL(jpegBytes)}
+		visionCount++
 	}
-	return loaded, nil
+	return loaded
 }
 
 func (s *Service) loadOGPVisionImages(ctx context.Context, sites []SiteContextEntry, remainingSlots int, remainingBytes int) []visionImage {
