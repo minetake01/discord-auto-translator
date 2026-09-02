@@ -199,6 +199,43 @@ func TestHandleMessageCreateForwardsAttachments(t *testing.T) {
 	}
 }
 
+func TestHandleMessageCreateReuploadsAllImagesAndCapsVision(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	attachments := make([]DiscordAttachment, 5)
+	for i := range attachments {
+		attachments[i] = DiscordAttachment{
+			URL:         fmt.Sprintf("https://cdn.discordapp.com/%d.png", i),
+			Filename:    fmt.Sprintf("%d.png", i),
+			ContentType: "image/png",
+		}
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "画像です",
+		Attachments: attachments,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.channelMessages) != 0 {
+		t.Fatalf("excess images must not notify: %#v", discord.channelMessages)
+	}
+	if len(discord.sent) != 1 {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+	if len(discord.sent[0].Files) != 5 {
+		t.Fatalf("files = %d, want 5: %#v", len(discord.sent[0].Files), discord.sent[0].Files)
+	}
+	if len(translator.visions) != 1 || len(translator.visions[0]) != visionMaxImages {
+		t.Fatalf("vision images = %#v", translator.visions)
+	}
+}
+
 func TestHandleMessageCreateSkipsFailedImageFetchWithoutNotice(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
