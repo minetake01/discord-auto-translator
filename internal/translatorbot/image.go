@@ -24,12 +24,12 @@ import (
 const (
 	visionMaxImages                   = 4
 	visionMaxTotalBytes               = 2 * 1024 * 1024
-	visionMaxEdge                     = 768
+	visionMaxEdge                     = 384
 	visionJPEGQuality                 = 75
 	imageFetchMaxBytes                = 8 * 1024 * 1024
 	imageFetchTimeout                 = 8 * time.Second
 	discordAttachmentDescriptionLimit = 1024
-	visionTokenOverheadPerImage       = 400
+	visionTokenOverheadPerImage       = 160
 )
 
 type visionImage struct {
