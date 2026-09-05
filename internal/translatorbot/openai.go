@@ -27,10 +27,11 @@ const (
 	openaiHTTPKeepAlive       = 30 * time.Second
 	openaiHTTPIdleConnTimeout = 45 * time.Second
 
-	openaiMessageTranslationSchemaName      = "message_translations"
-	openaiPollTranslationSchemaName         = "poll_translations"
-	openaiThreadCreateTranslationSchemaName = "thread_create_translations"
-	openaiTopicSummarySchemaName            = "topic_summary"
+	openaiMessageTranslationSchemaName       = "message_translations"
+	openaiAttachmentAltTranslationSchemaName = "attachment_alt_translations"
+	openaiPollTranslationSchemaName          = "poll_translations"
+	openaiThreadCreateTranslationSchemaName  = "thread_create_translations"
+	openaiTopicSummarySchemaName             = "topic_summary"
 )
 
 // errTranslationProvider marks a translation API outage (timeout, transport, or
@@ -177,7 +178,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if len(prepared.targetLanguages) == 0 {
 		return MultiTranslationResult{Translations: map[string]string{}}, nil
 	}
-	schema, err := openaiMessageTranslationSchema(prepared.targetLanguages, prepared.altCount)
+	schema, err := openaiMessageTranslationSchema(prepared.targetLanguages)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -185,11 +186,30 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	translations, descriptions, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content, prepared.translationContext.Attachments)
+	translations, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	return MultiTranslationResult{Translations: translations, AttachmentDescriptions: descriptions, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+	return MultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+}
+
+func (t *OpenAITranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	if len(prepared.targetLanguages) == 0 || prepared.altCount == 0 {
+		return AttachmentAltTranslationResult{}, nil
+	}
+	schema, err := openaiAttachmentAltTranslationSchema(prepared.targetLanguages, prepared.altCount)
+	if err != nil {
+		return AttachmentAltTranslationResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiAttachmentAltTranslationSchemaName, schema)
+	if err != nil {
+		return AttachmentAltTranslationResult{}, err
+	}
+	descriptions, err := parseAttachmentAltTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.translationContext.Attachments)
+	if err != nil {
+		return AttachmentAltTranslationResult{}, err
+	}
+	return AttachmentAltTranslationResult{Descriptions: descriptions, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
 func (t *OpenAITranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {

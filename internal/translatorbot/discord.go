@@ -23,8 +23,9 @@ type DiscordAPI interface {
 	Message(channelID, messageID string) (DiscordFetchedMessage, error)
 	CreateWebhook(channelID, name string) (id, token string, err error)
 	SendChannelMessage(channelID, replyToMessageID, content string) error
-	SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error)
+	SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error)
 	EditWebhook(webhookID, token, messageID, threadID, content string) error
+	EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error
 	DeleteWebhook(webhookID, token, messageID, threadID string) error
 	AddReaction(channelID, messageID, emoji string) error
 	RemoveOwnReaction(channelID, messageID, emoji string) error
@@ -54,10 +55,24 @@ type WebhookFile struct {
 	Data        []byte
 }
 
+type WebhookSendResult struct {
+	MessageID     string
+	AttachmentIDs []string
+}
+
+type WebhookAttachmentEdit struct {
+	ID          string
+	Description string
+}
+
 type webhookAttachmentMeta struct {
 	ID          string `json:"id"`
 	Filename    string `json:"filename,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+type webhookAttachmentEditPayload struct {
+	Attachments []webhookAttachmentMeta `json:"attachments"`
 }
 
 type DiscordGoAPI struct {
@@ -166,7 +181,7 @@ func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, err
 	return w.ID, w.Token, nil
 }
 
-func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (string, error) {
+func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error) {
 	if len(msg.Files) == 0 {
 		params := &discordgo.WebhookParams{
 			Content:         msg.Content,
@@ -183,17 +198,31 @@ func (d DiscordGoAPI) SendWebhook(webhookID, token string, msg WebhookSend) (str
 			return d.session.WebhookExecute(webhookID, token, true, params)
 		})
 		if err != nil {
-			return "", err
+			return WebhookSendResult{}, err
 		}
-		return m.ID, nil
+		return webhookSendResultFromMessage(m), nil
 	}
 	m, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
 		return d.executeWebhookWithFiles(webhookID, token, msg)
 	})
 	if err != nil {
-		return "", err
+		return WebhookSendResult{}, err
 	}
-	return m.ID, nil
+	return webhookSendResultFromMessage(m), nil
+}
+
+func webhookSendResultFromMessage(message *discordgo.Message) WebhookSendResult {
+	if message == nil {
+		return WebhookSendResult{}
+	}
+	ids := make([]string, 0, len(message.Attachments))
+	for _, attachment := range message.Attachments {
+		if attachment == nil || attachment.ID == "" {
+			continue
+		}
+		ids = append(ids, attachment.ID)
+	}
+	return WebhookSendResult{MessageID: message.ID, AttachmentIDs: ids}
 }
 
 type webhookExecutePayload struct {
@@ -315,6 +344,32 @@ func (d DiscordGoAPI) EditWebhook(webhookID, token, messageID, threadID, content
 	}
 	_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
 		return d.webhookMessageEditInThread(webhookID, token, messageID, threadID, edit)
+	})
+	return err
+}
+
+func (d DiscordGoAPI) EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error {
+	if len(attachments) == 0 {
+		return errors.New("edit webhook attachments: no attachments")
+	}
+	meta := make([]webhookAttachmentMeta, len(attachments))
+	for i, attachment := range attachments {
+		if strings.TrimSpace(attachment.ID) == "" {
+			return fmt.Errorf("edit webhook attachments: missing id at index %d", i)
+		}
+		meta[i] = webhookAttachmentMeta{ID: attachment.ID, Description: attachment.Description}
+	}
+	payload := webhookAttachmentEditPayload{Attachments: meta}
+	_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+		response, err := d.session.RequestWithBucketID("PATCH", webhookMessageURL(webhookID, token, messageID, threadID), payload, discordgo.EndpointWebhookToken("", ""))
+		if err != nil {
+			return nil, err
+		}
+		var msg discordgo.Message
+		if err := discordgo.Unmarshal(response, &msg); err != nil {
+			return nil, err
+		}
+		return &msg, nil
 	})
 	return err
 }

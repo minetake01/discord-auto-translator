@@ -208,11 +208,8 @@ func TestBuildTranslationSystemInstructionAlwaysDescribesContextSections(t *test
 	if !strings.Contains(got, "topic_summary") {
 		t.Fatal("system instruction should always describe topic_summary")
 	}
-	if !strings.Contains(got, "attachment_descriptions") {
-		t.Fatal("system instruction should always describe attachment_descriptions")
-	}
-	if !strings.Contains(got, "<attachment_alts>") {
-		t.Fatal("system instruction should describe attachment_alts as the alt translation source")
+	if strings.Contains(got, "attachment_descriptions") || strings.Contains(got, "<attachment_alts>") {
+		t.Fatal("message system instruction must not describe attachment alt translation:\n" + got)
 	}
 	if !strings.Contains(got, "<image>") {
 		t.Fatal("system instruction should describe history/reply images as background")
@@ -575,10 +572,7 @@ func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prepared.systemInstruction, "attachment_descriptions") {
-		t.Fatal(prepared.systemInstruction)
-	}
-	if !strings.Contains(prepared.systemInstruction, "<attachment_alts>") {
+	if strings.Contains(prepared.systemInstruction, "attachment_descriptions") || strings.Contains(prepared.systemInstruction, "<attachment_alts>") {
 		t.Fatal(prepared.systemInstruction)
 	}
 	if strings.Contains(prepared.userPrompt(), `<attachment index="1" filename="shot.png">出口</attachment>`) {
@@ -590,17 +584,48 @@ func TestPrepareMultiTranslationIncludesAttachments(t *testing.T) {
 	if !strings.Contains(prepared.userPrompt(), `<attachment index="2" filename="deco.png"></attachment>`) {
 		t.Fatalf("missing attachment 2:\n%s", prepared.userPrompt())
 	}
+	if strings.Contains(prepared.userPrompt(), "<attachment_alts>") || strings.Contains(prepared.userPrompt(), `<alt `) {
+		t.Fatalf("message prompt must not include attachment alts:\n%s", prepared.userPrompt())
+	}
+	attachIndex := strings.Index(prepared.userPrompt(), "<attachments>")
+	finalIndex := strings.Index(prepared.userPrompt(), "<final_message")
+	if attachIndex == -1 || finalIndex == -1 || attachIndex > finalIndex {
+		t.Fatalf("attachments then final_message:\n%s", prepared.userPrompt())
+	}
+	if prepared.altCount != 0 {
+		t.Fatalf("altCount = %d", prepared.altCount)
+	}
+}
+
+func TestPrepareAttachmentAltTranslationIncludesExistingAlts(t *testing.T) {
+	prepared, err := prepareAttachmentAltTranslation([]string{"en"}, TranslationContext{
+		Attachments: []TranslationAttachment{
+			{Index: 1, Filename: "shot.png", Description: "出口"},
+			{Index: 2, Filename: "deco.png"},
+		},
+		History:           []ChatContextMessage{{Author: "Alice", Content: "hi"}},
+		StyleInstructions: "formal",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prepared.systemInstruction, "attachment_descriptions") {
+		t.Fatal(prepared.systemInstruction)
+	}
+	if !strings.Contains(prepared.systemInstruction, "<attachment_alts>") {
+		t.Fatal(prepared.systemInstruction)
+	}
+	if strings.Contains(prepared.systemInstruction, "recent_context") || strings.Contains(prepared.systemInstruction, "style_instructions") {
+		t.Fatalf("alt system must not describe message-translation context:\n%s", prepared.systemInstruction)
+	}
+	if strings.Contains(prepared.userPrompt(), "<final_message") || strings.Contains(prepared.userPrompt(), "<recent_context") {
+		t.Fatalf("alt prompt must not include message body or history:\n%s", prepared.userPrompt())
+	}
 	if !strings.Contains(prepared.userPrompt(), `<alt index="1">出口</alt>`) {
 		t.Fatalf("missing translatable alt:\n%s", prepared.userPrompt())
 	}
 	if strings.Contains(prepared.userPrompt(), `<alt index="2">`) {
 		t.Fatalf("empty alt must not be a translation source:\n%s", prepared.userPrompt())
-	}
-	attachIndex := strings.Index(prepared.userPrompt(), "<attachments>")
-	altsIndex := strings.Index(prepared.userPrompt(), "<attachment_alts>")
-	finalIndex := strings.Index(prepared.userPrompt(), "<final_message")
-	if attachIndex == -1 || altsIndex == -1 || finalIndex == -1 || attachIndex > altsIndex || altsIndex > finalIndex {
-		t.Fatalf("attachments, attachment_alts, then final_message:\n%s", prepared.userPrompt())
 	}
 	if prepared.altCount != 1 {
 		t.Fatalf("altCount = %d", prepared.altCount)
@@ -714,7 +739,7 @@ func TestPrepareTranslationSystemInstructionIsStableAcrossRequestFeatures(t *tes
 
 func TestParseMultiTranslationResponseRequiresExactLanguageKeys(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	got, _, err := parseMultiTranslationResponse(`{"ja":{"translated_text":"こんにちは"},"en":{"translated_text":"Hello"}}`, []string{"en", "ja"}, p, "Hello", nil)
+	got, err := parseMultiTranslationResponse(`{"ja":{"translated_text":"こんにちは"},"en":{"translated_text":"Hello"}}`, []string{"en", "ja"}, p, "Hello")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -727,8 +752,9 @@ func TestParseMultiTranslationResponseRequiresExactLanguageKeys(t *testing.T) {
 		`{"en-US":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは"}}`,
 		`{"en":{"translated_text":"Hello"}}`,
 		`{"en":{"translated_text":"Hello"},"ja":{"translated_text":"こんにちは","extra":true}}`,
+		`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]},"ja":{"translated_text":"こんにちは"}}`,
 	} {
-		if _, _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p, "Hello", nil); err == nil {
+		if _, err := parseMultiTranslationResponse(raw, []string{"en", "ja"}, p, "Hello"); err == nil {
 			t.Fatalf("expected strict validation error for %s", raw)
 		}
 	}
@@ -736,12 +762,11 @@ func TestParseMultiTranslationResponseRequiresExactLanguageKeys(t *testing.T) {
 
 func TestParseMultiTranslationResponseUnescapesHTMLEntities(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	got, _, err := parseMultiTranslationResponse(
+	got, err := parseMultiTranslationResponse(
 		`{"en":{"translated_text":"Working now~&#xA;&gt; Also fixed failures."}}`,
 		[]string{"en"},
 		p,
 		"Working now~\n> Also fixed failures.",
-		nil,
 	)
 	if err != nil {
 		t.Fatal(err)

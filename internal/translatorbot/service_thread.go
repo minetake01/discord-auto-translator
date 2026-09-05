@@ -251,12 +251,19 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if err != nil {
 			return "", "", err
 		}
-		loaded := s.downloadImageOriginals(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
+		loaded := s.loadImageAttachments(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
 		content, err = messageContentWithAllAssetURLs(content, imagesNotReuploaded(req.InitialMessageFiles, loaded), nil)
 		if err != nil {
 			return "", "", err
 		}
-		files := webhookFilesForImages(loaded, nil)
+		var descriptions []string
+		alts, altErr := s.translateAttachmentAltsWithLimit(ctx, req.GuildID, loaded, []string{target.Language}, func() TranslationContext {
+			return TranslationContext{GuildID: req.GuildID, MessageID: req.InitialMessageID}
+		})
+		if altErr == nil {
+			descriptions = alts[target.Language]
+		}
+		files := webhookFilesForImages(loaded, descriptions)
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			content = name
 		}

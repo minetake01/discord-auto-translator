@@ -11,7 +11,6 @@ type forwardedTargetContent struct {
 	body        string
 	jumpURL     string
 	needsAssets bool
-	files       []WebhookFile
 }
 
 type forwardedMirrorPayload struct {
@@ -23,7 +22,7 @@ type forwardedMirrorPayload struct {
 // When the forwarded source already has a mirror in the destination, its
 // translated body and jump URL are reused without calling the translator.
 func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
-	contents, err := s.forwardedContents(ctx, m, contextFn, dests)
+	contents, pendingAlts, err := s.forwardedContents(ctx, m, contextFn, dests)
 	if err != nil {
 		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
 		if errors.Is(err, errTranslationRateLimited) {
@@ -31,20 +30,30 @@ func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, 
 		}
 		return err
 	}
+	var posted []postedWebhookMirror
 	var errs []error
 	for _, dest := range dests {
 		payload := contents[dest.targetID]
-		if err := s.sendMirror(ctx, m, groupID, dest, payload.content, nil, payload.files, m.ForwardedMessage.Content); err != nil {
+		result, err := s.sendMirror(ctx, m, groupID, dest, payload.content, nil, payload.files, m.ForwardedMessage.Content)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+			continue
+		}
+		if pendingAlts != nil && len(payload.files) > 0 {
+			posted = append(posted, postedWebhookMirror{
+				channel: dest.channel, threadID: dest.threadID(), messageID: result.MessageID,
+				attachmentIDs: result.AttachmentIDs, language: dest.channel.Language,
+			})
 		}
 	}
+	s.applyReadyAttachmentAlts(pendingAlts, posted)
 	return errors.Join(errs...)
 }
 
 // forwardedContents prepares the outgoing content per destination: a
 // localized forwarded header plus either a reused mirror body or a fresh
 // translation of the forwarded snapshot.
-func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, contextFn func() TranslationContext, dests []mirrorDestination) (map[string]forwardedMirrorPayload, error) {
+func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, contextFn func() TranslationContext, dests []mirrorDestination) (map[string]forwardedMirrorPayload, <-chan attachmentAltOutcome, error) {
 	forwarded := m.ForwardedMessage
 
 	prepared := make(map[string]forwardedTargetContent, len(dests))
@@ -52,7 +61,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 	for _, dest := range dests {
 		_, mirrorChannelID, mirrorMessageID, ok, err := s.store.MessageQuoteTarget(ctx, forwarded.ChannelID, forwarded.MessageID, dest.targetID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok && mirrorChannelID == dest.targetID && mirrorMessageID != "" {
 			body := forwarded.Content
@@ -60,7 +69,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 			if mirrorChannelID != forwarded.ChannelID || mirrorMessageID != forwarded.MessageID {
 				fetched, fetchErr := s.discord.Message(mirrorChannelID, mirrorMessageID)
 				if fetchErr != nil {
-					return nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, fetchErr)
+					return nil, nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, fetchErr)
 				}
 				body = fetched.Content
 			}
@@ -78,6 +87,15 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		loaded = s.loadImageAttachments(ctx, imageAttachmentsOnly(forwarded.Attachments))
 	}
 
+	var altCh <-chan attachmentAltOutcome
+	if len(loaded) > 0 {
+		languages := make([]string, 0, len(dests))
+		for _, dest := range dests {
+			languages = append(languages, dest.channel.Language)
+		}
+		altCh = s.startAttachmentAltTranslation(ctx, m.GuildID, loaded, languages, contextFn)
+	}
+
 	if len(translateDests) > 0 {
 		languages := make([]string, 0, len(translateDests))
 		for _, dest := range translateDests {
@@ -85,7 +103,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		}
 		translations, err := s.translateWithLimit(ctx, m.GuildID, forwarded.Content, loaded, languages, contextFn)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		jumpGuildID := forwarded.GuildID
 		if jumpGuildID == "" {
@@ -96,25 +114,27 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 				body:        s.postProcessContent(ctx, m.GuildID, translations.Translations[dest.channel.Language], dest.channel.Language),
 				jumpURL:     MessageJumpURL(jumpGuildID, forwarded.ChannelID, forwarded.MessageID),
 				needsAssets: true,
-				files:       webhookFilesForImages(loaded, translations.AttachmentDescriptions[dest.channel.Language]),
 			}
 		}
+	}
+
+	alts, pendingAlts := takeReadyAttachmentAlts(altCh)
+	if altCh == nil {
+		pendingAlts = nil
 	}
 
 	contents := make(map[string]forwardedMirrorPayload, len(dests))
 	for _, dest := range dests {
 		item := prepared[dest.targetID]
 		body := item.body
-		files := item.files
+		var files []WebhookFile
 		var err error
 		if item.needsAssets {
 			body, err = messageContentWithLoadedImages(body, forwarded.Attachments, forwarded.Stickers, loaded)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			if len(files) == 0 {
-				files = webhookFilesForImages(loaded, nil)
-			}
+			files = webhookFilesForImages(loaded, alts[dest.channel.Language])
 		}
 		header := fmt.Sprintf("-# %s · %s", localizedUIString(dest.channel.Language, uiKeyForwarded), item.jumpURL)
 		content := header
@@ -123,7 +143,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		}
 		contents[dest.targetID] = forwardedMirrorPayload{content: content, files: files}
 	}
-	return contents, nil
+	return contents, pendingAlts, nil
 }
 
 func anyForwardNeedsAssets(prepared map[string]forwardedTargetContent) bool {

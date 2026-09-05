@@ -91,24 +91,20 @@ func TestIsImageAttachmentUsesContentTypeAndExtension(t *testing.T) {
 	}
 }
 
-func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
+func TestParseAttachmentAltTranslationResponse(t *testing.T) {
 	p := NewProtector(NameMaps{})
 	mixed := []TranslationAttachment{
 		{Index: 1, Description: "出口はこちら"},
 		{Index: 2},
 	}
-	texts, alts, err := parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":["Warning: doors closing"]}}`,
+	alts, err := parseAttachmentAltTranslationResponse(
+		`{"en":{"attachment_descriptions":["Warning: doors closing"]}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
 		mixed,
 	)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if texts["en"] != "Hello" {
-		t.Fatalf("text = %q", texts["en"])
 	}
 	if len(alts["en"]) != 2 || alts["en"][0] != "Warning: doors closing" || alts["en"][1] != "" {
 		t.Fatalf("alts = %#v", alts["en"])
@@ -118,11 +114,10 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 		{Index: 1, Description: "出口"},
 		{Index: 2, Description: "https://example.com/a.png"},
 	}
-	texts, alts, err = parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`,
+	alts, err = parseAttachmentAltTranslationResponse(
+		`{"en":{"attachment_descriptions":["Exit"]}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
 		urlOnly,
 	)
 	if err != nil {
@@ -136,11 +131,10 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 		{Index: 1, Description: "出口はこちら"},
 		{Index: 2, Description: "非常口"},
 	}
-	texts, alts, err = parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":["Warning: doors closing","Emergency exit","og image caption"]}}`,
+	alts, err = parseAttachmentAltTranslationResponse(
+		`{"en":{"attachment_descriptions":["Warning: doors closing","Emergency exit","og image caption"]}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
 		twoAlts,
 	)
 	if err != nil {
@@ -150,79 +144,47 @@ func TestParseMultiTranslationResponseAttachmentDescriptions(t *testing.T) {
 		t.Fatalf("extra background alts should be dropped: %#v", alts["en"])
 	}
 
-	texts, alts, err = parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":["og image caption"]}}`,
+	if _, err := parseAttachmentAltTranslationResponse(
+		`{"en":{"attachment_descriptions":["only one"]}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if texts["en"] != "Hello" || alts != nil {
-		t.Fatalf("OGP-only extra alts should not be applied: texts=%#v alts=%#v", texts, alts)
-	}
-
-	if _, _, err := parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":["only one"]}}`,
-		[]string{"en"},
-		p,
-		"こんにちは",
 		twoAlts,
 	); err == nil {
 		t.Fatal("expected length mismatch error")
 	}
 
-	if _, _, err := parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello"}}`,
+	if _, err := parseAttachmentAltTranslationResponse(
+		`{"en":{}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
 		[]TranslationAttachment{{Index: 1, Description: "出口"}},
 	); err == nil {
 		t.Fatal("expected missing attachment_descriptions error")
 	}
 
-	if _, _, err := parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":[""]}}`,
+	if _, err := parseAttachmentAltTranslationResponse(
+		`{"en":{"attachment_descriptions":[""]}}`,
 		[]string{"en"},
 		p,
-		"こんにちは",
 		[]TranslationAttachment{{Index: 1, Description: "出口"}},
 	); err == nil {
 		t.Fatal("expected empty attachment description error")
 	}
-
-	texts, alts, err = parseMultiTranslationResponse(
-		`{"en":{"translated_text":"Hello","attachment_descriptions":[]}}`,
-		[]string{"en"},
-		p,
-		"こんにちは",
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if texts["en"] != "Hello" || alts != nil {
-		t.Fatalf("texts=%#v alts=%#v", texts, alts)
-	}
 }
 
-func TestParseMultiTranslationResponseAllowsEmptyTextForImageOnly(t *testing.T) {
+func TestParseMultiTranslationResponseAllowsEmptyTextWithoutAlts(t *testing.T) {
 	p := NewProtector(NameMaps{})
-	texts, alts, err := parseMultiTranslationResponse(
-		`{"en":{"translated_text":"","attachment_descriptions":["Exit"]}}`,
+	texts, err := parseMultiTranslationResponse(
+		`{"en":{"translated_text":""}}`,
 		[]string{"en"},
 		p,
 		"",
-		[]TranslationAttachment{{Index: 1, Description: "出口"}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if texts["en"] != "" || alts["en"][0] != "Exit" {
-		t.Fatalf("texts=%#v alts=%#v", texts, alts)
+	if texts["en"] != "" {
+		t.Fatalf("texts=%#v", texts)
 	}
 }
 
