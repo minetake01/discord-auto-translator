@@ -46,28 +46,28 @@ func openaiLanguageKeyedSchema(targetLanguages []string, item map[string]any) (j
 	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
 }
 
-func openaiMessageTranslationSchema(targetLanguages []string, altCount int) (json.RawMessage, error) {
-	if altCount < 0 {
-		return nil, errors.New("translation JSON schema has a negative alt count")
-	}
-	required := []string{"translated_text"}
-	properties := map[string]any{
+func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"translated_text"}, map[string]any{
 		"translated_text": map[string]any{
 			"type":        "string",
 			"description": "The <final_message> translated into this language. Empty when <final_message> is empty.",
 		},
+	}))
+}
+
+func openaiAttachmentAltTranslationSchema(targetLanguages []string, altCount int) (json.RawMessage, error) {
+	if altCount <= 0 {
+		return nil, errors.New("attachment alt JSON schema requires a positive alt count")
 	}
-	if altCount > 0 {
-		required = append(required, "attachment_descriptions")
-		properties["attachment_descriptions"] = map[string]any{
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"attachment_descriptions"}, map[string]any{
+		"attachment_descriptions": map[string]any{
 			"type":        "array",
 			"items":       map[string]any{"type": "string"},
 			"minItems":    altCount,
 			"maxItems":    altCount,
-			"description": "Exactly as many strings as <alt> elements in <attachment_alts>, in that order. Translate those existing alt texts. Never invent alt text. Do not describe background images from history, replies, or linked pages.",
-		}
-	}
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema(required, properties))
+			"description": "Exactly as many strings as <alt> elements in <attachment_alts>, in that order. Translate those existing alt texts. Never invent alt text.",
+		},
+	}))
 }
 
 func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, error) {

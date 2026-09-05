@@ -36,25 +36,27 @@ func stubImageHTTP(service *Service) {
 }
 
 type fakeDiscordAPI struct {
-	sent              []WebhookSend
-	channelMessages   []channelMessageCall
-	reactions         []reactionCall
-	removedReactions  []reactionCall
-	threads           []threadCall
-	webhookEdits      []webhookEditCall
-	webhookDeletes    []webhookDeleteCall
-	pinCalls          []pinCall
-	edits             []threadEditCall
-	deletes           []string
-	channels          map[string]*discordgo.Channel
-	guildNames        map[string]string
-	guildDescriptions map[string]string
-	channelNames      map[string]string
-	channelTopics     map[string]string
-	messageContents   map[string]string
-	messages          map[string]DiscordFetchedMessage
-	messageErrors     map[string]error
-	nextID            int
+	mu                     sync.Mutex
+	sent                   []WebhookSend
+	channelMessages        []channelMessageCall
+	reactions              []reactionCall
+	removedReactions       []reactionCall
+	threads                []threadCall
+	webhookEdits           []webhookEditCall
+	webhookAttachmentEdits []webhookAttachmentEditCall
+	webhookDeletes         []webhookDeleteCall
+	pinCalls               []pinCall
+	edits                  []threadEditCall
+	deletes                []string
+	channels               map[string]*discordgo.Channel
+	guildNames             map[string]string
+	guildDescriptions      map[string]string
+	channelNames           map[string]string
+	channelTopics          map[string]string
+	messageContents        map[string]string
+	messages               map[string]DiscordFetchedMessage
+	messageErrors          map[string]error
+	nextID                 int
 }
 type channelMessageCall struct {
 	channelID        string
@@ -86,6 +88,11 @@ type webhookEditCall struct {
 	threadID  string
 	content   string
 }
+type webhookAttachmentEditCall struct {
+	messageID   string
+	threadID    string
+	attachments []WebhookAttachmentEdit
+}
 type webhookDeleteCall struct {
 	messageID string
 	threadID  string
@@ -94,6 +101,18 @@ type pinCall struct {
 	channelID string
 	messageID string
 	pinned    bool
+}
+
+func (f *fakeDiscordAPI) webhookSends() []WebhookSend {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]WebhookSend(nil), f.sent...)
+}
+
+func (f *fakeDiscordAPI) attachmentEdits() []webhookAttachmentEditCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]webhookAttachmentEditCall(nil), f.webhookAttachmentEdits...)
 }
 
 func (f *fakeDiscordAPI) GuildName(guildID string) (string, error) {
@@ -136,13 +155,30 @@ func (f *fakeDiscordAPI) SendChannelMessage(channelID, replyToMessageID, content
 	})
 	return nil
 }
-func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (messageID string, err error) {
+func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.nextID++
 	f.sent = append(f.sent, msg)
-	return fmt.Sprintf("sent-%d", f.nextID), nil
+	ids := make([]string, len(msg.Files))
+	for i := range msg.Files {
+		ids[i] = fmt.Sprintf("att-%d-%d", f.nextID, i)
+	}
+	return WebhookSendResult{MessageID: fmt.Sprintf("sent-%d", f.nextID), AttachmentIDs: ids}, nil
 }
 func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.webhookEdits = append(f.webhookEdits, webhookEditCall{messageID: messageID, threadID: threadID, content: content})
+	return nil
+}
+func (f *fakeDiscordAPI) EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	copied := append([]WebhookAttachmentEdit(nil), attachments...)
+	f.webhookAttachmentEdits = append(f.webhookAttachmentEdits, webhookAttachmentEditCall{
+		messageID: messageID, threadID: threadID, attachments: copied,
+	})
 	return nil
 }
 func (f *fakeDiscordAPI) DeleteWebhook(webhookID, token, messageID, threadID string) error {
@@ -202,18 +238,23 @@ func (f *fakeDiscordAPI) Channel(channelID string) (*discordgo.Channel, error) {
 }
 
 type echoTranslator struct {
-	contexts     []TranslationContext
-	pollContexts []TranslationContext
-	visions      [][]visionImage
-	userPrompts  []string
+	mu             sync.Mutex
+	contexts       []TranslationContext
+	altContexts    []TranslationContext
+	pollContexts   []TranslationContext
+	visions        [][]visionImage
+	altVisions     [][]visionImage
+	userPrompts    []string
+	altUserPrompts []string
 }
 
 func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.contexts = append(e.contexts, prepared.translationContext)
 	e.visions = append(e.visions, append([]visionImage(nil), prepared.visionImages...))
 	e.userPrompts = append(e.userPrompts, prepared.userPrompt())
 	out := make(map[string]string, len(prepared.targetLanguages))
-	alts := make(map[string][]string, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
 		text := prepared.content
 		if hasTranslatableText(text) || strings.TrimSpace(text) != "" {
@@ -221,9 +262,16 @@ func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTr
 		} else {
 			out[lang] = text
 		}
-		if translatableAttachmentCount(prepared.translationContext.Attachments) == 0 {
-			continue
-		}
+	}
+	return MultiTranslationResult{Translations: out}, nil
+}
+
+func echoAttachmentAlts(prepared preparedTranslation) map[string][]string {
+	if translatableAttachmentCount(prepared.translationContext.Attachments) == 0 {
+		return nil
+	}
+	alts := make(map[string][]string, len(prepared.targetLanguages))
+	for _, lang := range prepared.targetLanguages {
 		descriptions := make([]string, len(prepared.translationContext.Attachments))
 		for i, attachment := range prepared.translationContext.Attachments {
 			if hasTranslatableText(attachment.Description) {
@@ -234,12 +282,20 @@ func (e *echoTranslator) TranslateMulti(ctx context.Context, prepared preparedTr
 		}
 		alts[lang] = descriptions
 	}
-	if len(alts) == 0 {
-		alts = nil
-	}
-	return MultiTranslationResult{Translations: out, AttachmentDescriptions: alts}, nil
+	return alts
+}
+
+func (e *echoTranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.altContexts = append(e.altContexts, prepared.translationContext)
+	e.altVisions = append(e.altVisions, append([]visionImage(nil), prepared.visionImages...))
+	e.altUserPrompts = append(e.altUserPrompts, prepared.userPrompt())
+	return AttachmentAltTranslationResult{Descriptions: echoAttachmentAlts(prepared)}, nil
 }
 func (e *echoTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.pollContexts = append(e.pollContexts, prepared.translationContext)
 	out := make(map[string]PollTranslation, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
@@ -255,6 +311,8 @@ func (e *echoTranslator) TranslatePollMulti(ctx context.Context, prepared prepar
 	return PollMultiTranslationResult{Translations: out}, nil
 }
 func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.contexts = append(e.contexts, prepared.translationContext)
 	out := make(map[string]ThreadCreateTranslation, len(prepared.targetLanguages))
 	for _, lang := range prepared.targetLanguages {
@@ -269,6 +327,52 @@ func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepare
 		out[lang] = ThreadCreateTranslation{Name: name, Message: message}
 	}
 	return ThreadCreateMultiTranslationResult{Translations: out}, nil
+}
+
+type delayedAltTranslator struct {
+	echoTranslator
+	altStarted chan struct{}
+	altRelease chan struct{}
+}
+
+func (d *delayedAltTranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	if d.altStarted != nil {
+		select {
+		case <-d.altStarted:
+		default:
+			close(d.altStarted)
+		}
+	}
+	if d.altRelease != nil {
+		select {
+		case <-d.altRelease:
+		case <-ctx.Done():
+			return AttachmentAltTranslationResult{}, ctx.Err()
+		}
+	}
+	return d.echoTranslator.TranslateAttachmentAlts(ctx, prepared)
+}
+
+type failingAltTranslator struct {
+	echoTranslator
+	err error
+}
+
+func (f *failingAltTranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	if f.err != nil {
+		return AttachmentAltTranslationResult{}, f.err
+	}
+	return f.echoTranslator.TranslateAttachmentAlts(ctx, prepared)
+}
+
+func mirroredImageDescription(discord *fakeDiscordAPI) string {
+	if len(discord.webhookAttachmentEdits) > 0 && len(discord.webhookAttachmentEdits[0].attachments) > 0 {
+		return discord.webhookAttachmentEdits[0].attachments[0].Description
+	}
+	if len(discord.sent) > 0 && len(discord.sent[0].Files) > 0 {
+		return discord.sent[0].Files[0].Description
+	}
+	return ""
 }
 
 type topicSummaryTranslator struct {
@@ -354,6 +458,12 @@ func (s *selectiveFailTranslator) TranslateMulti(ctx context.Context, prepared p
 	}
 	return MultiTranslationResult{Translations: out}, nil
 }
+func (s *selectiveFailTranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
+		return AttachmentAltTranslationResult{}, errors.New("translation failed")
+	}
+	return AttachmentAltTranslationResult{Descriptions: echoAttachmentAlts(prepared)}, nil
+}
 func (s *selectiveFailTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {
 	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
 		return PollMultiTranslationResult{}, errors.New("translation failed")
@@ -410,6 +520,13 @@ func (s *stickyErrorTranslator) TranslateMulti(ctx context.Context, prepared pre
 		return MultiTranslationResult{}, err
 	}
 	return s.echoTranslator.TranslateMulti(ctx, prepared)
+}
+
+func (s *stickyErrorTranslator) TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error) {
+	if err := s.currentErr(); err != nil {
+		return AttachmentAltTranslationResult{}, err
+	}
+	return s.echoTranslator.TranslateAttachmentAlts(ctx, prepared)
 }
 
 func (s *stickyErrorTranslator) TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error) {

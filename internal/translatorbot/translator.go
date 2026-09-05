@@ -46,10 +46,15 @@ type TranslationContext struct {
 }
 
 type MultiTranslationResult struct {
-	Translations           map[string]string
-	AttachmentDescriptions map[string][]string
-	InputTokens            int
-	OutputTokens           int
+	Translations map[string]string
+	InputTokens  int
+	OutputTokens int
+}
+
+type AttachmentAltTranslationResult struct {
+	Descriptions map[string][]string
+	InputTokens  int
+	OutputTokens int
 }
 
 type PollTranslation struct {
@@ -82,6 +87,7 @@ type TopicSummaryResult struct {
 
 type Translator interface {
 	TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error)
+	TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error)
 	TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error)
 	TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error)
 }
@@ -189,20 +195,9 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 
 	protected := p.Protect(content)
 	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
-	protectedAlts := make([]string, len(attachments))
-	glossaryParts := []string{content}
-	altCount := 0
-	for i, attachment := range attachments {
-		if !hasTranslatableText(attachment.Description) {
-			continue
-		}
-		protectedAlts[i] = p.Protect(attachment.Description)
-		glossaryParts = append(glossaryParts, protectedAlts[i])
-		altCount++
-	}
 	translationContext.Attachments = attachments
 	assignSiteContext(p, &translationContext)
-	alwaysGlossary, matchedGlossary := splitGlossaryEntries(strings.Join(glossaryParts, "\n"), glossary)
+	alwaysGlossary, matchedGlossary := splitGlossaryEntries(content, glossary)
 	prepared := preparedTranslation{
 		targetLanguages:    normalized,
 		systemInstruction:  buildMessageTranslationSystemInstruction(),
@@ -211,13 +206,11 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 		messageID:          translationContext.MessageID,
 		content:            content,
 		translationContext: translationContext,
-		altCount:           altCount,
 		promptCacheKey:     translationPromptCacheKey(translationContext, ""),
 		alwaysGlossary:     alwaysGlossary,
 		matchedGlossary:    matchedGlossary,
 		writeSource: func(b *strings.Builder) {
 			writeAttachmentContext(b, attachments)
-			writeAttachmentAlts(b, attachments, protectedAlts)
 			writeAttributedElement(b, "final_message", translationContext.Author, protected)
 		},
 	}
@@ -226,7 +219,10 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 }
 
 type translationResponseItem struct {
-	TranslatedText         string   `json:"translated_text"`
+	TranslatedText string `json:"translated_text"`
+}
+
+type attachmentAltResponseItem struct {
 	AttachmentDescriptions []string `json:"attachment_descriptions"`
 }
 
@@ -273,39 +269,100 @@ func decodeLanguageKeyedJSON[T any](raw string, targetLanguages []string) (map[s
 	return out, nil
 }
 
-func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector, sourceContent string, attachments []TranslationAttachment) (map[string]string, map[string][]string, error) {
+func parseMultiTranslationResponse(raw string, targetLanguages []string, protector *Protector, sourceContent string) (map[string]string, error) {
 	parsed, err := decodeLanguageKeyedJSON[translationResponseItem](raw, targetLanguages)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse translation response: %w", err)
+		return nil, fmt.Errorf("parse translation response: %w", err)
 	}
 
-	altCount := translatableAttachmentCount(attachments)
 	texts := make(map[string]string, len(targetLanguages))
-	descriptions := make(map[string][]string, len(targetLanguages))
 	for _, targetLanguage := range targetLanguages {
 		item := parsed[targetLanguage]
 		text := strings.TrimSpace(html.UnescapeString(item.TranslatedText))
 		if text == "" {
 			if hasTranslatableText(sourceContent) {
-				return nil, nil, fmt.Errorf("parse translation response: empty translation for %q", targetLanguage)
+				return nil, fmt.Errorf("parse translation response: empty translation for %q", targetLanguage)
 			}
 			texts[targetLanguage] = sourceContent
 		} else {
 			texts[targetLanguage] = protector.Restore(text)
 		}
-		if altCount == 0 {
+	}
+	return texts, nil
+}
+
+func prepareAttachmentAltTranslation(targetLanguages []string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
+	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
+	translationContext.History = nil
+	translationContext.ReplyChain = nil
+	translationContext.Sites = nil
+	translationContext.StyleInstructions = ""
+	translationContext.TopicSummary = ""
+	translationContext.ServerName = ""
+	translationContext.ServerDescription = ""
+	translationContext.ChannelName = ""
+	translationContext.ChannelTopic = ""
+	translationContext.ThreadName = ""
+	translationContext.SiteTitles = nil
+	translationContext.SiteDescriptions = nil
+	translationContext.SiteImages = nil
+	translationContext.Attachments = attachments
+
+	normalized, p, err := beginPreparedTranslation(targetLanguages, &translationContext)
+	if err != nil || len(normalized) == 0 {
+		return preparedTranslation{}, err
+	}
+
+	protectedAlts := make([]string, len(attachments))
+	glossaryParts := make([]string, 0, len(attachments))
+	altCount := 0
+	for i, attachment := range attachments {
+		if !hasTranslatableText(attachment.Description) {
 			continue
 		}
-		alts, err := applyAttachmentDescriptions(item.AttachmentDescriptions, attachments, protector)
+		protectedAlts[i] = p.Protect(attachment.Description)
+		glossaryParts = append(glossaryParts, protectedAlts[i])
+		altCount++
+	}
+	if altCount == 0 {
+		return preparedTranslation{}, nil
+	}
+	alwaysGlossary, matchedGlossary := splitGlossaryEntries(strings.Join(glossaryParts, "\n"), glossary)
+	prepared := preparedTranslation{
+		targetLanguages:    normalized,
+		systemInstruction:  buildAttachmentAltTranslationSystemInstruction(),
+		protector:          p,
+		guildID:            translationContext.GuildID,
+		messageID:          translationContext.MessageID,
+		translationContext: translationContext,
+		altCount:           altCount,
+		promptCacheKey:     translationPromptCacheKey(translationContext, "attachment_alts"),
+		alwaysGlossary:     alwaysGlossary,
+		matchedGlossary:    matchedGlossary,
+		writeSource: func(b *strings.Builder) {
+			writeAttachmentContext(b, attachments)
+			writeAttachmentAlts(b, attachments, protectedAlts)
+		},
+	}
+	prepared.buildUserPrompt()
+	return prepared, nil
+}
+
+func parseAttachmentAltTranslationResponse(raw string, targetLanguages []string, protector *Protector, attachments []TranslationAttachment) (map[string][]string, error) {
+	parsed, err := decodeLanguageKeyedJSON[attachmentAltResponseItem](raw, targetLanguages)
+	if err != nil {
+		return nil, fmt.Errorf("parse attachment alt translation response: %w", err)
+	}
+
+	descriptions := make(map[string][]string, len(targetLanguages))
+	for _, targetLanguage := range targetLanguages {
+		alts, err := applyAttachmentDescriptions(parsed[targetLanguage].AttachmentDescriptions, attachments, protector)
 		if err != nil {
-			return nil, nil, fmt.Errorf("parse translation response: language %q: %w", targetLanguage, err)
+			return nil, fmt.Errorf("parse attachment alt translation response: language %q: %w", targetLanguage, err)
 		}
 		descriptions[targetLanguage] = alts
 	}
-	if len(descriptions) == 0 {
-		return texts, nil, nil
-	}
-	return texts, descriptions, nil
+	return descriptions, nil
 }
 
 func applyAttachmentDescriptions(translated []string, attachments []TranslationAttachment, protector *Protector) ([]string, error) {

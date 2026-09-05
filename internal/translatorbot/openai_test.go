@@ -128,9 +128,18 @@ func requireJSONSchemaResponseFormat(t *testing.T, input openaiChatCompletionReq
 	}
 }
 
-func mustMessageSchema(t *testing.T, langs []string, altCount int) json.RawMessage {
+func mustMessageSchema(t *testing.T, langs []string) json.RawMessage {
 	t.Helper()
-	schema, err := openaiMessageTranslationSchema(langs, altCount)
+	schema, err := openaiMessageTranslationSchema(langs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return schema
+}
+
+func mustAttachmentAltSchema(t *testing.T, langs []string, altCount int) json.RawMessage {
+	t.Helper()
+	schema, err := openaiAttachmentAltTranslationSchema(langs, altCount)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,15 +279,14 @@ func TestOpenAITranslatorSendsVisionImagesAfterCachedText(t *testing.T) {
 		if !strings.Contains(openaiContentText(t, input.Messages[1].Content), "<attachments>") {
 			t.Fatalf("text parts = %s", input.Messages[1].Content)
 		}
-		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}, 1))
-		minItems, maxItems, ok := schemaAttachmentDescriptionBounds(t, input.ResponseFormat.JSONSchema.Schema)
-		if !ok || minItems != 1 || maxItems != 1 {
-			t.Fatalf("attachment_descriptions bounds = %t %d %d", ok, minItems, maxItems)
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}))
+		if _, _, ok := schemaAttachmentDescriptionBounds(t, input.ResponseFormat.JSONSchema.Schema); ok {
+			t.Fatal("message schema must not include attachment_descriptions")
 		}
 		if schemaHasJSONSchemaDump(openaiContentText(t, input.Messages[0].Content)) {
 			t.Fatalf("schema must not be copied into the system instruction: %s", input.Messages[0].Content)
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`, 1, 2)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "出口", TranslationContext{
 		Attachments: []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
@@ -291,14 +299,46 @@ func TestOpenAITranslatorSendsVisionImagesAfterCachedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Translations["en"] != "Hello" || result.AttachmentDescriptions["en"][0] != "Exit" {
+	if result.Translations["en"] != "Hello" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestOpenAITranslatorAttachmentAltsUseDedicatedSchema(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		requireJSONSchemaResponseFormat(t, input, openaiAttachmentAltTranslationSchemaName, mustAttachmentAltSchema(t, []string{"en"}, 1))
+		minItems, maxItems, ok := schemaAttachmentDescriptionBounds(t, input.ResponseFormat.JSONSchema.Schema)
+		if !ok || minItems != 1 || maxItems != 1 {
+			t.Fatalf("attachment_descriptions bounds = %t %d %d", ok, minItems, maxItems)
+		}
+		if strings.Contains(openaiContentText(t, input.Messages[1].Content), "<final_message") {
+			t.Fatalf("alt prompt must not include final_message: %s", input.Messages[1].Content)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"attachment_descriptions":["Exit"]}}`, 1, 2)))}, nil
+	})
+	prepared, err := prepareAttachmentAltTranslation([]string{"en"}, TranslationContext{
+		Attachments: []TranslationAttachment{{Index: 1, Filename: "sign.png", Description: "出口"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	result, err := testTranslator(client).TranslateAttachmentAlts(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Descriptions["en"][0] != "Exit" {
 		t.Fatalf("result = %#v", result)
 	}
 }
 
 func TestOpenAITranslatorIgnoresOGPAltsWhenThereAreNoAttachments(t *testing.T) {
 	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Linked page hero image"]}}`, 1, 2)))}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 2)))}, nil
 	})
 	prepared, err := prepareMultiTranslation([]string{"en"}, "see this", TranslationContext{
 		Sites: []SiteContextEntry{{ID: "1", Title: "Article", Description: "About", HasVisionImage: true}},
@@ -311,8 +351,17 @@ func TestOpenAITranslatorIgnoresOGPAltsWhenThereAreNoAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Translations["en"] != "Hello" || result.AttachmentDescriptions != nil {
-		t.Fatalf("OGP alts must not be applied: %#v", result)
+	if result.Translations["en"] != "Hello" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestOpenAITranslatorRejectsAttachmentDescriptionsOnMessageResponse(t *testing.T) {
+	client := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Linked page hero image"]}}`, 1, 2)))}, nil
+	})
+	if _, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "see this", TranslationContext{}, nil); err == nil {
+		t.Fatal("expected unknown field error for attachment_descriptions on message translation")
 	}
 }
 
@@ -337,7 +386,7 @@ func TestOpenAITranslatorRequestContractAndResponseUsage(t *testing.T) {
 		if len(input.Messages) != 2 || input.Messages[0].Role != "system" || input.Messages[1].Role != "user" {
 			t.Fatalf("prompt shape = %#v", input.Messages)
 		}
-		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}, 0))
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}))
 		if schemaHasJSONSchemaDump(openaiContentText(t, input.Messages[0].Content)) {
 			t.Fatalf("schema must not be copied into the system instruction: %s", input.Messages[0].Content)
 		}
@@ -454,8 +503,8 @@ func TestOpenAITranslatorOmitsUnsupportedRequestFields(t *testing.T) {
 func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 	langs := []string{"en", "ja"}
 	schemas := []json.RawMessage{
-		mustMessageSchema(t, langs, 0),
-		mustMessageSchema(t, langs, 2),
+		mustMessageSchema(t, langs),
+		mustAttachmentAltSchema(t, langs, 2),
 		mustPollSchema(t, langs),
 		mustThreadCreateSchema(t, langs),
 	}
@@ -474,19 +523,19 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 }
 
 func TestMessageTranslationSchemaOmitsAttachmentDescriptionsWithoutAlts(t *testing.T) {
-	required := schemaItemRequired(t, mustMessageSchema(t, []string{"en"}, 0))
+	required := schemaItemRequired(t, mustMessageSchema(t, []string{"en"}))
 	if required["language"] || !required["translated_text"] || required["attachment_descriptions"] {
 		t.Fatalf("required = %#v", required)
 	}
-	if _, _, ok := schemaAttachmentDescriptionBounds(t, mustMessageSchema(t, []string{"en"}, 0)); ok {
-		t.Fatal("attachment_descriptions must be absent when there are no translatable alts")
+	if _, _, ok := schemaAttachmentDescriptionBounds(t, mustMessageSchema(t, []string{"en"})); ok {
+		t.Fatal("attachment_descriptions must be absent from message translation schema")
 	}
 }
 
-func TestMessageTranslationSchemaRequiresAttachmentDescriptionsWithCount(t *testing.T) {
-	schema := mustMessageSchema(t, []string{"en"}, 2)
+func TestAttachmentAltTranslationSchemaRequiresBounds(t *testing.T) {
+	schema := mustAttachmentAltSchema(t, []string{"en"}, 2)
 	required := schemaItemRequired(t, schema)
-	if required["language"] || !required["translated_text"] || !required["attachment_descriptions"] {
+	if required["language"] || required["translated_text"] || !required["attachment_descriptions"] {
 		t.Fatalf("required = %#v", required)
 	}
 	minItems, maxItems, ok := schemaAttachmentDescriptionBounds(t, schema)
@@ -501,7 +550,7 @@ func TestOpenAITranslatorLanguageKeysMatchTargetLanguages(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en", "ja"}, 0))
+		requireJSONSchemaResponseFormat(t, input, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en", "ja"}))
 		got := schemaLanguageKeys(t, input.ResponseFormat.JSONSchema.Schema)
 		if len(got) != 2 || got[0] != "en" || got[1] != "ja" {
 			t.Fatalf("language keys = %#v", got)
@@ -664,9 +713,6 @@ func TestOpenAITranslatorMessageSystemInstructionIgnoresAttachments(t *testing.T
 		}
 		systems = append(systems, openaiContentText(t, input.Messages[0].Content))
 		body := successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)
-		if len(systems) == 2 {
-			body = successfulOpenAIResponse(`{"en":{"translated_text":"Hello","attachment_descriptions":["Exit"]}}`, 1, 1)
-		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
 	})
 	translator := testTranslator(client)
@@ -863,7 +909,7 @@ func TestOpenAITranslatorDebugLogRecordsRequestAndRawResponse(t *testing.T) {
 	if len(request.Messages) != 2 {
 		t.Fatalf("logged prompt shape = %#v", request.Messages)
 	}
-	requireJSONSchemaResponseFormat(t, request, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}, 0))
+	requireJSONSchemaResponseFormat(t, request, openaiMessageTranslationSchemaName, mustMessageSchema(t, []string{"en"}))
 	if schemaHasJSONSchemaDump(openaiContentText(t, request.Messages[0].Content)) {
 		t.Fatalf("logged system instruction still contains schema: %s", request.Messages[0].Content)
 	}

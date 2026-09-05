@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMessageSourceAllowlistAppliesToCreateAndUpdate(t *testing.T) {
@@ -283,8 +284,8 @@ func TestHandleMessageCreateTranslatesExistingImageAltText(t *testing.T) {
 	if len(discord.sent) != 1 || discord.sent[0].Content != "[en] 見て" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Description != "[en] 出口はこちら" {
-		t.Fatalf("files: %#v", discord.sent[0].Files)
+	if got := mirroredImageDescription(discord); got != "[en] 出口はこちら" {
+		t.Fatalf("description = %q files=%#v edits=%#v", got, discord.sent[0].Files, discord.webhookAttachmentEdits)
 	}
 }
 
@@ -306,6 +307,9 @@ func TestHandleMessageCreateForwardsAttachmentOnlyMessages(t *testing.T) {
 
 	if len(translator.contexts) != 0 {
 		t.Fatalf("image-only messages without alt are not translation targets: %#v", translator.contexts)
+	}
+	if len(translator.altContexts) != 0 {
+		t.Fatalf("image-only messages without alt must not translate alts: %#v", translator.altContexts)
 	}
 	if len(discord.sent) != 1 || strings.TrimSpace(discord.sent[0].Content) != "" {
 		t.Fatalf("sent: %#v", discord.sent)
@@ -329,14 +333,104 @@ func TestHandleMessageCreateTranslatesImageOnlyExistingAltText(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if len(translator.contexts) != 1 {
-		t.Fatalf("image-only messages with alt are translation targets: %#v", translator.contexts)
+	if len(translator.contexts) != 0 {
+		t.Fatalf("image-only messages with alt must not call body translation: %#v", translator.contexts)
+	}
+	if len(translator.altContexts) != 1 {
+		t.Fatalf("image-only messages with alt are alt translation targets: %#v", translator.altContexts)
 	}
 	if len(discord.sent) != 1 || strings.TrimSpace(discord.sent[0].Content) != "" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
-	if len(discord.sent[0].Files) != 1 || discord.sent[0].Files[0].Description != "[en] 出口はこちら" {
-		t.Fatalf("files: %#v", discord.sent[0].Files)
+	if got := mirroredImageDescription(discord); got != "[en] 出口はこちら" {
+		t.Fatalf("description = %q files=%#v edits=%#v", got, discord.sent[0].Files, discord.webhookAttachmentEdits)
+	}
+}
+
+func TestHandleMessageCreatePatchesTranslatedAltAfterPosting(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	altStarted := make(chan struct{})
+	altRelease := make(chan struct{})
+	translator := &delayedAltTranslator{altStarted: altStarted, altRelease: altRelease}
+	service := NewService(store, discord, translator)
+	stubImageHTTP(service)
+	seedGroup(t, store)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- service.HandleMessageCreate(ctx, DiscordMessage{
+			ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "見て",
+			Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png", Description: "出口はこちら"}},
+		})
+	}()
+
+	select {
+	case <-altStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("alt translation did not start")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	var sent []WebhookSend
+	for time.Now().Before(deadline) {
+		sent = discord.webhookSends()
+		if len(sent) == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(sent) != 1 || sent[0].Content != "[en] 見て" {
+		t.Fatalf("sent before alt finished: %#v", sent)
+	}
+	if len(sent[0].Files) != 1 || sent[0].Files[0].Description != "出口はこちら" {
+		t.Fatalf("first send must keep source alt: %#v", sent[0].Files)
+	}
+	if edits := discord.attachmentEdits(); len(edits) != 0 {
+		t.Fatalf("patch before alt finished: %#v", edits)
+	}
+
+	close(altRelease)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("HandleMessageCreate did not finish")
+	}
+
+	edits := discord.attachmentEdits()
+	if len(edits) != 1 || len(edits[0].attachments) != 1 || edits[0].attachments[0].Description != "[en] 出口はこちら" {
+		t.Fatalf("attachment edits: %#v", edits)
+	}
+	if edits[0].attachments[0].ID == "" {
+		t.Fatal("patch must include the posted attachment id")
+	}
+}
+
+func TestHandleMessageCreateKeepsSourceAltWhenAltTranslationFails(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &failingAltTranslator{err: errors.New("alt failed")})
+	stubImageHTTP(service)
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "見て",
+		Attachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png", ContentType: "image/png", Description: "出口はこちら"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "[en] 見て" {
+		t.Fatalf("body must still post: %#v", discord.sent)
+	}
+	if got := mirroredImageDescription(discord); got != "出口はこちら" {
+		t.Fatalf("source alt must remain: %q edits=%#v", got, discord.webhookAttachmentEdits)
+	}
+	if len(discord.channelMessages) != 0 {
+		t.Fatalf("alt failure must not notify as a body translation failure: %#v", discord.channelMessages)
 	}
 }
 
@@ -676,7 +770,7 @@ func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 
-	err := service.sendAndSaveLink(ctx, GroupChannel{
+	_, err := service.sendAndSaveLink(ctx, GroupChannel{
 		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
 	}, "", WebhookSend{Content: "[en] hello", Username: "u"}, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",

@@ -189,14 +189,6 @@ func hasTranslatableText(text string) bool {
 	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
 }
 
-func needsTranslation(content string, imageAttachments []DiscordAttachment) bool {
-	if hasTranslatableText(content) {
-		return true
-	}
-	for _, attachment := range imageAttachments {
-		if hasTranslatableText(attachment.Description) {
-			return true
-		}
-	}
-	return false
+func needsTranslation(content string) bool {
+	return hasTranslatableText(content)
 }

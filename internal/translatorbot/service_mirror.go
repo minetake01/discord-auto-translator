@@ -5,18 +5,18 @@ import "context"
 // sendAndSaveLink posts a webhook message and persists its link. When the
 // link cannot be saved, the just-posted message is deleted as compensation.
 // ref may be zero when the source message is not a reply.
-func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) error {
-	msgID, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
+func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) (WebhookSendResult, error) {
+	result, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
 	if err != nil {
-		return err
+		return WebhookSendResult{}, err
 	}
-	link.TargetMessageID = msgID
+	link.TargetMessageID = result.MessageID
 	if err := s.store.SaveMessageLinkWithReference(ctx, link, ref); err != nil {
-		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, msgID, threadID)
-		return err
+		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, result.MessageID, threadID)
+		return WebhookSendResult{}, err
 	}
 	_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(link.SourceChannelID, link.SourceMessageID, link.TargetChannelID))
-	return nil
+	return result, nil
 }
 
 // targetAlreadySynced reports whether a source message already has a mirror

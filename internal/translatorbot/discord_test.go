@@ -1,6 +1,7 @@
 package translatorbot
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,5 +128,35 @@ func TestFetchedMessageFromDiscordIncludesEmbedTitleForQuotes(t *testing.T) {
 	want := "> -# A poll has started. · [Vote](https://discord.com/channels/g/c/m)\nFavorite color?"
 	if got.Content != want {
 		t.Fatalf("Content = %q, want %q", got.Content, want)
+	}
+}
+
+func TestWebhookAttachmentEditPayloadIncludesEveryAttachmentID(t *testing.T) {
+	payload := webhookAttachmentEditPayload{Attachments: []webhookAttachmentMeta{
+		{ID: "111", Description: "Exit this way"},
+		{ID: "222", Description: ""},
+	}}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := parsed["content"]; ok {
+		t.Fatalf("content must be omitted: %s", raw)
+	}
+	attachments, _ := parsed["attachments"].([]any)
+	if len(attachments) != 2 {
+		t.Fatalf("attachments = %s", raw)
+	}
+	first, _ := attachments[0].(map[string]any)
+	second, _ := attachments[1].(map[string]any)
+	if first["id"] != "111" || first["description"] != "Exit this way" {
+		t.Fatalf("first = %#v", first)
+	}
+	if second["id"] != "222" {
+		t.Fatalf("second = %#v", second)
 	}
 }
