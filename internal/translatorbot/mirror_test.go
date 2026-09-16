@@ -478,6 +478,50 @@ func TestHandleMessageCreateSkipsTranslationForURLOnlyContentAndRewritesHreflang
 	}
 }
 
+func TestHandleMessageCreateSkipsTranslationForDigitOnly(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "123",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 0 {
+		t.Fatalf("digit-only content should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "123" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
+func TestHandleMessageCreateSkipsTranslationForUnicodeEmojiOnly(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u", Content: "👍 🎉",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(translator.contexts) != 0 {
+		t.Fatalf("unicode-emoji-only content should not be translated: %#v", translator.contexts)
+	}
+	if len(discord.sent) != 1 || discord.sent[0].Content != "👍 🎉" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
 func TestHandleMessageCreateSkipsTranslationForStickerOnly(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

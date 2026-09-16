@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 var protectedPattern = regexp.MustCompile("<https?://[^\\s<>()]+>|https?://[^\\s<>()]+|<@!?\\d+>|<#\\d+>|<@&\\d+>|<a?:[A-Za-z0-9_]+:\\d+>|</[A-Za-z0-9_\\- ]+:\\d+>|<t:\\d+(?::[tTdDfFR])?>|```[\\s\\S]*?```|`[^`]*`")
@@ -186,7 +187,14 @@ func sanitizeLabel(s string) string {
 }
 
 func hasTranslatableText(text string) bool {
-	return strings.TrimSpace(protectedPattern.ReplaceAllString(text, "")) != ""
+	remaining := protectedPattern.ReplaceAllString(text, "")
+	remaining = stripUnicodeEmojiSequences(remaining)
+	for _, r := range remaining {
+		if unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func needsTranslation(content string) bool {
