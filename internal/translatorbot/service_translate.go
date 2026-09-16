@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 type issueNoticeKind string
@@ -14,14 +15,18 @@ type issueNoticeKind string
 const (
 	issueNoticeProvider  issueNoticeKind = "provider"
 	issueNoticeRateLimit issueNoticeKind = "rate_limit"
+
+	providerNoticeCooldown = time.Hour
 )
 
-// issueNoticeState suppresses repeat source-channel notices while the same
-// provider outage or guild token rate limit continues. Each kind is tracked
-// separately so one condition does not hide the other.
+// issueNoticeState suppresses repeat source-channel notices. Provider outages
+// stay muted for one hour after a notice, even if some translations succeed in
+// between. Guild token rate limits notify once until the limiter allows again.
 type issueNoticeState struct {
-	mu       sync.Mutex
-	notified map[issueNoticeKind]map[string]struct{}
+	mu                 sync.Mutex
+	now                func() time.Time
+	providerNotifiedAt map[string]time.Time
+	rateLimitNotified  map[string]struct{}
 }
 
 func issueNoticeKindFor(err error) (issueNoticeKind, bool) {
@@ -35,6 +40,13 @@ func issueNoticeKindFor(err error) (issueNoticeKind, bool) {
 	}
 }
 
+func (p *issueNoticeState) nowTime() time.Time {
+	if p.now != nil {
+		return p.now()
+	}
+	return time.Now()
+}
+
 func (p *issueNoticeState) allow(channelID string, err error) bool {
 	kind, suppress := issueNoticeKindFor(err)
 	if !suppress {
@@ -42,32 +54,42 @@ func (p *issueNoticeState) allow(channelID string, err error) bool {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.notified == nil {
-		p.notified = make(map[issueNoticeKind]map[string]struct{})
+	switch kind {
+	case issueNoticeProvider:
+		if p.providerNotifiedAt == nil {
+			p.providerNotifiedAt = make(map[string]time.Time)
+		}
+		now := p.nowTime()
+		if last, ok := p.providerNotifiedAt[channelID]; ok && now.Sub(last) < providerNoticeCooldown {
+			return false
+		}
+		p.providerNotifiedAt[channelID] = now
+		return true
+	case issueNoticeRateLimit:
+		if p.rateLimitNotified == nil {
+			p.rateLimitNotified = make(map[string]struct{})
+		}
+		if _, already := p.rateLimitNotified[channelID]; already {
+			return false
+		}
+		p.rateLimitNotified[channelID] = struct{}{}
+		return true
+	default:
+		return true
 	}
-	channels := p.notified[kind]
-	if channels == nil {
-		channels = make(map[string]struct{})
-		p.notified[kind] = channels
-	}
-	if _, already := channels[channelID]; already {
-		return false
-	}
-	channels[channelID] = struct{}{}
-	return true
 }
 
-func (p *issueNoticeState) clear(kind issueNoticeKind) {
+func (p *issueNoticeState) clearRateLimit() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	delete(p.notified, kind)
+	p.rateLimitNotified = nil
 }
 
 // notifyTranslationIssue posts a localized notice as a reply to the source
 // message when it could not be mirrored. The language is the source channel's
 // registered language, since that is where the notice is shown. Provider
-// outages and token rate limits notify each source channel once until that
-// condition clears.
+// outages notify each source channel at most once per hour. Token rate limits
+// notify each source channel once until the limiter allows again.
 func (s *Service) notifyTranslationIssue(channelID, messageID, language string, err error) {
 	if !s.issueNotices.allow(channelID, err) {
 		return
@@ -329,7 +351,7 @@ func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared pre
 	if !s.rateLimiter.Allow(guildID, estimatePreparedTokens(prepared)) {
 		return errTranslationRateLimited
 	}
-	s.issueNotices.clear(issueNoticeRateLimit)
+	s.issueNotices.clearRateLimit()
 	return nil
 }
 
@@ -340,7 +362,6 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 }
 
 func (s *Service) recordSuccessfulTranslation(guildID string, inputTokens, outputTokens int) {
-	s.issueNotices.clear(issueNoticeProvider)
 	s.recordTranslationUsage(guildID, inputTokens, outputTokens)
 }
 

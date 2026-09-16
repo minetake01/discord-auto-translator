@@ -847,7 +847,7 @@ func TestHandleMessageCreateFailsAllWhenTranslationFails(t *testing.T) {
 	if !strings.Contains(notice.content, "翻訳に失敗") {
 		t.Fatalf("unexpected notification: %#v", notice)
 	}
-	if strings.Contains(notice.content, "しばらくメッセージが翻訳されない") {
+	if strings.Contains(notice.content, "翻訳漏れ") {
 		t.Fatalf("per-message failures must not warn about later untranslated messages: %#v", notice)
 	}
 	if len(discord.sent) != 0 {
@@ -884,6 +884,8 @@ func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testin
 	discord := &fakeDiscordAPI{}
 	translator := &stickyErrorTranslator{err: errTranslationProvider}
 	service := NewService(store, discord, translator)
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	service.issueNotices.now = func() time.Time { return now }
 	seedGroup(t, store)
 
 	if err := postSourceMessage(t, service, "ja", "100000000000000001", "hello"); err == nil {
@@ -895,8 +897,8 @@ func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testin
 	if got := noticeReplyIDs(discord.channelMessages); len(got) != 1 || got[0] != "100000000000000001" {
 		t.Fatalf("same-channel notices = %#v, want first message only", discord.channelMessages)
 	}
-	if !strings.Contains(discord.channelMessages[0].content, "外部の翻訳サービスが復旧するまで") {
-		t.Fatalf("provider notice should warn that later messages may stay untranslated: %#v", discord.channelMessages[0])
+	if !strings.Contains(discord.channelMessages[0].content, "外部の翻訳サービス側の問題のため") {
+		t.Fatalf("provider notice should warn that later messages may go untranslated: %#v", discord.channelMessages[0])
 	}
 
 	if err := postSourceMessage(t, service, "en", "100000000000000003", "hello from en"); err == nil {
@@ -936,8 +938,16 @@ func TestHandleMessageCreateNotifiesProviderOutageOncePerSourceChannel(t *testin
 	if err := postSourceMessage(t, service, "ja", "100000000000000007", "down again"); err == nil {
 		t.Fatal("expected provider error")
 	}
-	if got := noticeReplyIDs(discord.channelMessages); len(got) != 3 || got[2] != "100000000000000007" {
-		t.Fatalf("after recovery notices = %#v, want a new notice", discord.channelMessages)
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 2 {
+		t.Fatalf("recovery within cooldown must not re-notify, got %#v", discord.channelMessages)
+	}
+
+	now = now.Add(time.Hour)
+	if err := postSourceMessage(t, service, "ja", "100000000000000008", "down after cooldown"); err == nil {
+		t.Fatal("expected provider error")
+	}
+	if got := noticeReplyIDs(discord.channelMessages); len(got) != 3 || got[2] != "100000000000000008" {
+		t.Fatalf("after cooldown notices = %#v, want a new notice", discord.channelMessages)
 	}
 }
 
@@ -956,7 +966,7 @@ func TestHandleMessageCreateKeepsPerMessageNoticesForNonProviderFailures(t *test
 	if got := noticeReplyIDs(discord.channelMessages); len(got) != 2 {
 		t.Fatalf("non-provider failures must notify every message, got %#v", discord.channelMessages)
 	}
-	if strings.Contains(discord.channelMessages[0].content, "しばらくメッセージが翻訳されない") {
+	if strings.Contains(discord.channelMessages[0].content, "翻訳漏れ") {
 		t.Fatalf("per-message failures must not warn about later untranslated messages: %#v", discord.channelMessages[0])
 	}
 }
