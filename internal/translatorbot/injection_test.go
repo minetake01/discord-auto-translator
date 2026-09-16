@@ -27,7 +27,24 @@ func TestHasTranslatableText(t *testing.T) {
 		{name: "slash command and timestamp", text: "</ban:12345> <t:1234567890:F>", want: false},
 		{name: "code", text: "`hello`\n```go\nfmt.Println(\"hello\")\n```", want: false},
 		{name: "mixed protected elements", text: "<@123> https://example.com `hello` <:wave:202>", want: false},
+		{name: "unicode emoji", text: "👍", want: false},
+		{name: "unicode emojis", text: "👍🎉", want: false},
+		{name: "unicode emojis with spaces", text: "👍 🎉", want: false},
+		{name: "skin tone emoji", text: "👍🏻", want: false},
+		{name: "ZWJ emoji", text: "👨‍👩‍👧‍👦", want: false},
+		{name: "flag emoji", text: "🇯🇵", want: false},
+		{name: "keycap emoji", text: "1️⃣", want: false},
+		{name: "subdivision flag", text: "🏴󠁧󠁢󠁥󠁮󠁧󠁿", want: false},
+		{name: "unicode emoji with custom emoji", text: "👍 <:wave:202>", want: false},
+		{name: "digits", text: "123", want: false},
+		{name: "fullwidth digits", text: "１２３", want: false},
+		{name: "numeric expression", text: "1+1=2", want: false},
+		{name: "punctuation", text: "!!!", want: false},
+		{name: "currency amount", text: "$100", want: false},
+		{name: "digits with emoji", text: "123 👍", want: false},
 		{name: "plain text", text: "hello", want: true},
+		{name: "text with unicode emoji", text: "nice 👍", want: true},
+		{name: "number with word", text: "第1話", want: true},
 		{name: "text with URL", text: "see https://example.com", want: true},
 		{name: "Markdown link label", text: "[documentation](https://example.com)", want: true},
 		{name: "unclosed code", text: "`hello", want: true},
@@ -192,6 +209,14 @@ func TestProtectorDoesNotMaskSpoilers(t *testing.T) {
 	protected := p.Protect(in)
 	if protected != in {
 		t.Fatalf("spoilers should not be masked, got %q", protected)
+	}
+}
+
+func TestProtectorDoesNotMaskUnicodeEmoji(t *testing.T) {
+	p := NewProtector(NameMaps{})
+	in := "nice 👍"
+	if got := p.Protect(in); got != in {
+		t.Fatalf("unicode emoji should not be masked, got %q", got)
 	}
 }
 
