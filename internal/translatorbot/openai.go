@@ -35,7 +35,7 @@ const (
 )
 
 // errTranslationProvider marks a translation API outage (timeout, transport, or
-// HTTP 429/5xx after retry). Channel notices are shown once per outage.
+// HTTP 429/5xx after retry). Channel notices are shown at most once per hour.
 var errTranslationProvider = errors.New("translation provider unavailable")
 
 // openaiHTTPStatusError is a sanitized provider HTTP failure. Status is kept
