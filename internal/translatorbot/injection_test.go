@@ -74,6 +74,128 @@ func TestProtectorRestoresURLsAndMarkdown(t *testing.T) {
 	}
 }
 
+func TestProtectorSeparatesBareURLFromFollowingText(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		model  string
+		want   string
+	}{
+		{
+			name:   "japanese text",
+			source: "https://example.com/a",
+			model:  "[SITE:1]を見て",
+			want:   "https://example.com/a を見て",
+		},
+		{
+			name:   "ascii word",
+			source: "https://example.com/a",
+			model:  "[SITE:1]please",
+			want:   "https://example.com/a please",
+		},
+		{
+			name:   "existing space",
+			source: "https://example.com/a",
+			model:  "[SITE:1] を見て",
+			want:   "https://example.com/a を見て",
+		},
+		{
+			name:   "newline",
+			source: "https://example.com/a",
+			model:  "[SITE:1]\n次",
+			want:   "https://example.com/a\n次",
+		},
+		{
+			name:   "ideographic space",
+			source: "https://example.com/a",
+			model:  "[SITE:1]\u3000次",
+			want:   "https://example.com/a\u3000次",
+		},
+		{
+			name:   "end of text",
+			source: "https://example.com/a",
+			model:  "[SITE:1]",
+			want:   "https://example.com/a",
+		},
+		{
+			name:   "sentence period",
+			source: "https://example.com/a",
+			model:  "[SITE:1].",
+			want:   "https://example.com/a.",
+		},
+		{
+			name:   "ellipsis",
+			source: "https://example.com/a",
+			model:  "[SITE:1]...",
+			want:   "https://example.com/a...",
+		},
+		{
+			name:   "period then text",
+			source: "https://example.com/a",
+			model:  "[SITE:1].です",
+			want:   "https://example.com/a .です",
+		},
+		{
+			name:   "ideographic period",
+			source: "https://example.com/a",
+			model:  "[SITE:1]。",
+			want:   "https://example.com/a 。",
+		},
+		{
+			name:   "exclamation",
+			source: "https://example.com/a",
+			model:  "[SITE:1]!",
+			want:   "https://example.com/a !",
+		},
+		{
+			name:   "closing paren",
+			source: "https://example.com/a",
+			model:  "([SITE:1])",
+			want:   "(https://example.com/a)",
+		},
+		{
+			name:   "repeated placeholder",
+			source: "https://example.com/a",
+			model:  "[SITE:1]を[SITE:1]です",
+			want:   "https://example.com/a をhttps://example.com/a です",
+		},
+		{
+			name:   "two urls",
+			source: "https://example.com/a https://example.com/b",
+			model:  "[SITE:1]と[SITE:2]です",
+			want:   "https://example.com/a とhttps://example.com/b です",
+		},
+		{
+			name:   "masked url",
+			source: "<https://example.com/a>",
+			model:  "[SITE:1]です",
+			want:   "<https://example.com/a>です",
+		},
+		{
+			name:   "mention",
+			source: "<@42>",
+			model:  "[USER]さん",
+			want:   "<@42>さん",
+		},
+		{
+			name:   "inline code",
+			source: "`code`",
+			model:  "[CODE]です",
+			want:   "`code`です",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewProtector(NameMaps{})
+			p.Protect(tt.source)
+			if got := p.Restore(tt.model); got != tt.want {
+				t.Fatalf("got %q want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProtectorSiteTitleAndContext(t *testing.T) {
 	p := NewProtector(NameMaps{
 		Sites: map[string]string{
