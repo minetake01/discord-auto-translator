@@ -77,9 +77,60 @@ func (p *Protector) Restore(text string) string {
 		return len(keys[i]) > len(keys[j])
 	})
 	for _, key := range keys {
-		text = strings.ReplaceAll(text, key, p.items[key])
+		value := p.items[key]
+		if bareHTTPURL(value) {
+			text = replaceBareURL(text, key, value)
+			continue
+		}
+		text = strings.ReplaceAll(text, key, value)
 	}
 	return text
+}
+
+func bareHTTPURL(value string) bool {
+	return strings.HasPrefix(value, "http://") || strings.HasPrefix(value, "https://")
+}
+
+func replaceBareURL(text, key, url string) string {
+	var b strings.Builder
+	for {
+		i := strings.Index(text, key)
+		if i < 0 {
+			b.WriteString(text)
+			return b.String()
+		}
+		b.WriteString(text[:i])
+		b.WriteString(url)
+		rest := text[i+len(key):]
+		if bareURLNeedsFollowingSpace(rest) {
+			b.WriteByte(' ')
+		}
+		text = rest
+	}
+}
+
+// Discord's autolink absorbs the following run of non-whitespace into a bare
+// URL. A trailing run of <.,:;"')] is left outside the link, so a separator is
+// needed only when something else follows.
+func bareURLNeedsFollowingSpace(rest string) bool {
+	for _, r := range rest {
+		if unicode.IsSpace(r) {
+			return false
+		}
+		if !discordAutolinkTrailingPunct(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func discordAutolinkTrailingPunct(r rune) bool {
+	switch r {
+	case '<', '.', ',', ':', ';', '"', '\'', ')', ']':
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Protector) tokenFor(match string) string {
