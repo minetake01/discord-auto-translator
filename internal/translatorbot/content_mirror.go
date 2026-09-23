@@ -1,6 +1,7 @@
 package translatorbot
 
 import (
+	"regexp"
 	"strings"
 )
 
@@ -72,6 +73,22 @@ func normalizeMarkdownHeaderSnippet(line string) string {
 		return line
 	}
 	return "-# " + line
+}
+
+// snippetURLPattern matches constructs that never produce embeds (masked
+// links, already-suppressed URLs, inline code) so suppressSnippetEmbeds can
+// leave them untouched, plus bare URLs that need wrapping.
+var snippetURLPattern = regexp.MustCompile(`\[[^\[\]]*\]\([^()\s]*\)|<https?://[^\s<>()]+>|` + "`[^`]*`" + `|https?://[^\s<>()]+`)
+
+// suppressSnippetEmbeds wraps bare URLs in <> so Discord does not render
+// link embeds for a pseudo-reply snippet.
+func suppressSnippetEmbeds(text string) string {
+	return snippetURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		if strings.HasPrefix(match, "http") {
+			return "<" + match + ">"
+		}
+		return match
+	})
 }
 
 const replyQuoteMaxRunes = 40

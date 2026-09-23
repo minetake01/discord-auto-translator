@@ -78,6 +78,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	}
 	snippet = normalizeMarkdownHeaderSnippet(snippet)
 	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")
+	snippet = suppressSnippetEmbeds(snippet)
 	link := MessageJumpURL(m.GuildID, quoteChannelID, quoteMessageID)
 	label := localizedUIString(targetLanguage, uiKeyOriginalMessage)
 	return fmt.Sprintf("> %s · [%s](%s)", snippet, label, link), nil
