@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -115,6 +116,35 @@ func TestNormalizeMarkdownHeaderSnippet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := normalizeMarkdownHeaderSnippet(tt.line); got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReplyQuoteSuppressesSnippetLinkEmbeds(t *testing.T) {
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	tests := []struct {
+		name    string
+		content string
+		want    string
+	}{
+		{name: "bare URL", content: "see https://example.com/a", want: "-# see <https://example.com/a>"},
+		{name: "already suppressed", content: "see <https://example.com/a>", want: "-# see <https://example.com/a>"},
+		{name: "masked link", content: "[doc](https://example.com/a)", want: "-# [doc](https://example.com/a)"},
+		{name: "truncated URL", content: "see https://example.com/" + strings.Repeat("p", 40), want: "-# see <https://example.com/ppppppppppppp...>"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := service.replyQuote(context.Background(), DiscordMessage{
+				GuildID: "guild", ChannelID: "en", ReferencedMessageID: "100000000000000001",
+				ReferencedMessageContent: tt.content,
+			}, "target", "en")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "> " + tt.want + " · [Source](https://discord.com/channels/guild/en/100000000000000001)"
+			if got != want {
+				t.Fatalf("got %q, want %q", got, want)
 			}
 		})
 	}
