@@ -101,7 +101,7 @@ func openaiTopicSummarySchema() (json.RawMessage, error) {
 	return marshalOpenAIJSONSchema(openaiObjectSchema([]string{"summary"}, map[string]any{
 		"summary": map[string]any{
 			"type":        "string",
-			"description": "A 2-4 sentence topic summary of the discarded conversation, for later translation background only.",
+			"description": "A 2-3 sentence topic summary (strictly under 350 characters) prioritizing the latest conversation in <discarded_context>, for later translation background only.",
 		},
 	}))
 }

@@ -22,10 +22,10 @@ var (
 // casual-leaning preset: translate into what a native would actually type in
 // chat, phrased positively so the translation model receives direct guidance
 // reliably than prohibitions.
-const nativePhrasingInstruction = `Write each translation as a native speaker of the target language would type it in this chat: keep the source's tone and intent, and use the grammar, particles, and phrasing a native would actually type (casual Japanese: そう, not そうだ).`
+const nativePhrasingInstruction = `Write each translation as a native speaker of the target language would naturally type it in this chat: keep the source's tone and intent, and use natural conversational grammar and phrasing rather than stiff textbook wording.`
 
 var stylePresetInstructions = map[string]string{
-	"formal":   `Default to a formal, polite register. In languages with politeness levels (e.g. Japanese keigo, French vous), prefer the polite form.`,
+	"formal":   `Use a polite, courteous baseline register (e.g. Japanese desu/masu polite form, French vous) while keeping the emotional energy and friendliness of the source message.`,
 	"casual":   nativePhrasingInstruction + ` Default to relaxed, everyday conversational language, like friends chatting.`,
 	"business": `Default to professional workplace language: concise, clear, and courteous.`,
 	"literal":  `When several renderings are possible, choose the most literal one: keep the original sentence structure and word choice even if slightly unnatural, and do not paraphrase, embellish, or omit.`,
