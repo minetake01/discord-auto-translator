@@ -462,6 +462,7 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 }
 
 func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, messageID string) error {
+	s.editDebounce.cancel(editDebounceKey(channelID, messageID))
 	links, err := s.store.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
 		return err

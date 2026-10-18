@@ -28,15 +28,17 @@ type Service struct {
 	topicSummaryAttempts sync.Map
 	runTopicSummary      func(func())
 	issueNotices         issueNoticeState
+	editDebounce         *editDebouncer
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {
 	return &Service{
-		store:       store,
-		discord:     discord,
-		translator:  translator,
-		rateLimiter: NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
-		urlPages:    newURLPageCache(http.DefaultClient, urlPageCacheTTL, time.Now),
+		store:        store,
+		discord:      discord,
+		translator:   translator,
+		rateLimiter:  NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
+		urlPages:     newURLPageCache(http.DefaultClient, urlPageCacheTTL, time.Now),
+		editDebounce: newEditDebouncer(defaultAutomatedEditDebounce),
 	}
 }
 

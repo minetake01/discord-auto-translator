@@ -60,7 +60,7 @@ func handleGatewayMessageUpdate(s *discordgo.Session, service *translatorbot.Ser
 	parentChannelID, threadName := threadContext(s, m.ChannelID)
 	descriptions, _ := attachmentDescriptionsFromRaw(raw)
 	mentionedUsers, mentionedChannels, mentionedRoles := mentionNameMaps(s, m.GuildID, m.Message)
-	err := service.HandleMessageUpdate(ctx, translatorbot.DiscordMessage{
+	err := service.ScheduleMessageUpdate(ctx, translatorbot.DiscordMessage{
 		ID: m.ID, ChannelID: m.ChannelID, GuildID: m.GuildID, AuthorID: m.Author.ID,
 		ParentChannelID: parentChannelID, ThreadName: threadName,
 		AuthorDisplayName: authorDisplayName(m.Author, m.Member), AuthorAvatarURL: m.Author.AvatarURL("128"), AuthorRoleColor: memberRoleColor(s, m.GuildID, m.Member), Content: m.Content,
