@@ -15,6 +15,9 @@ import (
 type mirrorDestination struct {
 	channel  GroupChannel
 	targetID string
+	// timestamp puts the source posting time on the first line; backfill
+	// sets it for every message it posts.
+	timestamp bool
 }
 
 func destinationForChannel(channel GroupChannel) mirrorDestination {
@@ -144,6 +147,13 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 		if target.ChannelID == m.ChannelID {
 			continue
 		}
+		held, err := s.liveTargetHeld(ctx, source.GroupID, target.ChannelID)
+		if err != nil {
+			return fmt.Errorf("target %s: %w", target.ChannelID, err)
+		}
+		if held {
+			continue
+		}
 		synced, err := s.targetAlreadySynced(ctx, m.ChannelID, m.ID, target.ChannelID)
 		if err != nil {
 			return fmt.Errorf("target %s: %w", target.ChannelID, err)
@@ -181,25 +191,14 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	altCh := s.startAttachmentAltTranslation(ctx, m.GuildID, loaded, languages, contextFn)
 	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, loaded, languages, contextFn)
 	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-		if errors.Is(err, errTranslationRateLimited) {
-			return nil
-		}
-		return err
+		return s.translationFailure(ctx, m, sourceLanguage, err)
 	}
 	alts, pendingAlts := takeReadyAttachmentAlts(altCh)
 
 	var posted []postedWebhookMirror
 	var errs []error
 	for _, dest := range dests {
-		content := s.postProcessContent(ctx, m.GuildID, translations.Translations[dest.channel.Language], dest.channel.Language)
-		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
-			continue
-		}
-		content = withQuote(quote, content)
-		content, err = messageContentWithLoadedImages(content, m.Attachments, m.Stickers, loaded)
+		content, err := s.mirrorContent(ctx, m, dest.targetID, dest.channel.Language, translations.Translations[dest.channel.Language], imagesNotReuploaded(m.Attachments, loaded))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
@@ -221,9 +220,33 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	return errors.Join(errs...)
 }
 
+// mirrorContent assembles the text of a mirrored message from its
+// translation: poll header, reply quote, body, then asset URLs. Sending and
+// editing share it so an edit keeps every header the original send had.
+// inlineImages are image attachments linked by URL instead of reuploaded.
+func (s *Service) mirrorContent(ctx context.Context, m DiscordMessage, targetID, language, translated string, inlineImages []DiscordAttachment) (string, error) {
+	content := s.postProcessContent(ctx, m.GuildID, translated, language)
+	quote, err := s.replyQuote(ctx, m, targetID, language)
+	if err != nil {
+		return "", err
+	}
+	content = withQuote(quote, content)
+	if content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers); err != nil {
+		return "", err
+	}
+	if content, err = messageContentWithAllAssetURLs(content, inlineImages, nil); err != nil {
+		return "", err
+	}
+	return withPollStartedHeader(content, language, m.GuildID, m.ChannelID, m.ID, m.Poll != nil), nil
+}
+
 // sendMirror posts the prepared content to one destination and records the
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content string, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) (WebhookSendResult, error) {
+	content, err := finishMirrorContent(m.ID, content, dest.timestamp)
+	if err != nil {
+		return WebhookSendResult{}, err
+	}
 	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
 	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
 	if ref.MessageID != "" && ref.ChannelID == "" {
@@ -235,7 +258,7 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
 		SourceAuthorID: m.AuthorID, SourceAuthorDisplayName: m.AuthorDisplayName, SourceContentSnapshot: snapshot,
-		SourceImageAttachments: sourceImageAttachments(m),
+		SourceImageAttachments: sourceImageAttachments(m), TimestampLine: dest.timestamp,
 	}, ref)
 }
 
@@ -254,36 +277,20 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 
 	contentTranslations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn)
 	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-		if errors.Is(err, errTranslationRateLimited) {
-			return nil
-		}
-		return err
+		return s.translationFailure(ctx, m, sourceLanguage, err)
 	}
 	pollTranslations, err := s.translatePollWithLimit(ctx, m.GuildID, question, answers, languages, contextFn)
 	if err != nil {
-		s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-		if errors.Is(err, errTranslationRateLimited) {
-			return nil
-		}
-		return err
+		return s.translationFailure(ctx, m, sourceLanguage, err)
 	}
 
 	var errs []error
 	for _, dest := range dests {
-		content := s.postProcessContent(ctx, m.GuildID, contentTranslations.Translations[dest.channel.Language], dest.channel.Language)
-		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
+		content, err := s.mirrorContent(ctx, m, dest.targetID, dest.channel.Language, contentTranslations.Translations[dest.channel.Language], imageAttachmentsOnly(m.Attachments))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		content = withQuote(quote, content)
-		content, err = messageContentWithAllAssetURLs(content, m.Attachments, m.Stickers)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
-			continue
-		}
-		content = withPollStartedHeader(content, dest.channel.Language, m.GuildID, m.ChannelID, m.ID, true)
 		poll := pollTranslations[dest.channel.Language]
 		translatedQuestion := s.postProcessContent(ctx, m.GuildID, poll.Question, dest.channel.Language)
 		translatedAnswers := make([]string, len(poll.Answers))
@@ -386,7 +393,9 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 	if err != nil {
 		return fmt.Errorf("message source policy: %w", err)
 	}
-	if !allowed {
+	if !allowed || m.Poll != nil || m.PollResult != nil || m.ForwardedMessage != nil {
+		// Polls, poll results, and forwards cannot be edited; their updates
+		// only carry vote counts or embeds.
 		return nil
 	}
 	links, err := s.store.MessageTargets(ctx, m.ChannelID, m.ID)
@@ -399,6 +408,11 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			continue
 		}
 		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
+	}
+	if len(byGroup) > 0 {
+		if err := s.restoreReplyReference(ctx, &m); err != nil {
+			return err
+		}
 	}
 	for groupID, groupLinks := range byGroup {
 		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, groupID)
@@ -445,18 +459,38 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			return err
 		}
 		for _, p := range pending {
-			content := s.postProcessContent(ctx, m.GuildID, translations.Translations[p.target.Language], p.target.Language)
-			content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers)
+			content, err := s.mirrorContent(ctx, m, p.link.TargetChannelID, p.target.Language, translations.Translations[p.target.Language], nil)
 			if err != nil {
 				return err
 			}
-			if err := s.discord.EditWebhook(p.target.WebhookID, p.target.WebhookToken, p.link.TargetMessageID, threadIDForWebhook(p.link, &p.target), content); err != nil {
+			if content, err = finishMirrorContent(m.ID, content, p.link.TimestampLine); err != nil {
 				return err
 			}
+			if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+				return err
+			}
+
 			if err := s.store.UpdateMessageLinkSnapshot(ctx, p.link.SourceChannelID, p.link.SourceMessageID, p.link.TargetChannelID, m.Content); err != nil {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// restoreReplyReference fills the reply target of an edited message from
+// the stored reference, so the rebuilt mirror keeps its reply quote.
+func (s *Service) restoreReplyReference(ctx context.Context, m *DiscordMessage) error {
+	if m.ReferencedMessageID != "" {
+		return nil
+	}
+	ref, ok, err := s.store.MessageReferenceOf(ctx, m.ChannelID, m.ID)
+	if err != nil || !ok {
+		return err
+	}
+	m.ReferencedMessageID, m.ReferencedMessageChannelID = ref.MessageID, ref.ChannelID
+	if fetched, err := s.discord.Message(ref.ChannelID, ref.MessageID); err == nil {
+		m.ReferencedMessageContent = fetched.Content
 	}
 	return nil
 }
@@ -550,7 +584,10 @@ func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string,
 				fmt.Sprintf("> -# %s", localizedUIString(link.TargetLanguage, uiKeyOriginalMessageDeleted)),
 				mirroredMessageBody(message.Content),
 			)
-			if err := s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target), content); err != nil {
+			if content, err = finishMirrorContent(link.SourceMessageID, content, link.TimestampLine); err != nil {
+				return err
+			}
+			if err := s.editWebhookMessage(ctx, *target, link, content); err != nil {
 				return err
 			}
 		}

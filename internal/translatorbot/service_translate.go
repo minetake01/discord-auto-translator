@@ -126,7 +126,7 @@ func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText st
 		prepared.buildUserPrompt()
 	}
 	prepared.visionImages = append(append(append([]visionImage{}, reservedVision...), contextVision...), ogpVision...)
-	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
+	if err := s.checkPreparedTranslationRateLimit(ctx, guildID, prepared); err != nil {
 		return preparedTranslation{}, err
 	}
 	return prepared, nil
@@ -192,7 +192,7 @@ func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID 
 		return nil, nil
 	}
 	prepared.visionImages = visionFromLoaded(loaded)
-	if err := s.checkPreparedTranslationRateLimit(guildID, prepared); err != nil {
+	if err := s.checkPreparedTranslationRateLimit(ctx, guildID, prepared); err != nil {
 		return nil, err
 	}
 	result, err := s.translator.TranslateAttachmentAlts(ctx, prepared)
@@ -344,15 +344,38 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	return translations, nil
 }
 
-func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared preparedTranslation) error {
+// checkPreparedTranslationRateLimit admits a request against the guild token
+// budget. Backfill shares the budget with live translation but only uses
+// part of it, so a long backfill never starves live messages.
+func (s *Service) checkPreparedTranslationRateLimit(ctx context.Context, guildID string, prepared preparedTranslation) error {
 	if s.rateLimiter == nil {
 		return nil
 	}
-	if !s.rateLimiter.Allow(guildID, estimatePreparedTokens(prepared)) {
+	fraction := 1.0
+	if backfillRunFrom(ctx) != nil {
+		fraction = backfillRateLimitShare
+	}
+	if !s.rateLimiter.AllowShare(guildID, estimatePreparedTokens(prepared), fraction) {
 		return errTranslationRateLimited
 	}
-	s.issueNotices.clearRateLimit()
+	if fraction == 1 {
+		s.issueNotices.clearRateLimit()
+	}
 	return nil
+}
+
+// translationFailure reports a failed live translation to the source channel
+// and decides whether the caller should surface the error. Backfill never
+// posts notices and needs rate-limit errors back so it can wait and retry.
+func (s *Service) translationFailure(ctx context.Context, m DiscordMessage, sourceLanguage string, err error) error {
+	if backfillRunFrom(ctx) != nil {
+		return err
+	}
+	s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
+	if errors.Is(err, errTranslationRateLimited) {
+		return nil
+	}
+	return err
 }
 
 func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputTokens int) {

@@ -97,7 +97,7 @@ Per impostazione predefinita, i comandi di amministrazione sono riservati agli u
 | Comando | Descrizione | Opzioni Principali |
 |---|---|---|
 | `/new-channel` | Crea un nuovo gruppo di traduzione e registra un canale | `language` (obbligatorio): Codice lingua BCP-47<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente)<br>`group` (opzionale): Nome del gruppo (predefinito: nome canale) |
-| `/join-channel` | Aggiunge un canale a un gruppo esistente | `group` (obbligatorio): Nome del gruppo<br>`language` (obbligatorio): Codice lingua BCP-47<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente) |
+| `/join-channel` | Aggiunge un canale a un gruppo esistente | `group` (obbligatorio): Nome del gruppo<br>`language` (obbligatorio): Codice lingua BCP-47<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente)<br>`backfill` (opzionale): Traduce la cronologia esistente del gruppo nel canale (dopo stima e conferma) |
 | `/leave-channel` | Rimuove un canale da un gruppo | `group` (obbligatorio): Nome del gruppo<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente) |
 | `/delete-group` | Elimina completamente un gruppo di traduzione | `group` (obbligatorio): Nome del gruppo da eliminare |
 | `/list-groups` | Elenca tutti i gruppi di traduzione e i canali collegati | Nessuna |
@@ -223,7 +223,7 @@ Verifica credenziali, connettività e schema di risposta prima del deployment:
 | `PUBLIC_BASE_URL` | No | (non impostato) | URL pubblico per i badge avatar. Mostra un anello con il colore del ruolo più alto |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | `100000` | Limite di token per server al minuto |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | `120` | Limite di richieste al minuto per IP per `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Giorni di conservazione dei link dei messaggi. `0` = illimitato |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Giorni di conservazione dei link dei messaggi. `0` = illimitato. Il periodo decorre dal momento in cui ogni messaggio è stato tradotto. |
 | `GUILD_DATA_RETENTION_DAYS` | No | `0` | Giorni di conservazione dei dati di un server dopo l'uscita del bot |
 
 ---

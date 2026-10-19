@@ -95,6 +95,14 @@ const (
 	uiKeyForumTagMapFinished       uiKey = "forumTagMapFinished"
 	uiKeyForumTagMapNeedForum      uiKey = "forumTagMapNeedForum"
 	uiKeyForumTagMapNoPeers        uiKey = "forumTagMapNoPeers"
+
+	uiKeyBackfillEstimate    uiKey = "backfillEstimate"
+	uiKeyBackfillStart       uiKey = "backfillStart"
+	uiKeyBackfillCancel      uiKey = "backfillCancel"
+	uiKeyBackfillCanceled    uiKey = "backfillCanceled"
+	uiKeyBackfillJoined      uiKey = "backfillJoined"
+	uiKeyBackfillScanTimeout uiKey = "backfillScanTimeout"
+	uiKeyBackfillScanFailed  uiKey = "backfillScanFailed"
 )
 
 // uiStrings maps a supported UI language to its full message catalog.
@@ -188,6 +196,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Backfill into <#%[2]s> for group `%[1]s`:\n- Messages: %[3]d\n- Images: %[4]d\n- Estimated tokens: about %[5]d input / %[6]d output\n- Estimated time: about %[7]s\nThe channel joins the group when you start. New messages are posted after the backfill finishes.",
+		uiKeyBackfillStart:       "Start",
+		uiKeyBackfillCancel:      "Cancel",
+		uiKeyBackfillCanceled:    "Canceled. <#%[1]s> did not join the group.",
+		uiKeyBackfillJoined:      "Joined <#%[2]s> (%[3]s) to translation group `%[1]s`. Past messages are being translated; new messages will follow when that finishes.",
+		uiKeyBackfillScanTimeout: "Scanning the history took too long. <#%[1]s> did not join the group.",
+		uiKeyBackfillScanFailed:  "Could not read the channel history. <#%[1]s> did not join the group.",
 	},
 	"ja": {
 		uiKeyViewOriginalLink:       "原文メッセージへ移動",
@@ -276,6 +292,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "フォーラムタグの対応付けを終了しました。",
 		uiKeyForumTagMapNeedForum:      "グループに参加済みのフォーラムまたはメディアチャンネルを指定してください。",
 		uiKeyForumTagMapNoPeers:        "このグループに、タグを持つ他のフォーラム/メディアチャンネルがありません。",
+
+		uiKeyBackfillEstimate:    "グループ `%[1]s` の過去メッセージを <#%[2]s> に翻訳します。\n- メッセージ: %[3]d 件\n- 画像: %[4]d 件\n- 推定トークン: 入力 約 %[5]d / 出力 約 %[6]d\n- 推定所要時間: 約 %[7]s\n開始するとチャンネルがグループに参加します。新しいメッセージは過去分の翻訳が終わってから投稿されます。",
+		uiKeyBackfillStart:       "開始",
+		uiKeyBackfillCancel:      "キャンセル",
+		uiKeyBackfillCanceled:    "キャンセルしました。<#%[1]s> はグループに参加していません。",
+		uiKeyBackfillJoined:      "翻訳グループ `%[1]s` に <#%[2]s> (%[3]s) を参加させました。過去メッセージを翻訳中です。新しいメッセージはその完了後に投稿されます。",
+		uiKeyBackfillScanTimeout: "履歴の確認に時間がかかりすぎました。<#%[1]s> はグループに参加していません。",
+		uiKeyBackfillScanFailed:  "チャンネル履歴を読み取れませんでした。<#%[1]s> はグループに参加していません。",
 	},
 	"zh-CN": {
 		uiKeyViewOriginalLink:       "前往原文消息",
@@ -364,6 +388,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "将翻译组 `%[1]s` 的历史消息翻译到 <#%[2]s>：\n- 消息：%[3]d 条\n- 图片：%[4]d 张\n- 预计 token：输入约 %[5]d / 输出约 %[6]d\n- 预计耗时：约 %[7]s\n开始后频道将加入该组。新消息会在历史消息翻译完成后发布。",
+		uiKeyBackfillStart:       "开始",
+		uiKeyBackfillCancel:      "取消",
+		uiKeyBackfillCanceled:    "已取消。<#%[1]s> 未加入该组。",
+		uiKeyBackfillJoined:      "已将 <#%[2]s> (%[3]s) 加入翻译组 `%[1]s`。正在翻译历史消息，新消息将在完成后发布。",
+		uiKeyBackfillScanTimeout: "扫描历史记录耗时过长。<#%[1]s> 未加入该组。",
+		uiKeyBackfillScanFailed:  "无法读取频道历史记录。<#%[1]s> 未加入该组。",
 	},
 	"zh-TW": {
 		uiKeyViewOriginalLink:       "前往原文訊息",
@@ -452,6 +484,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "將翻譯群組 `%[1]s` 的歷史訊息翻譯到 <#%[2]s>：\n- 訊息：%[3]d 則\n- 圖片：%[4]d 張\n- 預估 token：輸入約 %[5]d / 輸出約 %[6]d\n- 預估時間：約 %[7]s\n開始後頻道將加入該群組。新訊息會在歷史訊息翻譯完成後發布。",
+		uiKeyBackfillStart:       "開始",
+		uiKeyBackfillCancel:      "取消",
+		uiKeyBackfillCanceled:    "已取消。<#%[1]s> 未加入該群組。",
+		uiKeyBackfillJoined:      "已將 <#%[2]s> (%[3]s) 加入翻譯群組 `%[1]s`。正在翻譯歷史訊息，新訊息將在完成後發布。",
+		uiKeyBackfillScanTimeout: "掃描歷史記錄耗時過長。<#%[1]s> 未加入該群組。",
+		uiKeyBackfillScanFailed:  "無法讀取頻道歷史記錄。<#%[1]s> 未加入該群組。",
 	},
 	"ko": {
 		uiKeyViewOriginalLink:       "원문 메시지로 이동",
@@ -540,6 +580,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "그룹 `%[1]s`의 이전 메시지를 <#%[2]s>에 번역합니다.\n- 메시지: %[3]d개\n- 이미지: %[4]d개\n- 예상 토큰: 입력 약 %[5]d / 출력 약 %[6]d\n- 예상 소요 시간: 약 %[7]s\n시작하면 채널이 그룹에 참여합니다. 새 메시지는 이전 메시지 번역이 끝난 뒤 게시됩니다.",
+		uiKeyBackfillStart:       "시작",
+		uiKeyBackfillCancel:      "취소",
+		uiKeyBackfillCanceled:    "취소했습니다. <#%[1]s>은(는) 그룹에 참여하지 않았습니다.",
+		uiKeyBackfillJoined:      "번역 그룹 `%[1]s`에 <#%[2]s> (%[3]s)을(를) 참여시켰습니다. 이전 메시지를 번역 중이며, 새 메시지는 완료 후 게시됩니다.",
+		uiKeyBackfillScanTimeout: "기록 확인에 시간이 너무 오래 걸렸습니다. <#%[1]s>은(는) 그룹에 참여하지 않았습니다.",
+		uiKeyBackfillScanFailed:  "채널 기록을 읽을 수 없습니다. <#%[1]s>은(는) 그룹에 참여하지 않았습니다.",
 	},
 	"fr": {
 		uiKeyViewOriginalLink:       "Aller au message original",
@@ -628,6 +676,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Traduction de l'historique du groupe `%[1]s` vers <#%[2]s> :\n- Messages : %[3]d\n- Images : %[4]d\n- Tokens estimés : environ %[5]d en entrée / %[6]d en sortie\n- Durée estimée : environ %[7]s\nLe salon rejoint le groupe au démarrage. Les nouveaux messages seront publiés une fois l'historique traduit.",
+		uiKeyBackfillStart:       "Démarrer",
+		uiKeyBackfillCancel:      "Annuler",
+		uiKeyBackfillCanceled:    "Annulé. <#%[1]s> n'a pas rejoint le groupe.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) a rejoint le groupe de traduction `%[1]s`. Les anciens messages sont en cours de traduction ; les nouveaux suivront ensuite.",
+		uiKeyBackfillScanTimeout: "L'analyse de l'historique a pris trop de temps. <#%[1]s> n'a pas rejoint le groupe.",
+		uiKeyBackfillScanFailed:  "Impossible de lire l'historique du salon. <#%[1]s> n'a pas rejoint le groupe.",
 	},
 	"de": {
 		uiKeyViewOriginalLink:       "Zur Originalnachricht",
@@ -716,6 +772,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Verlauf der Gruppe `%[1]s` nach <#%[2]s> übersetzen:\n- Nachrichten: %[3]d\n- Bilder: %[4]d\n- Geschätzte Tokens: etwa %[5]d Eingabe / %[6]d Ausgabe\n- Geschätzte Dauer: etwa %[7]s\nBeim Start tritt der Kanal der Gruppe bei. Neue Nachrichten werden nach Abschluss des Verlaufs gepostet.",
+		uiKeyBackfillStart:       "Starten",
+		uiKeyBackfillCancel:      "Abbrechen",
+		uiKeyBackfillCanceled:    "Abgebrochen. <#%[1]s> ist der Gruppe nicht beigetreten.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) ist der Übersetzungsgruppe `%[1]s` beigetreten. Ältere Nachrichten werden übersetzt; neue folgen danach.",
+		uiKeyBackfillScanTimeout: "Das Durchsuchen des Verlaufs hat zu lange gedauert. <#%[1]s> ist der Gruppe nicht beigetreten.",
+		uiKeyBackfillScanFailed:  "Der Kanalverlauf konnte nicht gelesen werden. <#%[1]s> ist der Gruppe nicht beigetreten.",
 	},
 	"es": {
 		uiKeyViewOriginalLink:       "Ir al mensaje original",
@@ -804,6 +868,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Traducir el historial del grupo `%[1]s` a <#%[2]s>:\n- Mensajes: %[3]d\n- Imágenes: %[4]d\n- Tokens estimados: unos %[5]d de entrada / %[6]d de salida\n- Tiempo estimado: unos %[7]s\nEl canal se une al grupo al iniciar. Los mensajes nuevos se publicarán cuando termine el historial.",
+		uiKeyBackfillStart:       "Iniciar",
+		uiKeyBackfillCancel:      "Cancelar",
+		uiKeyBackfillCanceled:    "Cancelado. <#%[1]s> no se unió al grupo.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) se unió al grupo de traducción `%[1]s`. Se están traduciendo los mensajes anteriores; los nuevos se publicarán después.",
+		uiKeyBackfillScanTimeout: "Revisar el historial tardó demasiado. <#%[1]s> no se unió al grupo.",
+		uiKeyBackfillScanFailed:  "No se pudo leer el historial del canal. <#%[1]s> no se unió al grupo.",
 	},
 	"pt-BR": {
 		uiKeyViewOriginalLink:       "Ir para a mensagem original",
@@ -892,6 +964,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Traduzir o histórico do grupo `%[1]s` para <#%[2]s>:\n- Mensagens: %[3]d\n- Imagens: %[4]d\n- Tokens estimados: cerca de %[5]d de entrada / %[6]d de saída\n- Tempo estimado: cerca de %[7]s\nO canal entra no grupo ao iniciar. Mensagens novas serão publicadas quando o histórico terminar.",
+		uiKeyBackfillStart:       "Iniciar",
+		uiKeyBackfillCancel:      "Cancelar",
+		uiKeyBackfillCanceled:    "Cancelado. <#%[1]s> não entrou no grupo.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) entrou no grupo de tradução `%[1]s`. As mensagens anteriores estão sendo traduzidas; as novas virão depois.",
+		uiKeyBackfillScanTimeout: "A leitura do histórico demorou demais. <#%[1]s> não entrou no grupo.",
+		uiKeyBackfillScanFailed:  "Não foi possível ler o histórico do canal. <#%[1]s> não entrou no grupo.",
 	},
 	"it": {
 		uiKeyViewOriginalLink:       "Vai al messaggio originale",
@@ -980,6 +1060,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Tradurre la cronologia del gruppo `%[1]s` in <#%[2]s>:\n- Messaggi: %[3]d\n- Immagini: %[4]d\n- Token stimati: circa %[5]d in input / %[6]d in output\n- Tempo stimato: circa %[7]s\nAll'avvio il canale entra nel gruppo. I nuovi messaggi verranno pubblicati al termine della cronologia.",
+		uiKeyBackfillStart:       "Avvia",
+		uiKeyBackfillCancel:      "Annulla",
+		uiKeyBackfillCanceled:    "Annullato. <#%[1]s> non è entrato nel gruppo.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) è entrato nel gruppo di traduzione `%[1]s`. I messaggi precedenti sono in traduzione; i nuovi seguiranno al termine.",
+		uiKeyBackfillScanTimeout: "La lettura della cronologia ha richiesto troppo tempo. <#%[1]s> non è entrato nel gruppo.",
+		uiKeyBackfillScanFailed:  "Impossibile leggere la cronologia del canale. <#%[1]s> non è entrato nel gruppo.",
 	},
 	"id": {
 		uiKeyViewOriginalLink:       "Buka pesan asli",
@@ -1068,6 +1156,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Terjemahkan riwayat grup `%[1]s` ke <#%[2]s>:\n- Pesan: %[3]d\n- Gambar: %[4]d\n- Perkiraan token: sekitar %[5]d input / %[6]d output\n- Perkiraan waktu: sekitar %[7]s\nSaluran bergabung dengan grup saat dimulai. Pesan baru akan diposting setelah riwayat selesai.",
+		uiKeyBackfillStart:       "Mulai",
+		uiKeyBackfillCancel:      "Batal",
+		uiKeyBackfillCanceled:    "Dibatalkan. <#%[1]s> tidak bergabung dengan grup.",
+		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) telah bergabung dengan grup terjemahan `%[1]s`. Pesan lama sedang diterjemahkan; pesan baru akan menyusul setelahnya.",
+		uiKeyBackfillScanTimeout: "Pemindaian riwayat terlalu lama. <#%[1]s> tidak bergabung dengan grup.",
+		uiKeyBackfillScanFailed:  "Tidak dapat membaca riwayat saluran. <#%[1]s> tidak bergabung dengan grup.",
 	},
 	"th": {
 		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
@@ -1156,6 +1252,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "แปลข้อความเก่าของกลุ่ม `%[1]s` ไปยัง <#%[2]s>:\n- ข้อความ: %[3]d\n- รูปภาพ: %[4]d\n- โทเค็นโดยประมาณ: อินพุตราว %[5]d / เอาต์พุตราว %[6]d\n- เวลาโดยประมาณ: ราว %[7]s\nเมื่อเริ่ม ช่องจะเข้าร่วมกลุ่ม ข้อความใหม่จะถูกโพสต์หลังจากแปลข้อความเก่าเสร็จ",
+		uiKeyBackfillStart:       "เริ่ม",
+		uiKeyBackfillCancel:      "ยกเลิก",
+		uiKeyBackfillCanceled:    "ยกเลิกแล้ว <#%[1]s> ไม่ได้เข้าร่วมกลุ่ม",
+		uiKeyBackfillJoined:      "เพิ่ม <#%[2]s> (%[3]s) เข้าร่วมกลุ่มการแปล `%[1]s` แล้ว กำลังแปลข้อความเก่า ข้อความใหม่จะตามมาหลังจากเสร็จ",
+		uiKeyBackfillScanTimeout: "การตรวจประวัติใช้เวลานานเกินไป <#%[1]s> ไม่ได้เข้าร่วมกลุ่ม",
+		uiKeyBackfillScanFailed:  "ไม่สามารถอ่านประวัติของช่องได้ <#%[1]s> ไม่ได้เข้าร่วมกลุ่ม",
 	},
 	"vi": {
 		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
@@ -1244,6 +1348,14 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyForumTagMapFinished:       "Finished editing forum tag mappings.",
 		uiKeyForumTagMapNeedForum:      "Specify a forum or media channel that has joined the group.",
 		uiKeyForumTagMapNoPeers:        "No other forum/media channels with tags are available in this group.",
+
+		uiKeyBackfillEstimate:    "Dịch lịch sử của nhóm `%[1]s` sang <#%[2]s>:\n- Tin nhắn: %[3]d\n- Hình ảnh: %[4]d\n- Token ước tính: khoảng %[5]d đầu vào / %[6]d đầu ra\n- Thời gian ước tính: khoảng %[7]s\nKênh sẽ tham gia nhóm khi bắt đầu. Tin nhắn mới sẽ được đăng sau khi dịch xong lịch sử.",
+		uiKeyBackfillStart:       "Bắt đầu",
+		uiKeyBackfillCancel:      "Hủy",
+		uiKeyBackfillCanceled:    "Đã hủy. <#%[1]s> chưa tham gia nhóm.",
+		uiKeyBackfillJoined:      "Đã thêm <#%[2]s> (%[3]s) vào nhóm dịch `%[1]s`. Đang dịch các tin nhắn cũ; tin nhắn mới sẽ được đăng sau khi hoàn tất.",
+		uiKeyBackfillScanTimeout: "Quét lịch sử mất quá nhiều thời gian. <#%[1]s> chưa tham gia nhóm.",
+		uiKeyBackfillScanFailed:  "Không thể đọc lịch sử kênh. <#%[1]s> chưa tham gia nhóm.",
 	},
 }
 

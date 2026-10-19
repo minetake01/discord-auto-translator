@@ -1,0 +1,201 @@
+package translatorbot
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+const (
+	backfillCustomStart  = "bf:start:"
+	backfillCustomCancel = "bf:cancel:"
+	// backfillScanTimeout keeps the scan inside the 15 minute window in
+	// which the deferred interaction response can still be edited.
+	backfillScanTimeout = 14 * time.Minute
+	backfillPendingTTL  = time.Hour
+)
+
+var errWebhookCreate = errors.New("create webhook")
+
+// BackfillService is the part of Service the backfill command uses.
+type BackfillService interface {
+	EstimateBackfill(ctx context.Context, guildID, groupID string) (BackfillEstimate, error)
+	StartBackfill(guildID string)
+}
+
+// pendingBackfill is an estimate waiting for the invoker to start or cancel.
+// The channel joins the group only when the backfill is started.
+type pendingBackfill struct {
+	channel   GroupChannel
+	requester string
+	createdAt time.Time
+}
+
+type pendingBackfills struct {
+	mu    sync.Mutex
+	items map[string]pendingBackfill
+}
+
+func (p *pendingBackfills) put(item pendingBackfill) string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		panic(err)
+	}
+	id := hex.EncodeToString(raw[:])
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.items == nil {
+		p.items = make(map[string]pendingBackfill)
+	}
+	for key, old := range p.items {
+		if time.Since(old.createdAt) > backfillPendingTTL {
+			delete(p.items, key)
+		}
+	}
+	p.items[id] = item
+	return id
+}
+
+func (p *pendingBackfills) take(id string) (pendingBackfill, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	item, ok := p.items[id]
+	delete(p.items, id)
+	if ok && time.Since(item.createdAt) > backfillPendingTTL {
+		return pendingBackfill{}, false
+	}
+	return item, ok
+}
+
+func (h *CommandHandler) SetBackfill(backfill BackfillService) {
+	h.backfill = backfill
+}
+
+// handleJoinWithBackfill scans the group's history, shows the estimate, and
+// waits for the invoker to start or cancel. The response is deferred because
+// the scan can take minutes.
+func (h *CommandHandler) handleJoinWithBackfill(s *discordgo.Session, i *discordgo.InteractionCreate, channel GroupChannel, peers []GroupChannel) {
+	locale := commandLocale(i)
+	for _, peer := range peers {
+		switch {
+		case peer.ChannelID == channel.ChannelID:
+			h.reply(s, i, uiKeyDuplicateChannel, channel.GroupID)
+			return
+		case peer.Language == channel.Language:
+			h.reply(s, i, uiKeyDuplicateLanguage, channel.GroupID)
+			return
+		}
+	}
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{Flags: discordgo.MessageFlagsEphemeral},
+	}); err != nil {
+		log.Printf("join-channel backfill defer: %v", err)
+		return
+	}
+	edit := func(content string, components []discordgo.MessageComponent) {
+		if components == nil {
+			components = []discordgo.MessageComponent{}
+		}
+		if _, err := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{Content: &content, Components: &components}); err != nil {
+			log.Printf("join-channel backfill edit response: %v", err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), backfillScanTimeout)
+	defer cancel()
+	estimate, err := h.backfill.EstimateBackfill(ctx, channel.GuildID, channel.GroupID)
+	if err != nil {
+		log.Printf("join-channel backfill scan: %v", err)
+		key := uiKeyBackfillScanFailed
+		if errors.Is(err, context.DeadlineExceeded) {
+			key = uiKeyBackfillScanTimeout
+		}
+		edit(localizedUIStringf(locale, key, channel.ChannelID), nil)
+		return
+	}
+	if estimate.Messages == 0 {
+		if err := h.joinChannel(context.Background(), channel, "", false); err != nil {
+			edit(h.groupErrorText(locale, "join-channel", channel.GroupID, err), nil)
+			return
+		}
+		edit(localizedUIStringf(locale, uiKeyChannelJoined, channel.GroupID, channel.ChannelID, channel.Language), nil)
+		return
+	}
+	id := h.pendingBackfills.put(pendingBackfill{channel: channel, requester: interactionUserID(i), createdAt: time.Now()})
+	content := localizedUIStringf(locale, uiKeyBackfillEstimate, channel.GroupID, channel.ChannelID,
+		estimate.Messages, estimate.Images, estimate.InputTokens, estimate.OutputTokens, formatEstimateDuration(estimate.Duration))
+	edit(content, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillStart), Style: discordgo.PrimaryButton, CustomID: backfillCustomStart + id},
+		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillCancel), Style: discordgo.SecondaryButton, CustomID: backfillCustomCancel + id},
+	}}})
+}
+
+// handleBackfillComponent starts or cancels a pending backfill. The estimate
+// is ephemeral to the invoker, so the click needs no permission check.
+func (h *CommandHandler) handleBackfillComponent(s *discordgo.Session, i *discordgo.InteractionCreate, customID string) {
+	locale := commandLocale(i)
+	update := func(content string) {
+		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseUpdateMessage,
+			Data: &discordgo.InteractionResponseData{Content: content, Components: []discordgo.MessageComponent{}},
+		})
+	}
+	start := strings.HasPrefix(customID, backfillCustomStart)
+	id := strings.TrimPrefix(strings.TrimPrefix(customID, backfillCustomStart), backfillCustomCancel)
+	pending, ok := h.pendingBackfills.take(id)
+	if !ok {
+		update(localizedUIString(locale, uiKeyUnexpectedError))
+		return
+	}
+	channel := pending.channel
+	if !start {
+		update(localizedUIStringf(locale, uiKeyBackfillCanceled, channel.ChannelID))
+		return
+	}
+	if err := h.joinChannel(context.Background(), channel, pending.requester, true); err != nil {
+		update(h.groupErrorText(locale, "join-channel", channel.GroupID, err))
+		return
+	}
+	h.backfill.StartBackfill(channel.GuildID)
+	update(localizedUIStringf(locale, uiKeyBackfillJoined, channel.GroupID, channel.ChannelID, channel.Language))
+}
+
+// joinChannel creates the channel's webhook and registers it, together with
+// a backfill job when requested.
+func (h *CommandHandler) joinChannel(ctx context.Context, channel GroupChannel, requester string, backfill bool) error {
+	webhookID, token, err := h.api.CreateWebhook(channel.ChannelID, defaultWebhookName)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errWebhookCreate, err)
+	}
+	channel.WebhookID, channel.WebhookToken = webhookID, token
+	if backfill {
+		_, err = h.store.JoinChannelWithBackfill(ctx, channel, requester)
+		return err
+	}
+	return h.store.JoinChannel(ctx, channel)
+}
+
+func formatEstimateDuration(d time.Duration) string {
+	d = d.Round(time.Minute)
+	if d < time.Minute {
+		return "1m"
+	}
+	hours := int(d / time.Hour)
+	minutes := int((d % time.Hour) / time.Minute)
+	switch {
+	case hours == 0:
+		return fmt.Sprintf("%dm", minutes)
+	case minutes == 0:
+		return fmt.Sprintf("%dh", hours)
+	default:
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+}

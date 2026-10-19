@@ -36,7 +36,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent messages: %#v", discord.sent)
 	}
-	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] スレッド本文" {
+	if got := discord.sent[0]; got.ThreadID != "800000000000000001" || got.Content != "[en] スレッド本文" {
 		t.Fatalf("unexpected thread message: %#v", got)
 	}
 	if len(translator.contexts) < 1 {
@@ -65,7 +65,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if len(translator.contexts) != translatorCalls {
 		t.Fatal("image-only thread message without alt must not be translated")
 	}
-	if got := discord.sent[1]; got.ThreadID != "thread-1" || strings.TrimSpace(got.Content) != "" || len(got.Files) != 1 {
+	if got := discord.sent[1]; got.ThreadID != "800000000000000001" || strings.TrimSpace(got.Content) != "" || len(got.Files) != 1 {
 		t.Fatalf("unexpected attachment-only thread message: %#v", got)
 	}
 
@@ -78,7 +78,7 @@ func TestSyncThreadCreateAndThreadMessage(t *testing.T) {
 	if len(translator.contexts) != translatorCalls {
 		t.Fatal("code-only thread message must not be translated")
 	}
-	if got := discord.sent[2]; got.ThreadID != "thread-1" || got.Content != "`fmt.Println()`" {
+	if got := discord.sent[2]; got.ThreadID != "800000000000000001" || got.Content != "`fmt.Println()`" {
 		t.Fatalf("unexpected code-only thread message: %#v", got)
 	}
 }
@@ -171,7 +171,7 @@ func TestThreadMessageCreateSyncsThreadWhenMessageArrivesBeforeThreadCreate(t *t
 	if len(discord.sent) != 1 {
 		t.Fatalf("sent messages: %#v", discord.sent)
 	}
-	if got := discord.sent[0]; got.ThreadID != "thread-1" || got.Content != "[en] 最初の本文" {
+	if got := discord.sent[0]; got.ThreadID != "800000000000000001" || got.Content != "[en] 最初の本文" {
 		t.Fatalf("unexpected first thread message: %#v", got)
 	}
 }
@@ -201,7 +201,7 @@ func TestGatewayThreadCreateAndFirstThreadMessageDoNotDuplicateThread(t *testing
 	if len(discord.threads) != 1 {
 		t.Fatalf("duplicate target threads were created: %#v", discord.threads)
 	}
-	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
+	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "800000000000000001" {
 		t.Fatalf("sent messages: %#v", discord.sent)
 	}
 	if len(translator.contexts) != 2 {
@@ -226,7 +226,7 @@ func TestMessageInMirroredThreadDoesNotCreateReverseThread(t *testing.T) {
 	createCalls := len(translator.contexts)
 
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
-		ID: "100000000000000030", ChannelID: "thread-1", GuildID: "guild", ParentChannelID: "en", ThreadName: "topic",
+		ID: "100000000000000030", ChannelID: "800000000000000001", GuildID: "guild", ParentChannelID: "en", ThreadName: "topic",
 		AuthorID: "u", AuthorDisplayName: "u", Content: "target reply",
 	})
 	if err != nil {
@@ -391,7 +391,7 @@ func TestForumInitialMessageCreatesThreadWithTranslatedInitialContentAndLink(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0].TargetChannelID != "thread-1" || links[0].TargetMessageID != "thread-1" {
+	if len(links) != 1 || links[0].TargetChannelID != "800000000000000001" || links[0].TargetMessageID != "800000000000000001" {
 		t.Fatalf("unexpected forum starter message link: %#v", links)
 	}
 }
@@ -413,7 +413,7 @@ func TestSyncThreadUpdateRenamesTargetThreads(t *testing.T) {
 	if len(discord.edits) != 1 {
 		t.Fatalf("edits: %#v", discord.edits)
 	}
-	if got := discord.edits[0]; got.threadID != "thread-1" || got.name != "[en] 新タイトル" {
+	if got := discord.edits[0]; got.threadID != "800000000000000001" || got.name != "[en] 新タイトル" {
 		t.Fatalf("unexpected thread edit: %#v", got)
 	}
 }
@@ -429,7 +429,7 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000017", SourceChannelID: "100000000000000005", GroupID: "g",
-		TargetChannelID: "thread-1", TargetMessageID: "mirrored-msg", TargetLanguage: "en",
+		TargetChannelID: "800000000000000001", TargetMessageID: "700000000000000025", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "スレッド内メッセージ",
 	}); err != nil {
 		t.Fatal(err)
@@ -439,7 +439,7 @@ func TestSyncThreadDeleteDeletesTargetThreadsAndLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(discord.deletes) != 1 || discord.deletes[0] != "thread-1" {
+	if len(discord.deletes) != 1 || discord.deletes[0] != "800000000000000001" {
 		t.Fatalf("deletes: %#v", discord.deletes)
 	}
 	threads, err := store.ThreadTargets(ctx, "100000000000000005")
@@ -599,8 +599,8 @@ func TestSyncThreadUpdateSyncsMappedForumTags(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{
 		channels: map[string]*discordgo.Channel{
-			"en":       {ID: "en", Type: discordgo.ChannelTypeGuildForum},
-			"thread-1": {ID: "thread-1", AppliedTags: []string{}},
+			"en":                 {ID: "en", Type: discordgo.ChannelTypeGuildForum},
+			"800000000000000001": {ID: "800000000000000001", AppliedTags: []string{}},
 		},
 	}
 	service := NewService(store, discord, &echoTranslator{})

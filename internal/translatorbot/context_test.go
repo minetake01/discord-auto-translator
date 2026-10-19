@@ -214,7 +214,7 @@ func TestHandleMessageCreateStartsNewPromptCacheGenerationAfterIdleGap(t *testin
 	old := snowflakeForTime(now.Add(-21*time.Minute), 1)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: old, SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000005", TargetLanguage: "en",
 		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
 	}); err != nil {
 		t.Fatal(err)
@@ -282,12 +282,12 @@ func TestHandleMessageCreateExcludesHistoryAcrossIdleGap(t *testing.T) {
 	for _, link := range []MessageLink{
 		{
 			SourceMessageID: snowflakeForTime(now.Add(-21*time.Minute), 1), SourceChannelID: "ja", GroupID: "g",
-			TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+			TargetChannelID: "en", TargetMessageID: "700000000000000005", TargetLanguage: "en",
 			SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
 		},
 		{
 			SourceMessageID: snowflakeForTime(now.Add(-4*time.Minute), 2), SourceChannelID: "ja", GroupID: "g",
-			TargetChannelID: "en", TargetMessageID: "recent-target", TargetLanguage: "en",
+			TargetChannelID: "en", TargetMessageID: "700000000000000006", TargetLanguage: "en",
 			SourceAuthorID: "bob-id", SourceAuthorDisplayName: "Bob", SourceContentSnapshot: "今のバースト",
 		},
 	} {
@@ -607,7 +607,7 @@ func TestHandleMessageCreateReplyChainIncludesOriginalSnapshot(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000011", TargetLanguage: "en",
 		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "こんにちは",
 	}); err != nil {
 		t.Fatal(err)
@@ -647,10 +647,10 @@ func TestHandleMessageCreateReplyChainWalksUpToThreeMessages(t *testing.T) {
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	for _, link := range []MessageLink{
-		{SourceMessageID: "100000000000000012", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t1", TargetLanguage: "en", SourceAuthorDisplayName: "A", SourceContentSnapshot: "first"},
-		{SourceMessageID: "100000000000000019", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t2", TargetLanguage: "en", SourceAuthorDisplayName: "B", SourceContentSnapshot: "second"},
-		{SourceMessageID: "100000000000000022", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t3", TargetLanguage: "en", SourceAuthorDisplayName: "C", SourceContentSnapshot: "third"},
-		{SourceMessageID: "100000000000000023", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "t4", TargetLanguage: "en", SourceAuthorDisplayName: "D", SourceContentSnapshot: "fourth"},
+		{SourceMessageID: "100000000000000012", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "700000000000000007", TargetLanguage: "en", SourceAuthorDisplayName: "A", SourceContentSnapshot: "first"},
+		{SourceMessageID: "100000000000000019", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "700000000000000008", TargetLanguage: "en", SourceAuthorDisplayName: "B", SourceContentSnapshot: "second"},
+		{SourceMessageID: "100000000000000022", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "700000000000000009", TargetLanguage: "en", SourceAuthorDisplayName: "C", SourceContentSnapshot: "third"},
+		{SourceMessageID: "100000000000000023", SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: "700000000000000010", TargetLanguage: "en", SourceAuthorDisplayName: "D", SourceContentSnapshot: "fourth"},
 	} {
 		if err := store.SaveMessageLink(ctx, link); err != nil {
 			t.Fatal(err)
@@ -702,7 +702,7 @@ func TestHandleMessageCreateReplyChainDedupesRecentHistory(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000011", TargetLanguage: "en",
 		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前の発言",
 	}); err != nil {
 		t.Fatal(err)
@@ -839,7 +839,7 @@ func TestHandleMessageCreateIncludesReplyImagesInTranslationContext(t *testing.T
 	image := DiscordAttachment{URL: "https://cdn.discordapp.com/sign.png", Filename: "sign.png", ContentType: "image/png", Description: "出口"}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000011", TargetLanguage: "en",
 		SourceAuthorDisplayName: "Alice", SourceImageAttachments: []DiscordAttachment{image},
 	}); err != nil {
 		t.Fatal(err)
@@ -877,7 +877,7 @@ func TestHandleMessageCreateReservesVisionSlotsForCurrentAttachments(t *testing.
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "old", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000004", TargetLanguage: "en",
 		SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "見て",
 		SourceImageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/old.png", Filename: "old.png", ContentType: "image/png"}},
 	}); err != nil {
@@ -1074,7 +1074,7 @@ func TestHandleMessageCreateOmitsTopicSummaryAcrossIdleGap(t *testing.T) {
 	old := snowflakeForTime(now.Add(-21*time.Minute), 1)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: old, SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "old-target", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000005", TargetLanguage: "en",
 		SourceAuthorID: "alice-id", SourceAuthorDisplayName: "Alice", SourceContentSnapshot: "前のバースト",
 	}); err != nil {
 		t.Fatal(err)

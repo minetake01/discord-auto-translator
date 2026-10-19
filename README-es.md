@@ -97,7 +97,7 @@ Por defecto, los comandos de administración solo pueden ser ejecutados por miem
 | Comando | Descripción | Opciones principales |
 |---|---|---|
 | `/new-channel` | Crea un nuevo grupo de traducción y registra un canal | `language` (obligatorio): Código de idioma BCP-47<br>`channel` (opcional): Canal objetivo (por defecto: canal actual)<br>`group` (opcional): Nombre del grupo (por defecto: nombre del canal) |
-| `/join-channel` | Añade un canal a un grupo existente | `group` (obligatorio): Nombre del grupo<br>`language` (obligatorio): Código de idioma BCP-47<br>`channel` (opcional): Canal objetivo (por defecto: canal actual) |
+| `/join-channel` | Añade un canal a un grupo existente | `group` (obligatorio): Nombre del grupo<br>`language` (obligatorio): Código de idioma BCP-47<br>`channel` (opcional): Canal objetivo (por defecto: canal actual)<br>`backfill` (opcional): Traduce el historial existente del grupo al canal (tras una estimación y confirmación) |
 | `/leave-channel` | Retira un canal de un grupo | `group` (obligatorio): Nombre del grupo<br>`channel` (opcional): Canal objetivo (por defecto: canal actual) |
 | `/delete-group` | Elimina un grupo de traducción por completo | `group` (obligatorio): Nombre del grupo a eliminar |
 | `/list-groups` | Lista todos los grupos y canales vinculados | Ninguna |
@@ -223,7 +223,7 @@ Valida credenciales, conexión con el modelo y el esquema de respuesta antes de 
 | `PUBLIC_BASE_URL` | No | (no definido) | URL pública para las insignias de avatar. Renderiza un anillo con el color del rol más alto |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | `100000` | Límite de tokens por servidor (guild) por minuto |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | `120` | Límite de peticiones por minuto por IP para `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Días de retención de enlaces de mensajes. `0` = indefinido |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Días de retención de enlaces de mensajes. `0` = indefinido. El plazo cuenta desde el momento en que se tradujo cada mensaje. |
 | `GUILD_DATA_RETENTION_DAYS` | No | `0` | Días de retención de datos de un servidor tras la salida del bot |
 
 ---

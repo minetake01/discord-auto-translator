@@ -34,6 +34,12 @@ webhook/thread IDs.
 - Forum/media groups only target forum/media peers. Map `applied_tags` through
   `forum_tag_maps`; omit unmapped tags; fail the target create when the
   destination has `REQUIRE_TAG` and the mapped set is empty.
+- Archived and locked threads (errors 50083 / 160005): edit, reaction, pin, rename and
+  tag operations open the thread (unarchive, unlock) in one PATCH, retry, then
+  restore the previous state. A webhook send unarchives by itself; only a locked
+  thread is unlocked for the send and locked again. Do these per thread under one
+  lock. `THREAD_UPDATE` archive/lock changes are mirrored to peer threads; changes
+  the bot made itself are recognized and not echoed back.
 
 ## Pattern matrix
 
@@ -49,6 +55,7 @@ webhook/thread IDs.
 | Rename / tag change | `THREAD_UPDATE` | Patch peer name or mapped tags. No-op when mapped tags already match. |
 | Thread delete | `THREAD_DELETE` | Delete peer thread and links. Irreversible; keep the path narrow. |
 | Edit/delete/reaction/pin in threads | Message lives on the thread channel | Webhook edit/delete need `thread_id`. Reaction/pin use the target message's channel ID. |
+| Archive / lock change | `THREAD_UPDATE` with `thread_metadata` | Apply the same archived/locked state to peer threads, skipping the bot's own echoes. |
 
 ## Tests to keep
 
@@ -59,3 +66,5 @@ webhook/thread IDs.
 - Message-backed threads call create-from-message only when the translated parent exists.
 - Forum/media posts keep translated first-message content and save that link.
 - Webhook edit/delete in target threads pass `thread_id`.
+- Operations on an archived or locked target thread reopen it and restore the state.
+- An archive/lock change syncs to peers once and its echo does not bounce back.

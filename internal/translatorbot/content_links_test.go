@@ -24,13 +24,13 @@ func TestReplaceDiscordRefsMessageURL(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000010", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "msg-en", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000003", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	got := ReplaceDiscordRefs(ctx, store, "guild", "jump https://discord.com/channels/guild/ja/100000000000000010", "en")
-	want := "jump " + MessageJumpURL("guild", "en", "msg-en")
+	want := "jump " + MessageJumpURL("guild", "en", "700000000000000003")
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}

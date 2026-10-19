@@ -32,7 +32,7 @@ func TestBotEditBurstIsTranslatedOnceWithLatestContent(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000026", TargetLanguage: "en",
 		SourceContentSnapshot: "frame 0",
 	}); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestHumanEditIsTranslatedImmediately(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000026", TargetLanguage: "en",
 		SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)

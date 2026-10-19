@@ -61,7 +61,7 @@ func TestSyncPinPinsAndUnpinsPeers(t *testing.T) {
 	service := NewService(store, discord, &echoTranslator{})
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000024", TargetLanguage: "en",
 	}); err != nil {
 		t.Fatal(err)
 	}

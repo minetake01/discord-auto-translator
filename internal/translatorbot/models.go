@@ -43,6 +43,9 @@ type MessageLink struct {
 	SourceAuthorDisplayName string
 	SourceContentSnapshot   string
 	SourceImageAttachments  []DiscordAttachment
+	// TimestampLine marks a backfilled mirror whose first line shows the
+	// source posting time; edits rebuild it.
+	TimestampLine bool
 }
 
 // MessageReference is the reply target of a source message (message_references row).
@@ -137,9 +140,14 @@ type DiscordMessage struct {
 	Edited                     bool
 	ThreadSystemMessage        bool
 	ThreadStarterMessage       bool
+	StartsThread               bool              // a thread was started from this message
 	MentionedUsers             map[string]string // userID → display name
 	MentionedChannels          map[string]string // channelID → channel name (source)
 	MentionedRoles             map[string]string // roleID → role name
+	// Pinned and Reactions describe the message state when it was read from
+	// history; backfill applies them to the new mirror.
+	Pinned    bool
+	Reactions []string // emoji API names
 }
 
 type DiscordFetchedMessage struct {
@@ -148,4 +156,6 @@ type DiscordFetchedMessage struct {
 	ReferencedChannelID string
 	ReferencedMessageID string
 	Attachments         []DiscordAttachment
+	Pinned              bool
+	Reactions           []string // emoji API names
 }

@@ -20,7 +20,7 @@ type retentionStoreStub struct {
 	canceled       []string
 }
 
-func (s *retentionStoreStub) PurgeMessageLinksOlderThan(_ context.Context, cutoff time.Time) (int64, error) {
+func (s *retentionStoreStub) PurgeMessageLinksTranslatedBefore(_ context.Context, cutoff time.Time) (int64, error) {
 	s.messageCutoffs = append(s.messageCutoffs, cutoff)
 	return 0, nil
 }

@@ -29,6 +29,8 @@ type Service struct {
 	runTopicSummary      func(func())
 	issueNotices         issueNoticeState
 	editDebounce         *editDebouncer
+	threadStates         threadStateTracker
+	backfill             backfillWorkers
 }
 
 func NewService(store *Store, discord DiscordAPI, translator Translator) *Service {

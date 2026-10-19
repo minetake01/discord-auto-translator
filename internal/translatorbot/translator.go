@@ -12,6 +12,9 @@ import (
 )
 
 type ChatContextMessage struct {
+	// Ref names a <reply_context> entry that batch <message> reply_to
+	// attributes point at; empty outside batch translation.
+	Ref             string
 	Author          string
 	Content         string
 	SourceChannelID string
@@ -90,6 +93,7 @@ type Translator interface {
 	TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error)
 	TranslatePollMulti(ctx context.Context, prepared preparedTranslation) (PollMultiTranslationResult, error)
 	TranslateThreadCreateMulti(ctx context.Context, prepared preparedTranslation) (ThreadCreateMultiTranslationResult, error)
+	TranslateBatch(ctx context.Context, prepared preparedTranslation) (BatchTranslationResult, error)
 }
 
 // TopicSummarizer is implemented by translators that can compress discarded
@@ -121,6 +125,8 @@ type preparedTranslation struct {
 	alwaysGlossary     []GlossaryEntry
 	matchedGlossary    []GlossaryEntry
 	writeSource        func(*strings.Builder)
+	batchSources       []string // set for batch translations
+	batchProtected     []string
 }
 
 func (p preparedTranslation) userPrompt() string {

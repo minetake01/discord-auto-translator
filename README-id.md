@@ -97,7 +97,7 @@ Secara default, perintah administratif hanya dapat dijalankan oleh anggota denga
 | Perintah | Deskripsi | Opsi Utama |
 |---|---|---|
 | `/new-channel` | Membuat grup penerjemahan baru dan mendaftarkan saluran | `language` (wajib): Kode bahasa BCP-47<br>`channel` (opsional): Saluran target (default: saluran saat ini)<br>`group` (opsional): Nama grup (default: nama saluran) |
-| `/join-channel` | Menambahkan saluran ke grup penerjemahan yang ada | `group` (wajib): Nama grup target<br>`language` (wajib): Kode bahasa BCP-47<br>`channel` (opsional): Saluran target (default: saluran saat ini) |
+| `/join-channel` | Menambahkan saluran ke grup penerjemahan yang ada | `group` (wajib): Nama grup target<br>`language` (wajib): Kode bahasa BCP-47<br>`channel` (opsional): Saluran target (default: saluran saat ini)<br>`backfill` (opsional): Menerjemahkan riwayat pesan grup yang sudah ada ke saluran (setelah estimasi dan konfirmasi) |
 | `/leave-channel` | Menghapus saluran dari grup | `group` (wajib): Nama grup<br>`channel` (opsional): Saluran target (default: saluran saat ini) |
 | `/delete-group` | Menghapus grup penerjemahan secara menyeluruh | `group` (wajib): Nama grup yang akan dihapus |
 | `/list-groups` | Menampilkan semua grup penerjemahan dan saluran tertaut | Tidak ada |
@@ -223,7 +223,7 @@ Memvalidasi kredensial API, koneksi model, dan skema respons sebelum deployment:
 | `PUBLIC_BASE_URL` | Tidak | (tidak disetel) | URL publik untuk lencana avatar. Menambahkan cincin warna peran tertinggi di sekitar avatar |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Tidak | `100000` | Batas token per menit per server (guild) |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Tidak | `120` | Batas permintaan per menit per IP untuk endpoint `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | Tidak | `0` | Masa retensi tautan pesan dalam hari. `0` = tanpa batas waktu |
+| `MESSAGE_LINK_RETENTION_DAYS` | Tidak | `0` | Masa retensi tautan pesan dalam hari. `0` = tanpa batas waktu. Masa retensi dihitung sejak setiap pesan diterjemahkan. |
 | `GUILD_DATA_RETENTION_DAYS` | Tidak | `0` | Masa retensi data server setelah bot dikeluarkan |
 
 ---

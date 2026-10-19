@@ -767,7 +767,7 @@ func TestHandleMessageCreateSkipsWhenTargetLinkExists(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "existing", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000013", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "hello",
 	}); err != nil {
 		t.Fatal(err)
@@ -830,7 +830,7 @@ func TestSendAndSaveLinkCompensatesOnDBFailure(t *testing.T) {
 	if len(discord.webhookDeletes) != 1 {
 		t.Fatalf("expected compensating delete, got %#v", discord.webhookDeletes)
 	}
-	if discord.webhookDeletes[0].messageID != "sent-1" {
+	if discord.webhookDeletes[0].messageID != "900000000000000001" {
 		t.Fatalf("unexpected delete target: %#v", discord.webhookDeletes[0])
 	}
 }
@@ -1093,7 +1093,7 @@ func TestHandleMessageUpdateSkipsUnchangedContent(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000015", TargetLanguage: "en",
 		SourceContentSnapshot: "same",
 	}); err != nil {
 		t.Fatal(err)
@@ -1126,7 +1126,7 @@ func TestHandleMessageUpdateUpdatesSnapshot(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000015", TargetLanguage: "en",
 		SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
@@ -1160,12 +1160,12 @@ func TestHandleMessageUpdateBatchesTranslationByGroup(t *testing.T) {
 	for _, link := range []MessageLink{
 		{
 			SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-			TargetChannelID: "en", TargetMessageID: "translated-en", TargetLanguage: "en",
+			TargetChannelID: "en", TargetMessageID: "700000000000000016", TargetLanguage: "en",
 			SourceContentSnapshot: "before",
 		},
 		{
 			SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
-			TargetChannelID: "fr", TargetMessageID: "translated-fr", TargetLanguage: "fr",
+			TargetChannelID: "fr", TargetMessageID: "700000000000000017", TargetLanguage: "fr",
 			SourceContentSnapshot: "before",
 		},
 	} {
@@ -1234,7 +1234,7 @@ func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000009", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "linked-en", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000014", TargetLanguage: "en",
 		SourceAuthorID: "author", SourceContentSnapshot: "referenced",
 	}); err != nil {
 		t.Fatal(err)
@@ -1249,7 +1249,7 @@ func TestHandleMessageCreateReplacesDiscordMessageLink(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := "[en] see " + MessageJumpURL("guild", "en", "linked-en")
+	want := "[en] see " + MessageJumpURL("guild", "en", "700000000000000014")
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}

@@ -97,7 +97,7 @@ Por padrão, os comandos de administração só podem ser executados por membros
 | Comando | Descrição | Principais Opções |
 |---|---|---|
 | `/new-channel` | Cria um novo grupo de tradução e registra um canal | `language` (obrigatório): Código BCP-47 do idioma<br>`channel` (opcional): Canal alvo (padrão: canal atual)<br>`group` (opcional): Nome do grupo (padrão: nome do canal) |
-| `/join-channel` | Adiciona um canal a um grupo existente | `group` (obrigatório): Nome do grupo<br>`language` (obrigatório): Código BCP-47 do idioma<br>`channel` (opcional): Canal alvo (padrão: canal atual) |
+| `/join-channel` | Adiciona um canal a um grupo existente | `group` (obrigatório): Nome do grupo<br>`language` (obrigatório): Código BCP-47 do idioma<br>`channel` (opcional): Canal alvo (padrão: canal atual)<br>`backfill` (opcional): Traduz o histórico existente do grupo para o canal (após estimativa e confirmação) |
 | `/leave-channel` | Remove um canal de um grupo | `group` (obrigatório): Nome do grupo<br>`channel` (opcional): Canal alvo (padrão: canal atual) |
 | `/delete-group` | Exclui um grupo de tradução por completo | `group` (obrigatório): Nome do grupo a excluir |
 | `/list-groups` | Lista todos os grupos e canais vinculados | Nenhuma |
@@ -223,7 +223,7 @@ Verifica credenciais, conexão e conformidade do esquema de resposta antes da im
 | `PUBLIC_BASE_URL` | Não | (não definido) | URL pública para os emblemas de avatar. Renderiza um anel com a cor do cargo mais alto |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Não | `100000` | Limite de tokens por servidor por minuto |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Não | `120` | Limite de requisições por minuto por IP para o endpoint `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | Não | `0` | Dias de retenção de links de mensagens. `0` = ilimitado |
+| `MESSAGE_LINK_RETENTION_DAYS` | Não | `0` | Dias de retenção de links de mensagens. `0` = ilimitado. O prazo conta a partir do momento em que cada mensagem foi traduzida. |
 | `GUILD_DATA_RETENTION_DAYS` | Não | `0` | Dias de retenção de dados de um servidor após a saída do bot |
 
 ---

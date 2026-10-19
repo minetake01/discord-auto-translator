@@ -371,14 +371,14 @@ func TestHandleViewOriginalTranslatedMessage(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ch-ja", GroupID: "general",
-		TargetChannelID: "ch-en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "ch-en", TargetMessageID: "700000000000000001", TargetLanguage: "en",
 		SourceAuthorID: "a", SourceContentSnapshot: "Hello from the original message",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	responses := captureResponses(handler)
-	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "translated", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-en", "700000000000000001", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
 	if len(*responses) != 1 {
 		t.Fatalf("response count = %d, want 1", len(*responses))
 	}
@@ -411,14 +411,14 @@ func TestHandleViewOriginalJapaneseChannel(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ch-ja", GroupID: "general",
-		TargetChannelID: "ch-ja", TargetMessageID: "translated-ja", TargetLanguage: "ja",
+		TargetChannelID: "ch-ja", TargetMessageID: "700000000000000002", TargetLanguage: "ja",
 		SourceAuthorID: "a", SourceContentSnapshot: "original text",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	responses := captureResponses(handler)
-	handler.Handle(nil, viewOriginalInteraction("g1", "ch-ja", "translated-ja", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
+	handler.Handle(nil, viewOriginalInteraction("g1", "ch-ja", "700000000000000002", &discordgo.Member{User: &discordgo.User{ID: "u1"}}))
 	if len(*responses) != 1 {
 		t.Fatalf("response count = %d, want 1", len(*responses))
 	}
@@ -439,7 +439,7 @@ func TestHandleViewOriginalAlreadyOriginal(t *testing.T) {
 	}
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ch-en", GroupID: "general",
-		TargetChannelID: "ch-ja", TargetMessageID: "translated", TargetLanguage: "ja",
+		TargetChannelID: "ch-ja", TargetMessageID: "700000000000000001", TargetLanguage: "ja",
 		SourceAuthorID: "a", SourceContentSnapshot: "100000000000000003",
 	}); err != nil {
 		t.Fatal(err)

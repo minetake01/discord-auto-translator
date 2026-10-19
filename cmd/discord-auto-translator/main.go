@@ -104,6 +104,7 @@ func main() {
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
 	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.TranslationRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
+	commands.SetBackfill(service)
 	httpMux := http.NewServeMux()
 	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRequestRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
@@ -140,14 +141,14 @@ func main() {
 				log.Printf("message create unmarshal: %v", err)
 				return
 			}
-			handleGatewayMessageCreate(s, service, &m, e.RawData)
+			handleGatewayMessageCreate(api, service, &m, e.RawData)
 		case "MESSAGE_UPDATE":
 			var m discordgo.MessageUpdate
 			if err := json.Unmarshal(e.RawData, &m); err != nil {
 				log.Printf("message update unmarshal: %v", err)
 				return
 			}
-			handleGatewayMessageUpdate(s, service, &m, e.RawData)
+			handleGatewayMessageUpdate(api, service, &m, e.RawData)
 		}
 	})
 	dg.AddHandler(func(s *discordgo.Session, m *discordgo.MessageDelete) {
@@ -183,6 +184,11 @@ func main() {
 		if t.Channel == nil {
 			return
 		}
+		if t.ThreadMetadata != nil && threadStateChanged(t.BeforeUpdate, t.Channel) {
+			if err := service.SyncThreadState(context.Background(), t.ID, t.ThreadMetadata.Archived, t.ThreadMetadata.Locked); err != nil {
+				log.Printf("thread state sync: %v", err)
+			}
+		}
 		nameChanged := t.Name != "" && (t.BeforeUpdate == nil || t.BeforeUpdate.Name != t.Name)
 		tagsChanged := t.BeforeUpdate == nil || !translatorbot.ForumTagSetsEqual(t.BeforeUpdate.AppliedTags, t.AppliedTags)
 		if !nameChanged && !tagsChanged {
@@ -204,6 +210,9 @@ func main() {
 		log.Fatal(err)
 	}
 	translatorbot.RegisterGuildCommands(dg, dg.State.User.ID)
+	if err := service.ResumeBackfills(context.Background()); err != nil {
+		log.Fatalf("resume backfill jobs: %v", err)
+	}
 	log.Println("Discord Auto Translator is running")
 	var retention *retentionWorker
 	if cfg.MessageLinkRetentionDays > 0 || cfg.GuildDataRetentionDays > 0 {
@@ -233,4 +242,14 @@ func main() {
 	if err := store.Close(); err != nil {
 		log.Printf("store close: %v", err)
 	}
+}
+
+// threadStateChanged reports an archive or lock change. Without the cached
+// previous state every update is treated as a change; echoes of the bot's
+// own changes and no-op updates are absorbed by the service.
+func threadStateChanged(before, after *discordgo.Channel) bool {
+	if before == nil || before.ThreadMetadata == nil {
+		return true
+	}
+	return before.ThreadMetadata.Archived != after.ThreadMetadata.Archived || before.ThreadMetadata.Locked != after.ThreadMetadata.Locked
 }

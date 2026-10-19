@@ -256,7 +256,7 @@ func TestHandleMessageCreateCachesPollTranslationsAndMirrorsResult(t *testing.T)
 	translator.contexts = nil
 	_ = store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000050", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated-poll", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000018", TargetLanguage: "en",
 		SourceAuthorID: "u", SourceContentSnapshot: "好きな色は？",
 	})
 

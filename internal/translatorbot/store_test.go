@@ -634,7 +634,7 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: "c2", Language: "en", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "700000000000000020"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
@@ -772,7 +772,7 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "m2"}); err != nil {
+	if err := s.SaveMessageLink(ctx, MessageLink{SourceMessageID: "100000000000000013", SourceChannelID: "c1", GroupID: "team", TargetChannelID: "c2", TargetMessageID: "700000000000000020"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
@@ -877,7 +877,7 @@ func TestMessageTargetsReplyingToReturnsPersistedReplyTargets(t *testing.T) {
 	ctx := context.Background()
 	if err := s.SaveMessageLinkWithReference(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "team",
-		TargetChannelID: "en", TargetMessageID: "target-reply", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000022", TargetLanguage: "en",
 	}, MessageReference{MessageID: "100000000000000001", ChannelID: "ja"}); err != nil {
 		t.Fatal(err)
 	}
@@ -886,26 +886,29 @@ func TestMessageTargetsReplyingToReturnsPersistedReplyTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(links) != 1 || links[0].SourceMessageID != "100000000000000002" || links[0].TargetMessageID != "target-reply" {
+	if len(links) != 1 || links[0].SourceMessageID != "100000000000000002" || links[0].TargetMessageID != "700000000000000022" {
 		t.Fatalf("unexpected reply targets: %#v", links)
 	}
 }
 
-func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing.T) {
+func TestMessageHistoryBeforeReturnsUniqueEarlierMessagesOldestFirst(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, link := range []MessageLink{
-		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "100000000000000021"},
+		{SourceMessageID: "100", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "200", TargetLanguage: "en", SourceAuthorID: "a", SourceContentSnapshot: "first"},
 		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "201", TargetLanguage: "en", SourceAuthorID: "b", SourceContentSnapshot: "second"},
 		{SourceMessageID: "101", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "fr", TargetMessageID: "301", TargetLanguage: "fr", SourceAuthorID: "b", SourceContentSnapshot: "second"},
 		{SourceMessageID: "102", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "202", TargetLanguage: "en", SourceAuthorID: "c", SourceContentSnapshot: "current"},
+		// A later message must never become context of an earlier one
+		// (edits and backfilled history translate as of their posting time).
+		{SourceMessageID: "103", SourceChannelID: "ja", GroupID: "team", TargetChannelID: "en", TargetMessageID: "203", TargetLanguage: "en", SourceAuthorID: "d", SourceContentSnapshot: "later"},
 	} {
 		if err := s.SaveMessageLink(ctx, link); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	got, err := s.RecentMessageHistory(ctx, []string{"ja"}, "102", 5)
+	got, err := s.MessageHistoryBefore(ctx, []string{"ja"}, "102", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -917,7 +920,7 @@ func TestRecentMessageHistoryReturnsUniquePreviousMessagesOldestFirst(t *testing
 	}
 }
 
-func TestRecentMessageHistoryAggregatesAcrossChannels(t *testing.T) {
+func TestMessageHistoryBeforeAggregatesAcrossChannels(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	for _, link := range []MessageLink{
@@ -930,7 +933,7 @@ func TestRecentMessageHistoryAggregatesAcrossChannels(t *testing.T) {
 		}
 	}
 
-	got, err := s.RecentMessageHistory(ctx, []string{"ja", "en"}, "102", 5)
+	got, err := s.MessageHistoryBefore(ctx, []string{"ja", "en"}, "102", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1023,7 +1026,7 @@ func TestPinStateAndSnapshotUpdates(t *testing.T) {
 	}
 	if err := s.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000014", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "target", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000021", TargetLanguage: "en",
 		SourceContentSnapshot: "before",
 	}); err != nil {
 		t.Fatal(err)
@@ -1048,7 +1051,7 @@ func TestSaveMessageLinkRoundTripsImageAttachments(t *testing.T) {
 	}}
 	if err := s.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000014", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "target", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000021", TargetLanguage: "en",
 		SourceAuthorDisplayName: "Alice", SourceImageAttachments: images,
 	}); err != nil {
 		t.Fatal(err)
@@ -1064,14 +1067,14 @@ func TestSaveMessageLinkRoundTripsImageAttachments(t *testing.T) {
 	if got.URL != images[0].URL || got.Filename != images[0].Filename || got.Description != images[0].Description {
 		t.Fatalf("image = %#v", got)
 	}
-	history, err := s.RecentMessageHistory(ctx, []string{"ja"}, "100000000000000015", 5)
+	history, err := s.MessageHistoryBefore(ctx, []string{"ja"}, "100000000000000015", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(history) != 1 || len(history[0].SourceImageAttachments) != 1 {
 		t.Fatalf("history = %#v", history)
 	}
-	original, ok, err := s.MessageOriginal(ctx, "en", "target")
+	original, ok, err := s.MessageOriginal(ctx, "en", "700000000000000021")
 	if err != nil || !ok || len(original.ImageAttachments) != 1 || original.ImageAttachments[0].Filename != "photo.png" {
 		t.Fatalf("original = %#v ok=%v err=%v", original, ok, err)
 	}
@@ -1083,14 +1086,14 @@ func TestMessageOriginal(t *testing.T) {
 
 	link := MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "team",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000023", TargetLanguage: "en",
 		SourceAuthorID: "a", SourceContentSnapshot: "hello",
 	}
 	if err := s.SaveMessageLink(ctx, link); err != nil {
 		t.Fatal(err)
 	}
 
-	got, ok, err := s.MessageOriginal(ctx, "en", "translated")
+	got, ok, err := s.MessageOriginal(ctx, "en", "700000000000000023")
 	if err != nil || !ok {
 		t.Fatalf("reverse lookup failed: %#v ok=%v err=%v", got, ok, err)
 	}
@@ -1172,62 +1175,50 @@ func TestSetGroupStyleAndGroupStyle(t *testing.T) {
 	}
 }
 
-func TestPurgeMessageLinksOlderThan(t *testing.T) {
+// Retention counts from when a message was translated (the mirror's
+// snowflake), so an old message backfilled yesterday is kept while a recent
+// message translated long ago is not.
+func TestPurgeMessageLinksTranslatedBefore(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
 	cutoff := now.Add(-30 * 24 * time.Hour)
-	oldID := snowflakeForTime(now.Add(-31*24*time.Hour), 1)
-	newID := snowflakeForTime(now.Add(-29*24*time.Hour), 2)
+	oldSource := snowflakeForTime(now.Add(-400*24*time.Hour), 1)
+	backfilledMirror := snowflakeForTime(now.Add(-24*time.Hour), 2)
+	recentSource := snowflakeForTime(now.Add(-40*24*time.Hour), 3)
+	expiredMirror := snowflakeForTime(now.Add(-40*24*time.Hour), 4)
 
-	for _, link := range []struct {
-		id, target string
-	}{
-		{oldID, "target-old"},
-		{newID, "target-new"},
+	for _, link := range []MessageLink{
+		{SourceMessageID: oldSource, SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: backfilledMirror, TargetLanguage: "en"},
+		{SourceMessageID: recentSource, SourceChannelID: "ja", GroupID: "g", TargetChannelID: "en", TargetMessageID: expiredMirror, TargetLanguage: "en"},
 	} {
-		if err := s.SaveMessageLink(ctx, MessageLink{
-			SourceMessageID: link.id, SourceChannelID: "ja", GroupID: "g",
-			TargetChannelID: "en", TargetMessageID: link.target, TargetLanguage: "en",
-			SourceAuthorID: "u", SourceContentSnapshot: link.id,
-		}); err != nil {
+		if err := s.SaveMessageLink(ctx, link); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, id := range []string{oldID, newID} {
+	for _, id := range []string{oldSource, recentSource} {
 		if err := s.SavePinState(ctx, "ja", id, true); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	n, err := s.PurgeMessageLinksOlderThan(ctx, cutoff)
+	n, err := s.PurgeMessageLinksTranslatedBefore(ctx, cutoff)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
 		t.Fatalf("purged %d links, want 1", n)
 	}
-
-	oldLinks, err := s.MessageTargets(ctx, "ja", oldID)
-	if err != nil {
-		t.Fatal(err)
+	if links, err := s.MessageTargets(ctx, "ja", oldSource); err != nil || len(links) != 1 {
+		t.Fatalf("recently backfilled link should remain: %#v err=%v", links, err)
 	}
-	if len(oldLinks) != 0 {
-		t.Fatalf("old link should be purged: %#v", oldLinks)
+	if links, err := s.MessageTargets(ctx, "ja", recentSource); err != nil || len(links) != 0 {
+		t.Fatalf("link translated before the cutoff should be purged: %#v err=%v", links, err)
 	}
-	newLinks, err := s.MessageTargets(ctx, "ja", newID)
-	if err != nil {
-		t.Fatal(err)
+	if _, known, err := s.GetPinState(ctx, "ja", oldSource); err != nil || !known {
+		t.Fatalf("pin of a kept link should remain: known=%v err=%v", known, err)
 	}
-	if len(newLinks) != 1 {
-		t.Fatalf("new link should remain: %#v", newLinks)
-	}
-	_, oldKnown, err := s.GetPinState(ctx, "ja", oldID)
-	if err != nil || oldKnown {
-		t.Fatalf("old pin should be purged: known=%v err=%v", oldKnown, err)
-	}
-	_, newKnown, err := s.GetPinState(ctx, "ja", newID)
-	if err != nil || !newKnown {
-		t.Fatalf("new pin should remain: known=%v err=%v", newKnown, err)
+	if _, known, err := s.GetPinState(ctx, "ja", recentSource); err != nil || known {
+		t.Fatalf("pin no longer referenced by any link should be purged: known=%v err=%v", known, err)
 	}
 }

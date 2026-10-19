@@ -11,7 +11,7 @@ import (
 )
 
 type retentionStore interface {
-	PurgeMessageLinksOlderThan(context.Context, time.Time) (int64, error)
+	PurgeMessageLinksTranslatedBefore(context.Context, time.Time) (int64, error)
 	PurgeExpiredPollTranslationCache(context.Context, time.Time) (int64, error)
 	GuildIDsRemovedBefore(context.Context, time.Time) ([]string, error)
 	PurgeGuildRemovedBefore(context.Context, string, time.Time) (bool, error)
@@ -90,7 +90,7 @@ func runRetentionPurge(
 		if err != nil {
 			logf("message link purge: %v", err)
 		} else {
-			n, err := store.PurgeMessageLinksOlderThan(ctx, cutoff)
+			n, err := store.PurgeMessageLinksTranslatedBefore(ctx, cutoff)
 			if err != nil {
 				logf("message link purge: %v", err)
 			} else if n > 0 {

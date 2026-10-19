@@ -37,18 +37,22 @@ func (s *Store) JoinChannel(ctx context.Context, ch GroupChannel) error {
 		return err
 	}
 	defer tx.Rollback()
+	if err := joinChannelTx(ctx, tx, ch); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func joinChannelTx(ctx context.Context, tx *sql.Tx, ch GroupChannel) error {
 	var existingType int
-	err = tx.QueryRowContext(ctx, `SELECT channel_type FROM group_channels WHERE guild_id=? AND group_id=? LIMIT 1`, ch.GuildID, ch.GroupID).Scan(&existingType)
+	err := tx.QueryRowContext(ctx, `SELECT channel_type FROM group_channels WHERE guild_id=? AND group_id=? LIMIT 1`, ch.GuildID, ch.GroupID).Scan(&existingType)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	if err == nil && existingType != ch.ChannelType {
 		return ErrChannelTypeMismatch
 	}
-	if err := insertGroupChannel(ctx, tx, ch); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return insertGroupChannel(ctx, tx, ch)
 }
 
 func insertGroupChannel(ctx context.Context, x execer, ch GroupChannel) error {

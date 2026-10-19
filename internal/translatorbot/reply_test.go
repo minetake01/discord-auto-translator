@@ -12,14 +12,14 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	ctx := context.Background()
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{messageContents: map[string]string{
-		"en\x00translated": "> > previous pseudo reply · [Source](https://discord.com/channels/guild/ja/older)\n\nStable translated body\nsecond line",
+		"en\x00700000000000000019": "> > previous pseudo reply · [Source](https://discord.com/channels/guild/ja/older)\n\nStable translated body\nsecond line",
 	}}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
 		SourceAuthorID: "source-user", SourceContentSnapshot: "こんにちは、はじめまして\n二行目",
 	}); err != nil {
 		t.Fatal(err)
@@ -35,7 +35,7 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 		t.Fatal(err)
 	}
 
-	want := "> -# Stable translated body · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] はじめまして！"
+	want := "> -# Stable translated body · [Source](https://discord.com/channels/guild/en/700000000000000019)\n\n[en] はじめまして！"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -46,7 +46,7 @@ func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(replies) != 1 || replies[0].SourceMessageID != "100000000000000008" || replies[0].TargetMessageID != "sent-1" {
+	if len(replies) != 1 || replies[0].SourceMessageID != "100000000000000008" || replies[0].TargetMessageID != "900000000000000001" {
 		t.Fatalf("reply reference was not persisted: %#v", replies)
 	}
 }
@@ -259,12 +259,12 @@ func TestMirrorEmptyContentReplyIncludesQuote(t *testing.T) {
 func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
-	discord := &fakeDiscordAPI{messageErrors: map[string]error{"en\x00translated": errors.New("fetch failed")}}
+	discord := &fakeDiscordAPI{messageErrors: map[string]error{"en\x00700000000000000019": errors.New("fetch failed")}}
 	service := NewService(store, discord, &echoTranslator{})
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
 		SourceContentSnapshot: "保存済み原文",
 	}); err != nil {
 		t.Fatal(err)
@@ -277,7 +277,7 @@ func TestReplyQuoteFallsBackToStoredOriginalWhenTransferredMessageFetchFails(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> -# 保存済み原文 · [Source](https://discord.com/channels/guild/en/translated)\n\n[en] 返信"
+	want := "> -# 保存済み原文 · [Source](https://discord.com/channels/guild/en/700000000000000019)\n\n[en] 返信"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -291,7 +291,7 @@ func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *t
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
 		SourceContentSnapshot: "",
 	}); err != nil {
 		t.Fatal(err)

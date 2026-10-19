@@ -11,6 +11,10 @@ import (
 
 const discordMessageContentLimit = 2000
 
+// errContentTooLong marks a mirror whose final text exceeds the Discord
+// content limit; the message cannot be posted as is.
+var errContentTooLong = errors.New("message content exceeds the Discord limit")
+
 const (
 	stickerFormatPNG    = 1
 	stickerFormatAPNG   = 2
@@ -63,7 +67,7 @@ func messageContentWithAssetURLsOption(content string, attachments []DiscordAtta
 		content += strings.Join(assetURLs, "\n")
 	}
 	if utf8.RuneCountInString(content) > discordMessageContentLimit {
-		return "", fmt.Errorf("message content has %d characters; Discord limit is %d", utf8.RuneCountInString(content), discordMessageContentLimit)
+		return "", fmt.Errorf("%w: %d characters, limit %d", errContentTooLong, utf8.RuneCountInString(content), discordMessageContentLimit)
 	}
 	return content, nil
 }

@@ -1,14 +1,61 @@
 package translatorbot
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
-// mirroredMessageBody strips bot-generated pseudo-reply quotes and forwarded
-// headers from the top of a mirrored message, leaving only the body.
+// timestampLinePattern matches the subtext line that backfilled mirrors start
+// with to show when the source message was posted.
+var timestampLinePattern = regexp.MustCompile(`^-# <t:\d+:f>$`)
+
+func isTimestampLine(line string) bool {
+	return timestampLinePattern.MatchString(strings.TrimSpace(line))
+}
+
+// withTimestampLine puts the source posting time on the first line; the
+// existing headers and body start on the second line.
+func withTimestampLine(sourceMessageID, content string) (string, error) {
+	posted, ok := discordSnowflakeTime(sourceMessageID)
+	if !ok {
+		return "", fmt.Errorf("timestamp line: invalid message id %q", sourceMessageID)
+	}
+	line := fmt.Sprintf("-# <t:%d:f>", posted.Unix())
+	if content == "" {
+		return line, nil
+	}
+	return line + "\n" + content, nil
+}
+
+// finishMirrorContent adds the timestamp line when requested and enforces
+// the Discord content limit on the complete text.
+func finishMirrorContent(sourceMessageID, content string, timestamp bool) (string, error) {
+	if timestamp {
+		var err error
+		if content, err = withTimestampLine(sourceMessageID, content); err != nil {
+			return "", err
+		}
+	}
+	if n := utf8.RuneCountInString(content); n > discordMessageContentLimit {
+		return "", fmt.Errorf("%w: %d characters, limit %d", errContentTooLong, n, discordMessageContentLimit)
+	}
+	return content, nil
+}
+
+func dropTimestampLine(lines []string) []string {
+	if len(lines) > 0 && isTimestampLine(lines[0]) {
+		return lines[1:]
+	}
+	return lines
+}
+
+// mirroredMessageBody strips the bot-generated timestamp line, pseudo-reply
+// quotes, and forwarded headers from the top of a mirrored message, leaving
+// only the body.
 func mirroredMessageBody(content string) string {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	lines := dropTimestampLine(strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n"))
 	for len(lines) > 0 && (isPseudoReplyLine(lines[0]) || isForwardedHeaderLine(lines[0])) {
 		lines = lines[1:]
 		for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
@@ -36,9 +83,9 @@ func isPseudoReplyLine(line string) bool {
 }
 
 // firstLineWithoutPseudoReply returns the first non-empty line of a mirrored
-// message, skipping a leading bot-generated pseudo-reply quote line.
+// message, skipping a leading timestamp line and pseudo-reply quote line.
 func firstLineWithoutPseudoReply(content string) string {
-	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	lines := dropTimestampLine(strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n"))
 	start := 0
 	if len(lines) >= 1 && isPseudoReplyLine(lines[0]) {
 		start = 1

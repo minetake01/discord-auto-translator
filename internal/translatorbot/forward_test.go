@@ -11,13 +11,13 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	seedGroup(t, store)
 	if err := store.SaveMessageLink(ctx, MessageLink{
 		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
-		TargetChannelID: "en", TargetMessageID: "translated", TargetLanguage: "en",
+		TargetChannelID: "en", TargetMessageID: "700000000000000012", TargetLanguage: "en",
 		SourceContentSnapshot: "元本文",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	discord := &fakeDiscordAPI{messageContents: map[string]string{
-		"en\x00translated": "> old quote · [Source](https://discord.com/channels/guild/ja/old)\n\nTranslated first line\nTranslated second line",
+		"en\x00700000000000000012": "> old quote · [Source](https://discord.com/channels/guild/ja/old)\n\nTranslated first line\nTranslated second line",
 	}}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
@@ -28,7 +28,7 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "-# Forwarded · https://discord.com/channels/guild/en/translated\nTranslated first line\nTranslated second line"
+	want := "-# Forwarded · https://discord.com/channels/guild/en/700000000000000012\nTranslated first line\nTranslated second line"
 	if len(discord.sent) != 1 || discord.sent[0].Content != want {
 		t.Fatalf("got %#v, want %q", discord.sent, want)
 	}
@@ -110,7 +110,7 @@ func TestForwardMirrorsIntoThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "thread-1" {
+	if len(discord.sent) != 1 || discord.sent[0].ThreadID != "800000000000000001" {
 		t.Fatalf("unexpected thread send: %#v", discord.sent)
 	}
 	want := "-# Forwarded · https://discord.com/channels/guild/outside-channel/100000000000000016\n[en] 外部本文"

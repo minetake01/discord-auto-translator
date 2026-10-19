@@ -32,11 +32,24 @@ const (
 	openaiPollTranslationSchemaName          = "poll_translations"
 	openaiThreadCreateTranslationSchemaName  = "thread_create_translations"
 	openaiTopicSummarySchemaName             = "topic_summary"
+	openaiBatchTranslationSchemaName         = "batch_message_translations"
 )
 
 // errTranslationProvider marks a translation API outage (timeout, transport, or
 // HTTP 429/5xx after retry). Channel notices are shown at most once per hour.
 var errTranslationProvider = errors.New("translation provider unavailable")
+
+// errTranslationContent marks a completed response that cannot be used:
+// truncation by max_tokens, empty content, or an invalid structure. Retrying
+// the same request is pointless; batch translation splits instead.
+var errTranslationContent = errors.New("translation response is unusable")
+
+func contentError(err error) error {
+	if errors.Is(err, errTranslationContent) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errTranslationContent, err)
+}
 
 // openaiHTTPStatusError is a sanitized provider HTTP failure. Status is kept
 // so transient codes (429 / 5xx) can be retried without logging response bodies.
@@ -188,7 +201,7 @@ func (t *OpenAITranslator) TranslateMulti(ctx context.Context, prepared prepared
 	}
 	translations, err := parseMultiTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.content)
 	if err != nil {
-		return MultiTranslationResult{}, err
+		return MultiTranslationResult{}, contentError(err)
 	}
 	return MultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
@@ -207,7 +220,7 @@ func (t *OpenAITranslator) TranslateAttachmentAlts(ctx context.Context, prepared
 	}
 	descriptions, err := parseAttachmentAltTranslationResponse(text, prepared.targetLanguages, prepared.protector, prepared.translationContext.Attachments)
 	if err != nil {
-		return AttachmentAltTranslationResult{}, err
+		return AttachmentAltTranslationResult{}, contentError(err)
 	}
 	return AttachmentAltTranslationResult{Descriptions: descriptions, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
@@ -226,7 +239,7 @@ func (t *OpenAITranslator) TranslatePollMulti(ctx context.Context, prepared prep
 	}
 	translations, err := parsePollTranslationResponse(text, prepared.targetLanguages, prepared.answerCount, prepared.protector)
 	if err != nil {
-		return PollMultiTranslationResult{}, err
+		return PollMultiTranslationResult{}, contentError(err)
 	}
 	return PollMultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
@@ -245,9 +258,25 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 	}
 	translations, err := parseThreadCreateTranslationResponse(text, prepared.targetLanguages, prepared.messageRequired, prepared.protector)
 	if err != nil {
-		return ThreadCreateMultiTranslationResult{}, err
+		return ThreadCreateMultiTranslationResult{}, contentError(err)
 	}
 	return ThreadCreateMultiTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
+}
+
+func (t *OpenAITranslator) TranslateBatch(ctx context.Context, prepared preparedTranslation) (BatchTranslationResult, error) {
+	schema, err := openaiBatchTranslationSchema(len(prepared.batchSources))
+	if err != nil {
+		return BatchTranslationResult{}, err
+	}
+	text, inputTokens, outputTokens, err := t.invokePreparedWithRetry(ctx, prepared, openaiBatchTranslationSchemaName, schema)
+	if err != nil {
+		return BatchTranslationResult{}, err
+	}
+	translations, err := parseBatchTranslationResponse(text, prepared.batchSources, prepared.batchProtected, prepared.protector)
+	if err != nil {
+		return BatchTranslationResult{}, err
+	}
+	return BatchTranslationResult{Translations: translations, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }
 
 func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, prepared preparedTranslation) (TopicSummaryResult, error) {
@@ -519,7 +548,7 @@ func extractOpenAIChatText(output openaiChatCompletionResponse) (text string, in
 	}
 	choice := output.Choices[0]
 	if strings.EqualFold(choice.FinishReason, "length") {
-		return "", 0, 0, errors.New("OpenAI response was truncated by max_tokens")
+		return "", 0, 0, fmt.Errorf("%w: OpenAI response was truncated by max_tokens", errTranslationContent)
 	}
 	if choice.Message.Role != "" && choice.Message.Role != "assistant" {
 		return "", 0, 0, fmt.Errorf("OpenAI response has unexpected message role %q", choice.Message.Role)
@@ -530,7 +559,7 @@ func extractOpenAIChatText(output openaiChatCompletionResponse) (text string, in
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "", 0, 0, errors.New("OpenAI response has empty assistant content")
+		return "", 0, 0, fmt.Errorf("%w: OpenAI response has empty assistant content", errTranslationContent)
 	}
 	if output.Usage == nil || output.Usage.PromptTokens < 0 || output.Usage.CompletionTokens < 0 {
 		return "", 0, 0, errors.New("OpenAI response has no valid token usage")

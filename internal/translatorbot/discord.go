@@ -36,6 +36,9 @@ type DiscordAPI interface {
 	EditThread(threadID, name string, appliedTags *[]string) error
 	DeleteThread(threadID string) error
 	Channel(channelID string) (*discordgo.Channel, error)
+	SetThreadState(threadID string, archived, locked *bool) error
+	ChannelMessagePage(guildID, channelID, beforeID, afterID string) ([]DiscordMessage, error)
+	PublicThreads(guildID string, parentIDs []string, includeArchived bool) ([]DiscordThread, error)
 }
 
 type WebhookSend struct {
@@ -77,10 +80,11 @@ type webhookAttachmentEditPayload struct {
 
 type DiscordGoAPI struct {
 	session *discordgo.Session
+	members *memberCache
 }
 
 func NewDiscordGoAPI(session *discordgo.Session) DiscordGoAPI {
-	return DiscordGoAPI{session: session}
+	return DiscordGoAPI{session: session, members: &memberCache{}}
 }
 
 func (d DiscordGoAPI) CurrentUserID() (string, error) {
@@ -137,7 +141,11 @@ func (d DiscordGoAPI) Message(channelID, messageID string) (DiscordFetchedMessag
 }
 
 func fetchedMessageFromDiscord(message *discordgo.Message) DiscordFetchedMessage {
-	result := DiscordFetchedMessage{Content: contentWithEmbedQuoteText(message.Content, message.Embeds)}
+	result := DiscordFetchedMessage{
+		Content:   contentWithEmbedQuoteText(message.Content, message.Embeds),
+		Pinned:    message.Pinned,
+		Reactions: reactionsFromDiscord(message.Reactions),
+	}
 	if message.Author != nil {
 		result.AuthorDisplayName = strings.TrimSpace(message.Author.Username)
 	}

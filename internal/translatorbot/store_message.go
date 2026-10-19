@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot,source_image_attachments`
+const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot,source_image_attachments,timestamp_line`
 
 func (s *Store) UpdateMessageLinkSnapshot(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID, snapshot string) error {
 	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
@@ -45,8 +45,12 @@ func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageR
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, l.TargetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot, imagesJSON); err != nil {
+	targetMessageID, err := parseDiscordSnowflakeID("target_message_id", l.TargetMessageID)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, targetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot, imagesJSON, l.TimestampLine); err != nil {
 		return err
 	}
 	if ref.MessageID != "" {
@@ -63,6 +67,24 @@ func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageR
 		}
 	}
 	return tx.Commit()
+}
+
+// MessageReferenceOf returns the stored reply target of a source message.
+func (s *Store) MessageReferenceOf(ctx context.Context, sourceChannelID, sourceMessageID string) (MessageReference, bool, error) {
+	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return MessageReference{}, false, err
+	}
+	var ref MessageReference
+	err = s.db.QueryRowContext(ctx, `SELECT CAST(referenced_message_id AS TEXT), referenced_channel_id FROM message_references WHERE source_channel_id=? AND source_message_id=?`,
+		sourceChannelID, sourceMessageIDValue).Scan(&ref.MessageID, &ref.ChannelID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MessageReference{}, false, nil
+	}
+	if err != nil {
+		return MessageReference{}, false, err
+	}
+	return ref, true, nil
 }
 
 func (s *Store) DeleteMessageData(ctx context.Context, sourceChannelID, sourceMessageID string, copies []MessageLink) error {
@@ -131,7 +153,7 @@ func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelI
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot,ml.source_image_attachments
+	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot,ml.source_image_attachments,ml.timestamp_line
 		FROM message_links ml
 		JOIN message_references mr ON mr.source_channel_id=ml.source_channel_id AND mr.source_message_id=ml.source_message_id
 		WHERE mr.referenced_channel_id=? AND mr.referenced_message_id=?`, referencedChannelID, referencedMessageIDValue)
@@ -276,11 +298,15 @@ func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, ta
 	return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
 }
 
-func (s *Store) RecentMessageHistory(ctx context.Context, channelIDs []string, excludeMessageID string, limit int) ([]MessageLink, error) {
+// MessageHistoryBefore returns up to limit distinct source messages in
+// channelIDs that precede beforeMessageID, oldest first. Context is always
+// taken from the conversation as it stood when the message was posted, so
+// edits and backfilled messages never see later messages.
+func (s *Store) MessageHistoryBefore(ctx context.Context, channelIDs []string, beforeMessageID string, limit int) ([]MessageLink, error) {
 	if limit <= 0 || len(channelIDs) == 0 {
 		return nil, nil
 	}
-	excludeMessageIDValue, err := parseDiscordSnowflakeID("exclude_message_id", excludeMessageID)
+	beforeValue, err := parseDiscordSnowflakeID("before_message_id", beforeMessageID)
 	if err != nil {
 		return nil, err
 	}
@@ -290,10 +316,10 @@ func (s *Store) RecentMessageHistory(ctx context.Context, channelIDs []string, e
 	for _, channelID := range channelIDs {
 		args = append(args, channelID)
 	}
-	args = append(args, excludeMessageIDValue, limit)
+	args = append(args, beforeValue, limit)
 	query := `SELECT ` + messageLinkColumns + `
 		FROM message_links
-		WHERE source_channel_id IN (` + placeholders + `) AND source_message_id<>?
+		WHERE source_channel_id IN (` + placeholders + `) AND source_message_id<?
 		GROUP BY source_channel_id, source_message_id
 		ORDER BY source_message_id DESC
 		LIMIT ?`
@@ -310,7 +336,6 @@ func (s *Store) RecentMessageHistory(ctx context.Context, channelIDs []string, e
 	}
 	return links, nil
 }
-
 func scanMessageLinks(rows *sql.Rows) ([]MessageLink, error) {
 	defer rows.Close()
 	var out []MessageLink
@@ -331,7 +356,7 @@ type messageLinkScanner interface {
 func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
 	var l MessageLink
 	var imagesJSON string
-	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot, &imagesJSON); err != nil {
+	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot, &imagesJSON, &l.TimestampLine); err != nil {
 		return MessageLink{}, err
 	}
 	images, err := unmarshalImageAttachments(imagesJSON)
@@ -372,14 +397,17 @@ func (s *Store) SavePinState(ctx context.Context, channelID, messageID string, p
 	return err
 }
 
-func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+// PurgeMessageLinksTranslatedBefore deletes links whose mirror was posted
+// before cutoff. The mirror message snowflake is the translation time, so a
+// backfilled copy of an old message is kept as long as a fresh translation.
+func (s *Store) PurgeMessageLinksTranslatedBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	maxID := snowflakeIDBefore(cutoff.UTC())
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE source_message_id < ?`, maxID)
+	res, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE target_message_id < ?`, maxID)
 	if err != nil {
 		return 0, err
 	}
@@ -387,7 +415,11 @@ func (s *Store) PurgeMessageLinksOlderThan(ctx context.Context, cutoff time.Time
 	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
 		return 0, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM pin_states WHERE message_id < ?`, maxID); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM pin_states WHERE NOT EXISTS (
+		SELECT 1 FROM message_links ml
+		WHERE (ml.source_channel_id=pin_states.channel_id AND ml.source_message_id=pin_states.message_id)
+			OR (ml.target_channel_id=pin_states.channel_id AND ml.target_message_id=pin_states.message_id)
+	)`); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {

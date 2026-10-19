@@ -97,7 +97,7 @@ Discord 개발자 포털의 **Bot** 탭에서 `MESSAGE CONTENT INTENT`가 활성
 | 명령어 | 설명 | 주요 옵션 |
 |---|---|---|
 | `/new-channel` | 새 번역 그룹을 생성하고 채널을 등록 | `language` (필수): BCP-47 언어 코드<br>`channel` (선택): 대상 채널 (기본값: 현재 채널)<br>`group` (선택): 그룹 식별자 (기본값: 채널명) |
-| `/join-channel` | 기존 번역 그룹에 채널 추가 | `group` (필수): 참여할 그룹명<br>`language` (필수): BCP-47 언어 코드<br>`channel` (선택): 대상 채널 (기본값: 현재 채널) |
+| `/join-channel` | 기존 번역 그룹에 채널 추가 | `group` (필수): 참여할 그룹명<br>`language` (필수): BCP-47 언어 코드<br>`channel` (선택): 대상 채널 (기본값: 현재 채널)<br>`backfill` (선택): 그룹의 기존 메시지 기록을 이 채널로 번역(견적 확인 후 시작) |
 | `/leave-channel` | 번역 그룹에서 채널 제거 | `group` (필수): 그룹명<br>`channel` (선택): 대상 채널 (기본값: 현재 채널) |
 | `/delete-group` | 번역 그룹 완전 삭제 | `group` (필수): 삭제할 그룹명 |
 | `/list-groups` | 서버 내 모든 번역 그룹 및 채널 목록 표시 | 없음 |
@@ -223,7 +223,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `PUBLIC_BASE_URL` | 선택 | (미설정) | 아바타 링 뱃지용 공개 기본 URL. 설정 시 최상위 역할 색상 링이 아바타 외곽에 렌더링됨 |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 선택 | `100000` | 서버(길드)당 분당 번역 토큰 제한 |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 선택 | `120` | `/avatar` 엔드포인트 IP당 분당 요청 속도 제한 |
-| `MESSAGE_LINK_RETENTION_DAYS` | 선택 | `0` | 메시지 링크 데이터 보관 기간(일). `0`은 무기한; 설정 시 24시간마다 만료 데이터 자동 삭제 |
+| `MESSAGE_LINK_RETENTION_DAYS` | 선택 | `0` | 메시지 링크 데이터 보관 기간(일). `0`은 무기한; 설정 시 24시간마다 만료 데이터 자동 삭제. 보관 기간은 각 메시지를 번역한 시점부터 계산합니다. |
 | `GUILD_DATA_RETENTION_DAYS` | 선택 | `0` | 봇이 퇴장한 서버의 데이터 보관 기간(일). 기한 내 재참여 시 삭제 예약 취소 |
 
 ---

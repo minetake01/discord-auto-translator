@@ -57,7 +57,23 @@ type fakeDiscordAPI struct {
 	messages               map[string]DiscordFetchedMessage
 	messageErrors          map[string]error
 	nextID                 int
+	threadStates           []threadStateCall
+	history                map[string][]DiscordMessage // channel → messages, any order
+	publicThreads          []DiscordThread
+	sendErr                func(WebhookSend) error
+	editErr                func(webhookEditCall) error
 }
+type threadStateCall struct {
+	threadID string
+	archived bool
+	locked   bool
+}
+
+// fakeSentID and fakeThreadID are the snowflakes the fake assigns to posted
+// webhook messages and created threads.
+func fakeSentID(n int) string   { return fmt.Sprintf("%d", 900000000000000000+n) }
+func fakeThreadID(n int) string { return fmt.Sprintf("%d", 800000000000000000+n) }
+
 type channelMessageCall struct {
 	channelID        string
 	replyToMessageID string
@@ -158,18 +174,29 @@ func (f *fakeDiscordAPI) SendChannelMessage(channelID, replyToMessageID, content
 func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.sendErr != nil {
+		if err := f.sendErr(msg); err != nil {
+			return WebhookSendResult{}, err
+		}
+	}
 	f.nextID++
 	f.sent = append(f.sent, msg)
 	ids := make([]string, len(msg.Files))
 	for i := range msg.Files {
 		ids[i] = fmt.Sprintf("att-%d-%d", f.nextID, i)
 	}
-	return WebhookSendResult{MessageID: fmt.Sprintf("sent-%d", f.nextID), AttachmentIDs: ids}, nil
+	return WebhookSendResult{MessageID: fakeSentID(f.nextID), AttachmentIDs: ids}, nil
 }
 func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.webhookEdits = append(f.webhookEdits, webhookEditCall{messageID: messageID, threadID: threadID, content: content})
+	call := webhookEditCall{messageID: messageID, threadID: threadID, content: content}
+	if f.editErr != nil {
+		if err := f.editErr(call); err != nil {
+			return err
+		}
+	}
+	f.webhookEdits = append(f.webhookEdits, call)
 	return nil
 }
 func (f *fakeDiscordAPI) EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error {
@@ -203,17 +230,28 @@ func (f *fakeDiscordAPI) UnpinMessage(channelID, messageID string) error {
 }
 func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, initialMessage string, embeds []*discordgo.MessageEmbed, appliedTags []string, files []WebhookFile) (threadID, initialMessageID string, err error) {
 	f.nextID++
-	threadID = fmt.Sprintf("thread-%d", f.nextID)
+	threadID = fakeThreadID(f.nextID)
 	if isThreadOnlyChannelType(channelType) {
 		initialMessageID = threadID
 	}
 	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds, appliedTags: append([]string(nil), appliedTags...), files: append([]WebhookFile(nil), files...)})
+	f.registerThread(threadID, channelID)
 	return threadID, initialMessageID, nil
+}
+
+// registerThread makes a created thread visible to Channel with open
+// thread metadata, so archive and lock changes can be observed.
+func (f *fakeDiscordAPI) registerThread(threadID, parentID string) {
+	if f.channels == nil {
+		f.channels = map[string]*discordgo.Channel{}
+	}
+	f.channels[threadID] = &discordgo.Channel{ID: threadID, ParentID: parentID, ThreadMetadata: &discordgo.ThreadMetadata{}}
 }
 func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
 	f.nextID++
 	f.threads = append(f.threads, threadCall{channelID: channelID, messageID: messageID, name: name})
-	return fmt.Sprintf("thread-%d", f.nextID), nil
+	f.registerThread(fakeThreadID(f.nextID), channelID)
+	return fakeThreadID(f.nextID), nil
 }
 func (f *fakeDiscordAPI) EditThread(threadID, name string, appliedTags *[]string) error {
 	call := threadEditCall{threadID: threadID, name: name}
@@ -235,6 +273,50 @@ func (f *fakeDiscordAPI) Channel(channelID string) (*discordgo.Channel, error) {
 		}
 	}
 	return &discordgo.Channel{ID: channelID}, nil
+}
+func (f *fakeDiscordAPI) SetThreadState(threadID string, archived, locked *bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.threadStates = append(f.threadStates, threadStateCall{threadID: threadID, archived: *archived, locked: *locked})
+	if ch, ok := f.channels[threadID]; ok && ch.ThreadMetadata != nil {
+		ch.ThreadMetadata.Archived, ch.ThreadMetadata.Locked = *archived, *locked
+	}
+	return nil
+}
+func (f *fakeDiscordAPI) ChannelMessagePage(guildID, channelID, beforeID, afterID string) ([]DiscordMessage, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	all := append([]DiscordMessage(nil), f.history[channelID]...)
+	slices.SortFunc(all, func(a, b DiscordMessage) int { return compareSnowflakes(a.ID, b.ID) })
+	var out []DiscordMessage
+	for _, m := range all {
+		if afterID != "" && !snowflakeIDLess(afterID, m.ID) {
+			continue
+		}
+		if beforeID != "" && !snowflakeIDLess(m.ID, beforeID) {
+			continue
+		}
+		out = append(out, m)
+	}
+	if len(out) > discordMessagePageLimit {
+		if beforeID != "" {
+			out = out[len(out)-discordMessagePageLimit:]
+		} else {
+			out = out[:discordMessagePageLimit]
+		}
+	}
+	return out, nil
+}
+func (f *fakeDiscordAPI) PublicThreads(guildID string, parentIDs []string, includeArchived bool) ([]DiscordThread, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []DiscordThread
+	for _, thread := range f.publicThreads {
+		if slices.Contains(parentIDs, thread.ParentID) && (includeArchived || !thread.Archived) {
+			out = append(out, thread)
+		}
+	}
+	return out, nil
 }
 
 type echoTranslator struct {
@@ -327,6 +409,23 @@ func (e *echoTranslator) TranslateThreadCreateMulti(ctx context.Context, prepare
 		out[lang] = ThreadCreateTranslation{Name: name, Message: message}
 	}
 	return ThreadCreateMultiTranslationResult{Translations: out}, nil
+}
+
+func echoBatch(prepared preparedTranslation) BatchTranslationResult {
+	lang := prepared.targetLanguages[0]
+	out := make([]string, len(prepared.batchSources))
+	for i, source := range prepared.batchSources {
+		out[i] = "[" + lang + "] " + source
+	}
+	return BatchTranslationResult{Translations: out}
+}
+
+func (e *echoTranslator) TranslateBatch(ctx context.Context, prepared preparedTranslation) (BatchTranslationResult, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.contexts = append(e.contexts, prepared.translationContext)
+	e.userPrompts = append(e.userPrompts, prepared.userPrompt())
+	return echoBatch(prepared), nil
 }
 
 type delayedAltTranslator struct {
@@ -497,6 +596,13 @@ func (s *selectiveFailTranslator) TranslateThreadCreateMulti(ctx context.Context
 	return ThreadCreateMultiTranslationResult{Translations: out}, nil
 }
 
+func (s *selectiveFailTranslator) TranslateBatch(ctx context.Context, prepared preparedTranslation) (BatchTranslationResult, error) {
+	if slices.Contains(prepared.targetLanguages, s.failLanguage) {
+		return BatchTranslationResult{}, errors.New("translation failed")
+	}
+	return echoBatch(prepared), nil
+}
+
 type stickyErrorTranslator struct {
 	echoTranslator
 	mu  sync.Mutex
@@ -542,6 +648,13 @@ func (s *stickyErrorTranslator) TranslateThreadCreateMulti(ctx context.Context, 
 	}
 	return s.echoTranslator.TranslateThreadCreateMulti(ctx, prepared)
 }
+func (s *stickyErrorTranslator) TranslateBatch(ctx context.Context, prepared preparedTranslation) (BatchTranslationResult, error) {
+	if err := s.currentErr(); err != nil {
+		return BatchTranslationResult{}, err
+	}
+	return s.echoTranslator.TranslateBatch(ctx, prepared)
+}
+
 func seedThreeChannelGroup(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()

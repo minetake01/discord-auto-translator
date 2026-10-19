@@ -12,9 +12,9 @@ func (s *Service) SyncReaction(ctx context.Context, guildID, sourceChannelID, so
 	}
 	for _, link := range links {
 		if add {
-			err = s.discord.AddReaction(link.TargetChannelID, link.TargetMessageID, emoji)
+			err = s.addReaction(link.TargetChannelID, link.TargetMessageID, emoji)
 		} else {
-			err = s.discord.RemoveOwnReaction(link.TargetChannelID, link.TargetMessageID, emoji)
+			err = s.removeOwnReaction(link.TargetChannelID, link.TargetMessageID, emoji)
 		}
 		if err != nil {
 			return err
@@ -50,12 +50,7 @@ func (s *Service) SyncPin(ctx context.Context, sourceChannelID, sourceMessageID 
 	}
 	var errs []error
 	for _, link := range links {
-		if pinned {
-			err = s.discord.PinMessage(link.TargetChannelID, link.TargetMessageID)
-		} else {
-			err = s.discord.UnpinMessage(link.TargetChannelID, link.TargetMessageID)
-		}
-		if err != nil {
+		if err := s.setPinned(link.TargetChannelID, link.TargetMessageID, pinned); err != nil {
 			errs = append(errs, err)
 		}
 	}

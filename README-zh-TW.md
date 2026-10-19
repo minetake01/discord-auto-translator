@@ -97,7 +97,7 @@
 | 指令 | 說明 | 主要選項 |
 |---|---|---|
 | `/new-channel` | 建立新的翻譯群組並註冊頻道 | `language`（必填）: BCP-47 語言代碼<br>`channel`（選填）: 目標頻道（預設當前頻道）<br>`group`（選填）: 群組識別碼（預設頻道名） |
-| `/join-channel` | 將頻道加入現有的翻譯群組 | `group`（必填）: 目標群組名稱<br>`language`（必填）: BCP-47 語言代碼<br>`channel`（選填）: 目標頻道（預設當前頻道） |
+| `/join-channel` | 將頻道加入現有的翻譯群組 | `group`（必填）: 目標群組名稱<br>`language`（必填）: BCP-47 語言代碼<br>`channel`（選填）: 目標頻道（預設當前頻道）<br>`backfill`（選填）: 將群組內既有的歷史訊息翻譯到該頻道（先顯示估算並確認） |
 | `/leave-channel` | 從翻譯群組中移除頻道 | `group`（必填）: 群組名稱<br>`channel`（選填）: 目標頻道（預設當前頻道） |
 | `/delete-group` | 徹底刪除一個翻譯群組 | `group`（必填）: 要刪除的群組名稱 |
 | `/list-groups` | 列出伺服器中的所有翻譯群組與頻道 | 無 |
@@ -223,7 +223,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `PUBLIC_BASE_URL` | 否 | (未設定) | 頭像圓環徽章的公開 URL。設定後會在鏡像頭像邊緣加上最高身分組顏色的圓環 |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 否 | `100000` | 單一伺服器每分鐘允許消耗的翻譯 Token 上限 |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 否 | `120` | `/avatar` 端點單一 IP 每分鐘請求速率限制 |
-| `MESSAGE_LINK_RETENTION_DAYS` | 否 | `0` | 訊息對應資料的保留天數。`0` 表示永久保留；設定天數後每 24 小時自動清理過期紀錄 |
+| `MESSAGE_LINK_RETENTION_DAYS` | 否 | `0` | 訊息對應資料的保留天數。`0` 表示永久保留；設定天數後每 24 小時自動清理過期紀錄。保留期從每則訊息被翻譯的時間開始計算。 |
 | `GUILD_DATA_RETENTION_DAYS` | 否 | `0` | 機器人離開伺服器後其資料的保留天數。期限內重新加入會自動取消刪除排程 |
 
 ---

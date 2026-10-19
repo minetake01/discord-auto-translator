@@ -25,6 +25,10 @@ type threadCreateRequest struct {
 	InitialMessageFiles     []DiscordAttachment
 	InitialMessageStickers  []DiscordSticker
 	DeferWithoutSourceMsg   bool
+	// OnlyTargetChannelID limits creation to one target channel (backfill).
+	OnlyTargetChannelID string
+	// Timestamp puts the source posting time on the initial message.
+	Timestamp bool
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string, appliedTags []string) error {
@@ -78,7 +82,17 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if target.ChannelID == source.ChannelID {
 				continue
 			}
+			if req.OnlyTargetChannelID != "" && target.ChannelID != req.OnlyTargetChannelID {
+				continue
+			}
 			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
+				continue
+			}
+			held, err := s.liveTargetHeld(ctx, source.GroupID, target.ChannelID)
+			if err != nil {
+				return false, err
+			}
+			if held {
 				continue
 			}
 			created, err := s.createThreadForTarget(ctx, req, source, target)
@@ -198,7 +212,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
 				TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
 				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
-				SourceImageAttachments: imageAttachmentsOnly(req.InitialMessageFiles),
+				SourceImageAttachments: imageAttachmentsOnly(req.InitialMessageFiles), TimestampLine: req.Timestamp,
 			}); err != nil {
 				return false, err
 			}
@@ -266,6 +280,9 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		files := webhookFilesForImages(loaded, descriptions)
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			content = name
+		}
+		if content, err = finishMirrorContent(req.InitialMessageID, content, req.Timestamp && req.InitialMessageID != ""); err != nil {
+			return "", "", err
 		}
 		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
 		if err != nil {
@@ -388,6 +405,10 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	if target == nil {
 		return nil
 	}
+	held, err := s.liveTargetHeld(ctx, thread.GroupID, target.ChannelID)
+	if err != nil || held {
+		return err
+	}
 	synced, err := s.targetAlreadySynced(ctx, m.ChannelID, m.ID, thread.TargetThreadID)
 	if err != nil {
 		return fmt.Errorf("target %s: %w", thread.TargetThreadID, err)
@@ -491,7 +512,7 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 			if editName == "" && editTags == nil {
 				continue
 			}
-			if err := s.discord.EditThread(p.thread.TargetThreadID, editName, editTags); err != nil {
+			if err := s.editThread(p.thread.TargetThreadID, editName, editTags); err != nil {
 				return err
 			}
 		}

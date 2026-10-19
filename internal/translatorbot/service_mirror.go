@@ -6,7 +6,7 @@ import "context"
 // link cannot be saved, the just-posted message is deleted as compensation.
 // ref may be zero when the source message is not a reply.
 func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) (WebhookSendResult, error) {
-	result, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
+	result, err := s.sendWebhookMessage(target, send)
 	if err != nil {
 		return WebhookSendResult{}, err
 	}

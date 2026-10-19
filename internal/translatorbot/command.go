@@ -19,6 +19,9 @@ type CommandHandler struct {
 
 	tagUIMu sync.Mutex
 	tagUI   map[string]*forumTagUISession
+
+	backfill         BackfillService
+	pendingBackfills pendingBackfills
 }
 
 func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
@@ -33,8 +36,11 @@ func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
 func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Type == discordgo.InteractionMessageComponent {
 		data := i.MessageComponentData()
-		if strings.HasPrefix(data.CustomID, "ftm:") {
+		switch {
+		case strings.HasPrefix(data.CustomID, "ftm:"):
 			h.handleForumTagComponent(s, i)
+		case strings.HasPrefix(data.CustomID, backfillCustomStart), strings.HasPrefix(data.CustomID, backfillCustomCancel):
+			h.handleBackfillComponent(s, i, data.CustomID)
 		}
 		return
 	}
@@ -265,21 +271,13 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 		h.reply(s, i, uiKeyChannelTypeMismatch, groupID)
 		return
 	}
-	webhookID, token, err := h.api.CreateWebhook(ch.ID, defaultWebhookName)
-	if err != nil {
-		log.Printf("join-channel create webhook: %v", err)
-		h.reply(s, i, uiKeyWebhookCreateFailed)
+	channel := GroupChannel{GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language}
+	if optionBool(data.Options, "backfill") && len(peers) > 0 {
+		h.handleJoinWithBackfill(s, i, channel, peers)
 		return
 	}
-	err = h.store.JoinChannel(ctx, GroupChannel{
-		GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
-	})
-	if err != nil {
-		if errors.Is(err, ErrGroupNotFound) {
-			h.reply(s, i, uiKeyJoinGroupNotFound, groupID)
-			return
-		}
-		h.replyGroupError(s, i, "join-channel", groupID, err)
+	if err := h.joinChannel(ctx, channel, "", false); err != nil {
+		h.respond(s, i, h.groupErrorText(commandLocale(i), "join-channel", groupID, err), true)
 		return
 	}
 	h.maybeOpenForumTagUIAfterJoin(s, i, groupID, ch, language)
@@ -309,22 +307,31 @@ func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.In
 // replyGroupError maps store errors about groups and channels to localized
 // messages; unexpected errors are logged and reported generically.
 func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.InteractionCreate, command, groupID string, err error) {
+	h.respond(s, i, h.groupErrorText(commandLocale(i), command, groupID, err), true)
+}
+
+func (h *CommandHandler) groupErrorText(locale, command, groupID string, err error) string {
 	switch {
+	case errors.Is(err, ErrGroupNotFound) && command == "join-channel":
+		return localizedUIStringf(locale, uiKeyJoinGroupNotFound, groupID)
 	case errors.Is(err, ErrGroupNotFound):
-		h.reply(s, i, uiKeyGroupNotFound, groupID)
+		return localizedUIStringf(locale, uiKeyGroupNotFound, groupID)
 	case errors.Is(err, ErrDuplicateGroup):
-		h.reply(s, i, uiKeyDuplicateGroup, groupID)
-	case errors.Is(err, ErrDuplicateChannel):
-		h.reply(s, i, uiKeyDuplicateChannel, groupID)
+		return localizedUIStringf(locale, uiKeyDuplicateGroup, groupID)
+	case errors.Is(err, ErrDuplicateChannel), errors.Is(err, ErrBackfillJobExists):
+		return localizedUIStringf(locale, uiKeyDuplicateChannel, groupID)
 	case errors.Is(err, ErrDuplicateLanguage):
-		h.reply(s, i, uiKeyDuplicateLanguage, groupID)
+		return localizedUIStringf(locale, uiKeyDuplicateLanguage, groupID)
 	case errors.Is(err, ErrChannelTypeMismatch):
-		h.reply(s, i, uiKeyChannelTypeMismatch, groupID)
+		return localizedUIStringf(locale, uiKeyChannelTypeMismatch, groupID)
 	case errors.Is(err, ErrChannelNotFound):
-		h.reply(s, i, uiKeyChannelNotJoined, groupID)
+		return localizedUIStringf(locale, uiKeyChannelNotJoined, groupID)
+	case errors.Is(err, errWebhookCreate):
+		log.Printf("%s: %v", command, err)
+		return localizedUIString(locale, uiKeyWebhookCreateFailed)
 	default:
 		log.Printf("%s store: %v", command, err)
-		h.reply(s, i, uiKeyUnexpectedError)
+		return localizedUIString(locale, uiKeyUnexpectedError)
 	}
 }
 

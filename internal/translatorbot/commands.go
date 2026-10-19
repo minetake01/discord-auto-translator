@@ -64,6 +64,7 @@ func Commands() []*discordgo.ApplicationCommand {
 				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
 				{Name: "language", Description: "BCP-47 language code", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
 				{Name: "channel", Description: "Channel or forum to join", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
+				{Name: "backfill", Description: "Also translate the group's past messages into this channel (shows an estimate first)", Type: discordgo.ApplicationCommandOptionBoolean, Required: false},
 			},
 		},
 		{

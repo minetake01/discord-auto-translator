@@ -97,7 +97,7 @@ Theo mặc định, các lệnh quản trị chỉ có thể được thực hi�
 | Lệnh | Mô tả | Tùy chọn chính |
 |---|---|---|
 | `/new-channel` | Tạo nhóm dịch mới và đăng ký kênh | `language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại)<br>`group` (tùy chọn): Tên nhóm (mặc định: tên kênh) |
-| `/join-channel` | Thêm kênh vào nhóm dịch hiện có | `group` (bắt buộc): Tên nhóm mục tiêu<br>`language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại) |
+| `/join-channel` | Thêm kênh vào nhóm dịch hiện có | `group` (bắt buộc): Tên nhóm mục tiêu<br>`language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại)<br>`backfill` (tùy chọn): Dịch lịch sử tin nhắn hiện có của nhóm vào kênh (sau khi xem ước tính và xác nhận) |
 | `/leave-channel` | Rút một kênh ra khỏi nhóm dịch | `group` (bắt buộc): Tên nhóm<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại) |
 | `/delete-group` | Xóa hoàn toàn một nhóm dịch thuật | `group` (bắt buộc): Tên nhóm cần xóa |
 | `/list-groups` | Liệt kê tất cả các nhóm dịch và kênh liên kết | Không có |
@@ -223,7 +223,7 @@ Xác thực thông tin đăng nhập API, kết nối mô hình và cấu trúc 
 | `PUBLIC_BASE_URL` | Không | (chưa đặt) | URL công khai cho huy hiệu avatar. Hiển thị vòng tròn màu theo vai trò cao nhất |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Không | `100000` | Giới hạn token dịch mỗi phút cho mỗi máy chủ |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Không | `120` | Giới hạn yêu cầu mỗi phút trên mỗi IP cho `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | Không | `0` | Thời gian lưu trữ liên kết tin nhắn (ngày). `0` = vô thời hạn |
+| `MESSAGE_LINK_RETENTION_DAYS` | Không | `0` | Thời gian lưu trữ liên kết tin nhắn (ngày). `0` = vô thời hạn. Thời hạn được tính từ lúc mỗi tin nhắn được dịch. |
 | `GUILD_DATA_RETENTION_DAYS` | Không | `0` | Thời gian lưu dữ liệu máy chủ sau khi bot rời khỏi máy chủ (ngày) |
 
 ---

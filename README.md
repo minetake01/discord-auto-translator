@@ -97,7 +97,7 @@ By default, administrative slash commands can only be executed by users with **A
 | Command | Description | Key Options |
 |---|---|---|
 | `/new-channel` | Create a new translation group and register a channel | `language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel)<br>`group` (optional): Group identifier (defaults to channel name) |
-| `/join-channel` | Add a channel to an existing translation group | `group` (required): Group identifier<br>`language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel) |
+| `/join-channel` | Add a channel to an existing translation group | `group` (required): Group identifier<br>`language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel)<br>`backfill` (optional): Translate the group's existing history into the channel after an estimate and confirmation |
 | `/leave-channel` | Remove a channel from a translation group | `group` (required): Group identifier<br>`channel` (optional): Target channel (defaults to current channel) |
 | `/delete-group` | Delete an entire translation group | `group` (required): Group identifier to delete |
 | `/list-groups` | List all translation groups and linked channels | None |
@@ -223,7 +223,7 @@ You can validate API credentials, model connectivity, and response schema contra
 | `PUBLIC_BASE_URL` | No | (unset) | Public base URL for avatar ring badges. If set, renders top-role color ring around avatars |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | No | `100000` | Token quota per guild per minute for translation API calls |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | No | `120` | Per-IP request limit per minute for the `/avatar` badge endpoint |
-| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Retention period in days for message link tracking. `0` disables purge; otherwise purges every 24h |
+| `MESSAGE_LINK_RETENTION_DAYS` | No | `0` | Retention period in days for message link tracking. `0` disables purge; otherwise purges every 24h. Counted from the time each message was translated. |
 | `GUILD_DATA_RETENTION_DAYS` | No | `0` | Data retention period in days after bot leaves a guild. Rejoining cancels scheduled purge |
 
 ---

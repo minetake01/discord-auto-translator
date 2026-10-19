@@ -97,7 +97,7 @@
 | 指令 | 说明 | 主要参数 |
 |---|---|---|
 | `/new-channel` | 创建新的翻译组并注册频道 | `language`（必填）: BCP-47 语言代码<br>`channel`（选填）: 目标频道（默认当前频道）<br>`group`（选填）: 组标识名（默认频道名） |
-| `/join-channel` | 将频道加入现有的翻译组 | `group`（必填）: 目标组名称<br>`language`（必填）: BCP-47 语言代码<br>`channel`（选填）: 目标频道（默认当前频道） |
+| `/join-channel` | 将频道加入现有的翻译组 | `group`（必填）: 目标组名称<br>`language`（必填）: BCP-47 语言代码<br>`channel`（选填）: 目标频道（默认当前频道）<br>`backfill`（选填）: 将组内已有的历史消息翻译到该频道（先显示估算并确认） |
 | `/leave-channel` | 从翻译组中移除频道 | `group`（必填）: 组名称<br>`channel`（选填）: 目标频道（默认当前频道） |
 | `/delete-group` | 彻底删除一个翻译组 | `group`（必填）: 要删除的组名称 |
 | `/list-groups` | 列出服务器中的所有翻译组与频道 | 无 |
@@ -223,7 +223,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `PUBLIC_BASE_URL` | 否 | (未设置) | 头像圆环徽章的公开 URL。设置后会在镜像头像边缘加上最高身份组颜色的圆环 |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | 否 | `100000` | 单个服务器每分钟允许消耗的翻译 Token 上限 |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | 否 | `120` | `/avatar` 端点单 IP 每分钟请求速率限制 |
-| `MESSAGE_LINK_RETENTION_DAYS` | 否 | `0` | 消息映射数据的保留天数。`0` 表示永久保留；设置天数后每 24 小时自动清理过期记录 |
+| `MESSAGE_LINK_RETENTION_DAYS` | 否 | `0` | 消息映射数据的保留天数。`0` 表示永久保留；设置天数后每 24 小时自动清理过期记录。保留期从每条消息被翻译的时间开始计算。 |
 | `GUILD_DATA_RETENTION_DAYS` | 否 | `0` | 机器人离开服务器后其数据的保留天数。期限内重新加入会自动取消删除任务 |
 
 ---

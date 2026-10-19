@@ -97,7 +97,7 @@ Standardmäßig können administrative Befehle nur von Benutzern mit **Administr
 | Befehl | Beschreibung | Wichtige Optionen |
 |---|---|---|
 | `/new-channel` | Erstellt eine neue Übersetzungsgruppe und registriert einen Kanal | `language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal)<br>`group` (optional): Gruppenname (Standard: Kanalname) |
-| `/join-channel` | Fügt einen Kanal zu einer bestehenden Gruppe hinzu | `group` (erforderlich): Gruppenname<br>`language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal) |
+| `/join-channel` | Fügt einen Kanal zu einer bestehenden Gruppe hinzu | `group` (erforderlich): Gruppenname<br>`language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal)<br>`backfill` (optional): Übersetzt den bisherigen Verlauf der Gruppe in den Kanal (nach Schätzung und Bestätigung) |
 | `/leave-channel` | Entfernt einen Kanal aus einer Gruppe | `group` (erforderlich): Gruppenname<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal) |
 | `/delete-group` | Löscht eine Übersetzungsgruppe vollständig | `group` (erforderlich): Name der zu löschenden Gruppe |
 | `/list-groups` | Listet alle Übersetzungsgruppen und verknüpften Kanäle auf | Keine |
@@ -223,7 +223,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 | `PUBLIC_BASE_URL` | Nein | (nicht gesetzt) | Öffentliche Basis-URL für Avatar-Farbringe. Rendert einen Ring in der Farbe der höchsten Serverrolle |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Nein | `100000` | Token-Limit pro Server (Guild) pro Minute |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Nein | `120` | Anfragelimit pro Minute pro IP für den `/avatar`-Endpunkt |
-| `MESSAGE_LINK_RETENTION_DAYS` | Nein | `0` | Aufbewahrungsdauer für Nachrichtenverknüpfungen in Tagen. `0` = unbegrenzt |
+| `MESSAGE_LINK_RETENTION_DAYS` | Nein | `0` | Aufbewahrungsdauer für Nachrichtenverknüpfungen in Tagen. `0` = unbegrenzt. Die Frist läuft ab dem Zeitpunkt, an dem die Nachricht übersetzt wurde. |
 | `GUILD_DATA_RETENTION_DAYS` | Nein | `0` | Aufbewahrungsdauer für Serverdaten nach Verlassen des Bots |
 
 ---

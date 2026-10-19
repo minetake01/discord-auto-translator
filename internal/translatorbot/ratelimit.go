@@ -34,6 +34,13 @@ func NewTokenRateLimiter(limitPerMinute int) *TokenRateLimiter {
 }
 
 func (r *TokenRateLimiter) Allow(guildID string, estimatedTokens int) bool {
+	return r.AllowShare(guildID, estimatedTokens, 1)
+}
+
+// AllowShare admits a request only while the guild's usage in the window
+// stays within share of the limit. A request larger than the share is still
+// admitted into an idle window so it cannot wait forever.
+func (r *TokenRateLimiter) AllowShare(guildID string, estimatedTokens int, share float64) bool {
 	if r == nil || r.limit <= 0 {
 		return true
 	}
@@ -41,7 +48,11 @@ func (r *TokenRateLimiter) Allow(guildID string, estimatedTokens int) bool {
 	defer r.mu.Unlock()
 	now := time.Now().UTC()
 	r.pruneLocked(guildID, now)
-	return r.totalLocked(guildID)+estimatedTokens <= r.limit
+	total := r.totalLocked(guildID)
+	if total+estimatedTokens <= int(float64(r.limit)*share) {
+		return true
+	}
+	return total == 0 && estimatedTokens <= r.limit
 }
 
 func (r *TokenRateLimiter) Record(guildID string, tokens int) {

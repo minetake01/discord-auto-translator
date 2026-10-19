@@ -97,7 +97,7 @@ Par défaut, les commandes d'administration ne sont accessibles qu'aux utilisate
 | Commande | Description | Options principales |
 |---|---|---|
 | `/new-channel` | Créer un nouveau groupe de traduction et enregistrer un salon | `language` (requis) : Code langue BCP-47<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel)<br>`group` (optionnel) : Nom du groupe (par défaut : nom du salon) |
-| `/join-channel` | Ajouter un salon à un groupe existant | `group` (requis) : Nom du groupe<br>`language` (requis) : Code langue BCP-47<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel) |
+| `/join-channel` | Ajouter un salon à un groupe existant | `group` (requis) : Nom du groupe<br>`language` (requis) : Code langue BCP-47<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel)<br>`backfill` (optionnel) : Traduit l'historique existant du groupe dans le salon (après estimation et confirmation) |
 | `/leave-channel` | Retirer un salon d'un groupe | `group` (requis) : Nom du groupe<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel) |
 | `/delete-group` | Supprimer complètement un groupe | `group` (requis) : Nom du groupe à supprimer |
 | `/list-groups` | Lister les groupes de traduction et salons associés | Aucun |
@@ -223,7 +223,7 @@ Permet de vérifier les identifiants API, la connectivité et le schéma de rép
 | `PUBLIC_BASE_URL` | Non | (non défini) | URL publique pour les badges d'avatar. Ajoute un anneau avec la couleur du rôle le plus élevé |
 | `TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN` | Non | `100000` | Quota de tokens par serveur (guilde) par minute |
 | `AVATAR_RATE_LIMIT_REQUESTS_PER_MIN` | Non | `120` | Limite de requêtes par minute par IP pour `/avatar` |
-| `MESSAGE_LINK_RETENTION_DAYS` | Non | `0` | Durée de rétention en jours des liens de messages. `0` = illimité |
+| `MESSAGE_LINK_RETENTION_DAYS` | Non | `0` | Durée de rétention en jours des liens de messages. `0` = illimité. La durée est comptée à partir du moment où chaque message a été traduit. |
 | `GUILD_DATA_RETENTION_DAYS` | Non | `0` | Durée de rétention des données d'un serveur après le départ du bot |
 
 ---
