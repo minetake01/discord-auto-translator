@@ -114,7 +114,7 @@ func (r *backfillRunner) flushBatch(ctx context.Context, items []backfillItem) e
 			return err
 		}
 		if len(items) == 1 {
-			return r.skip(ctx, items[0].m, err)
+			return r.skip(ctx, items[0].dest, items[0].m, err)
 		}
 		half := len(items) / 2
 		if err := r.flushBatch(ctx, items[:half]); err != nil {
@@ -145,7 +145,7 @@ func (r *backfillRunner) postBatchItem(ctx context.Context, item backfillItem, t
 		}
 	}
 	if isPermanentBackfillError(err) {
-		return r.skip(ctx, m, err)
+		return r.skip(ctx, item.dest, m, err)
 	}
 	return err
 }

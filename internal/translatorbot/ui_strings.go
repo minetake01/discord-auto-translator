@@ -103,6 +103,7 @@ const (
 	uiKeyBackfillJoined      uiKey = "backfillJoined"
 	uiKeyBackfillScanTimeout uiKey = "backfillScanTimeout"
 	uiKeyBackfillScanFailed  uiKey = "backfillScanFailed"
+	uiKeyBackfillSkipped     uiKey = "backfillSkipped"
 )
 
 // uiStrings maps a supported UI language to its full message catalog.
@@ -204,6 +205,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "Joined <#%[2]s> (%[3]s) to translation group `%[1]s`. Past messages are being translated; new messages will follow when that finishes.",
 		uiKeyBackfillScanTimeout: "Scanning the history took too long. <#%[1]s> did not join the group.",
 		uiKeyBackfillScanFailed:  "Could not read the channel history. <#%[1]s> did not join the group.",
+		uiKeyBackfillSkipped:     "⚠️ A past message could not be translated and is missing here.\n> %s",
 	},
 	"ja": {
 		uiKeyViewOriginalLink:       "原文メッセージへ移動",
@@ -300,6 +302,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "翻訳グループ `%[1]s` に <#%[2]s> (%[3]s) を参加させました。過去メッセージを翻訳中です。新しいメッセージはその完了後に投稿されます。",
 		uiKeyBackfillScanTimeout: "履歴の確認に時間がかかりすぎました。<#%[1]s> はグループに参加していません。",
 		uiKeyBackfillScanFailed:  "チャンネル履歴を読み取れませんでした。<#%[1]s> はグループに参加していません。",
+		uiKeyBackfillSkipped:     "⚠️ 過去メッセージを翻訳できず、ここに投稿できませんでした。\n> %s",
 	},
 	"zh-CN": {
 		uiKeyViewOriginalLink:       "前往原文消息",
@@ -396,6 +399,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "已将 <#%[2]s> (%[3]s) 加入翻译组 `%[1]s`。正在翻译历史消息，新消息将在完成后发布。",
 		uiKeyBackfillScanTimeout: "扫描历史记录耗时过长。<#%[1]s> 未加入该组。",
 		uiKeyBackfillScanFailed:  "无法读取频道历史记录。<#%[1]s> 未加入该组。",
+		uiKeyBackfillSkipped:     "⚠️ 有条历史消息无法翻译，未能发布到这里。\n> %s",
 	},
 	"zh-TW": {
 		uiKeyViewOriginalLink:       "前往原文訊息",
@@ -492,6 +496,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "已將 <#%[2]s> (%[3]s) 加入翻譯群組 `%[1]s`。正在翻譯歷史訊息，新訊息將在完成後發布。",
 		uiKeyBackfillScanTimeout: "掃描歷史記錄耗時過長。<#%[1]s> 未加入該群組。",
 		uiKeyBackfillScanFailed:  "無法讀取頻道歷史記錄。<#%[1]s> 未加入該群組。",
+		uiKeyBackfillSkipped:     "⚠️ 有則歷史訊息無法翻譯，未能發佈到這裡。\n> %s",
 	},
 	"ko": {
 		uiKeyViewOriginalLink:       "원문 메시지로 이동",
@@ -588,6 +593,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "번역 그룹 `%[1]s`에 <#%[2]s> (%[3]s)을(를) 참여시켰습니다. 이전 메시지를 번역 중이며, 새 메시지는 완료 후 게시됩니다.",
 		uiKeyBackfillScanTimeout: "기록 확인에 시간이 너무 오래 걸렸습니다. <#%[1]s>은(는) 그룹에 참여하지 않았습니다.",
 		uiKeyBackfillScanFailed:  "채널 기록을 읽을 수 없습니다. <#%[1]s>은(는) 그룹에 참여하지 않았습니다.",
+		uiKeyBackfillSkipped:     "⚠️ 이전 메시지를 번역하지 못해 여기에 게시하지 못했습니다.\n> %s",
 	},
 	"fr": {
 		uiKeyViewOriginalLink:       "Aller au message original",
@@ -684,6 +690,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) a rejoint le groupe de traduction `%[1]s`. Les anciens messages sont en cours de traduction ; les nouveaux suivront ensuite.",
 		uiKeyBackfillScanTimeout: "L'analyse de l'historique a pris trop de temps. <#%[1]s> n'a pas rejoint le groupe.",
 		uiKeyBackfillScanFailed:  "Impossible de lire l'historique du salon. <#%[1]s> n'a pas rejoint le groupe.",
+		uiKeyBackfillSkipped:     "⚠️ Un message de l'historique n'a pas pu être traduit et manque ici.\n> %s",
 	},
 	"de": {
 		uiKeyViewOriginalLink:       "Zur Originalnachricht",
@@ -780,6 +787,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) ist der Übersetzungsgruppe `%[1]s` beigetreten. Ältere Nachrichten werden übersetzt; neue folgen danach.",
 		uiKeyBackfillScanTimeout: "Das Durchsuchen des Verlaufs hat zu lange gedauert. <#%[1]s> ist der Gruppe nicht beigetreten.",
 		uiKeyBackfillScanFailed:  "Der Kanalverlauf konnte nicht gelesen werden. <#%[1]s> ist der Gruppe nicht beigetreten.",
+		uiKeyBackfillSkipped:     "⚠️ Eine ältere Nachricht konnte nicht übersetzt werden und fehlt hier.\n> %s",
 	},
 	"es": {
 		uiKeyViewOriginalLink:       "Ir al mensaje original",
@@ -876,6 +884,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) se unió al grupo de traducción `%[1]s`. Se están traduciendo los mensajes anteriores; los nuevos se publicarán después.",
 		uiKeyBackfillScanTimeout: "Revisar el historial tardó demasiado. <#%[1]s> no se unió al grupo.",
 		uiKeyBackfillScanFailed:  "No se pudo leer el historial del canal. <#%[1]s> no se unió al grupo.",
+		uiKeyBackfillSkipped:     "⚠️ Un mensaje anterior no se pudo traducir y falta aquí.\n> %s",
 	},
 	"pt-BR": {
 		uiKeyViewOriginalLink:       "Ir para a mensagem original",
@@ -972,6 +981,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) entrou no grupo de tradução `%[1]s`. As mensagens anteriores estão sendo traduzidas; as novas virão depois.",
 		uiKeyBackfillScanTimeout: "A leitura do histórico demorou demais. <#%[1]s> não entrou no grupo.",
 		uiKeyBackfillScanFailed:  "Não foi possível ler o histórico do canal. <#%[1]s> não entrou no grupo.",
+		uiKeyBackfillSkipped:     "⚠️ Uma mensagem antiga não pôde ser traduzida e está faltando aqui.\n> %s",
 	},
 	"it": {
 		uiKeyViewOriginalLink:       "Vai al messaggio originale",
@@ -1068,6 +1078,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) è entrato nel gruppo di traduzione `%[1]s`. I messaggi precedenti sono in traduzione; i nuovi seguiranno al termine.",
 		uiKeyBackfillScanTimeout: "La lettura della cronologia ha richiesto troppo tempo. <#%[1]s> non è entrato nel gruppo.",
 		uiKeyBackfillScanFailed:  "Impossibile leggere la cronologia del canale. <#%[1]s> non è entrato nel gruppo.",
+		uiKeyBackfillSkipped:     "⚠️ Un messaggio precedente non è stato tradotto e manca qui.\n> %s",
 	},
 	"id": {
 		uiKeyViewOriginalLink:       "Buka pesan asli",
@@ -1164,6 +1175,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "<#%[2]s> (%[3]s) telah bergabung dengan grup terjemahan `%[1]s`. Pesan lama sedang diterjemahkan; pesan baru akan menyusul setelahnya.",
 		uiKeyBackfillScanTimeout: "Pemindaian riwayat terlalu lama. <#%[1]s> tidak bergabung dengan grup.",
 		uiKeyBackfillScanFailed:  "Tidak dapat membaca riwayat saluran. <#%[1]s> tidak bergabung dengan grup.",
+		uiKeyBackfillSkipped:     "⚠️ Sebuah pesan lama tidak dapat diterjemahkan dan hilang di sini.\n> %s",
 	},
 	"th": {
 		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
@@ -1260,6 +1272,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "เพิ่ม <#%[2]s> (%[3]s) เข้าร่วมกลุ่มการแปล `%[1]s` แล้ว กำลังแปลข้อความเก่า ข้อความใหม่จะตามมาหลังจากเสร็จ",
 		uiKeyBackfillScanTimeout: "การตรวจประวัติใช้เวลานานเกินไป <#%[1]s> ไม่ได้เข้าร่วมกลุ่ม",
 		uiKeyBackfillScanFailed:  "ไม่สามารถอ่านประวัติของช่องได้ <#%[1]s> ไม่ได้เข้าร่วมกลุ่ม",
+		uiKeyBackfillSkipped:     "⚠️ ข้อความเก่าหนึ่งข้อความแปลไม่ได้และหายไปที่นี่\n> %s",
 	},
 	"vi": {
 		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
@@ -1356,6 +1369,7 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillJoined:      "Đã thêm <#%[2]s> (%[3]s) vào nhóm dịch `%[1]s`. Đang dịch các tin nhắn cũ; tin nhắn mới sẽ được đăng sau khi hoàn tất.",
 		uiKeyBackfillScanTimeout: "Quét lịch sử mất quá nhiều thời gian. <#%[1]s> chưa tham gia nhóm.",
 		uiKeyBackfillScanFailed:  "Không thể đọc lịch sử kênh. <#%[1]s> chưa tham gia nhóm.",
+		uiKeyBackfillSkipped:     "⚠️ Một tin nhắn cũ không thể dịch và bị thiếu ở đây.\n> %s",
 	},
 }
 

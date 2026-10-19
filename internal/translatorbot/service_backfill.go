@@ -174,6 +174,9 @@ type backfillRunner struct {
 	run      *backfillRun
 	channels []GroupChannel
 	cursors  map[string]string
+	// reported remembers gap notices already posted during this run so a
+	// retried thread create does not announce the same gap twice.
+	reported map[string]bool
 }
 
 // finish runs a last pass under the hold lock. When it finds nothing new the
@@ -393,11 +396,7 @@ func (r *backfillRunner) createTargetThread(ctx context.Context, family *threadF
 		if !isPermanentBackfillError(err) {
 			return false, err
 		}
-		log.Printf("backfill job %d: create thread for %s: %v", r.run.job.ID, rep.ID, err)
-		if consumed {
-			return true, r.skip(ctx, *m, err)
-		}
-		return false, nil
+		return consumed, r.skipThread(ctx, rep, err)
 	}
 	links, err := r.s.store.SourceThreadTargets(ctx, rep.ID)
 	if err != nil {
@@ -519,7 +518,7 @@ func (r *backfillRunner) mirrorSingle(ctx context.Context, m DiscordMessage, des
 	})
 	if err != nil {
 		if isPermanentBackfillError(err) {
-			return r.skip(ctx, m, err)
+			return r.skip(ctx, dest, m, err)
 		}
 		return err
 	}
@@ -553,9 +552,42 @@ func (r *backfillRunner) contextFn(ctx context.Context, m DiscordMessage) func()
 	}
 }
 
-func (r *backfillRunner) skip(ctx context.Context, m DiscordMessage, cause error) error {
+// skip records a message that cannot be mirrored and posts a notice where
+// its mirror would have gone, so the gap is visible in the target history.
+func (r *backfillRunner) skip(ctx context.Context, dest mirrorDestination, m DiscordMessage, cause error) error {
 	log.Printf("backfill job %d: skip %s/%s: %v", r.run.job.ID, m.ChannelID, m.ID, cause)
+	r.postGapNotice(dest, cause)
 	return r.s.store.MarkBackfillSkipped(ctx, r.run.job.ID, m.ChannelID, m.ID, truncateRunes(cause.Error(), 500, ""))
+}
+
+// skipThread records and announces a source thread that cannot be created in
+// the target. The notice goes to the target channel the thread belongs to.
+func (r *backfillRunner) skipThread(ctx context.Context, rep DiscordThread, cause error) error {
+	log.Printf("backfill job %d: skip thread %s: %v", r.run.job.ID, rep.ID, cause)
+	if r.markReported("thread\x00" + rep.ID) {
+		r.postGapNotice(destinationForChannel(r.run.target), cause)
+	}
+	return r.s.store.MarkBackfillSkipped(ctx, r.run.job.ID, rep.ParentID, rep.ID, truncateRunes(cause.Error(), 500, ""))
+}
+
+func (r *backfillRunner) markReported(key string) bool {
+	if r.reported == nil {
+		r.reported = map[string]bool{}
+	}
+	if r.reported[key] {
+		return false
+	}
+	r.reported[key] = true
+	return true
+}
+
+// postGapNotice posts a localized notice at the gap. The reason is truncated
+// so the notice stays one short message even for verbose REST errors.
+func (r *backfillRunner) postGapNotice(dest mirrorDestination, cause error) {
+	content := localizedUIStringf(dest.channel.Language, uiKeyBackfillSkipped, truncateRunes(cause.Error(), 300, "…"))
+	if _, err := r.s.sendWebhookMessage(dest.channel, WebhookSend{Content: content, ThreadID: dest.threadID()}); err != nil {
+		log.Printf("backfill job %d: post skip notice to %s: %v", r.run.job.ID, dest.targetID, err)
+	}
 }
 
 // retryTransient waits out rate limits and provider outages; backfill never

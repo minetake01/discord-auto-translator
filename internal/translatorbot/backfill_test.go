@@ -203,16 +203,47 @@ func TestBackfillSplitsFailingBatchAndSkipsOnlyTheBrokenMessage(t *testing.T) {
 	f.run(t)
 
 	got := sentContents(f.discord)
-	if len(got) != 3 {
-		t.Fatalf("sent = %q, want the three good messages", got)
+	if len(got) != 4 {
+		t.Fatalf("sent = %q, want three mirrors and one gap notice", got)
 	}
-	for _, content := range got {
+	prefix, _, _ := strings.Cut(localizedUIString("en", uiKeyBackfillSkipped), "%s")
+	if !strings.HasPrefix(got[2], prefix) || !strings.Contains(got[2], "unusable") {
+		t.Fatalf("the gap notice must sit where the broken message belongs: %q", got)
+	}
+	if !strings.Contains(got[0], "[en] a") || !strings.Contains(got[3], "[en] d") {
+		t.Fatalf("messages around the gap must still be posted: %q", got)
+	}
+	for _, content := range []string{got[0], got[1], got[3]} {
 		if strings.Contains(content, "BAD") {
 			t.Fatalf("the broken message must not be posted: %q", got)
 		}
 	}
 	if len(f.discord.channelMessages) != 0 {
 		t.Fatalf("skipped messages must not notify the source channel: %#v", f.discord.channelMessages)
+	}
+}
+
+func TestBackfillGapNoticeInsideAThreadUsesTheThreadID(t *testing.T) {
+	const threadID = "100000000000000002"
+	starter := sourceMessage(threadID, "スレッドの元")
+	starter.StartsThread = true
+	inThread := func(id, content string) DiscordMessage {
+		m := sourceMessage(id, content)
+		m.ChannelID, m.ParentChannelID, m.ThreadName = threadID, "ja", "話題"
+		return m
+	}
+	f := newBackfillFixture(t, &contentFailTranslator{bad: "BAD"}, starter)
+	f.discord.history[threadID] = []DiscordMessage{inThread("100000000000000005", "BAD")}
+	f.discord.publicThreads = []DiscordThread{{ID: threadID, ParentID: "ja", Name: "話題", LastMessageID: "100000000000000005"}}
+	f.run(t)
+
+	sends := f.discord.webhookSends()
+	if len(sends) == 0 {
+		t.Fatal("no mirrors posted")
+	}
+	notice := sends[len(sends)-1]
+	if notice.ThreadID == "" || !strings.Contains(notice.Content, "unusable") {
+		t.Fatalf("gap notice must be posted inside the target thread: %#v", sends)
 	}
 }
 
