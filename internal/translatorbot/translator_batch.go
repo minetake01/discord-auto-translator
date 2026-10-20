@@ -14,9 +14,10 @@ const (
 	// 10/20/40 messages showed no structural failures and cost flattening
 	// out around 40.
 	batchMaxMessages = 40
-	// batchMaxOutputTokens leaves headroom under openaiMaxTokens for JSON keys
-	// and estimation error.
-	batchMaxOutputTokens = 2800
+	// batchMaxOutputTokens caps the batch's summed output estimate below
+	// openaiMaxTokens; the headroom absorbs the JSON envelope keys and the
+	// per-message estimate's error across a full batch.
+	batchMaxOutputTokens = openaiMaxTokens - 1296
 	batchReplyContextMax = 5
 
 	batchTranslationTaskIntro = "Translate every <message> inside <batch> into the language in <target_languages>. Return one object whose keys are the <message> id attributes copied character-for-character; each value must include translated_text for that message only. translated_text must be empty when its <message> is empty.\n" +
@@ -198,7 +199,8 @@ func parseBatchTranslationResponse(raw string, sources, protected []string, prot
 }
 
 // estimateMessageOutputTokens over-approximates one translated_text entry
-// including its JSON key so a batch never approaches max_tokens.
+// including its JSON key. It bounds both the batch output budget and the
+// rate limiter's output estimate for known source content.
 func estimateMessageOutputTokens(content string) int {
 	return EstimateTranslationTokens(content, "")*2 + 16
 }

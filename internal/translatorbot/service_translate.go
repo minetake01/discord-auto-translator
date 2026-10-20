@@ -384,6 +384,29 @@ func estimatePreparedTokens(prepared preparedTranslation) int {
 		langs = 1
 	}
 	return EstimateTranslationTokens(prepared.systemInstruction+prepared.userPromptStable+prepared.userPromptHistory+prepared.userPromptVariable, "") +
-		translationOutputTokenReserve*langs +
+		estimatePreparedOutputTokens(prepared, langs) +
 		visionTokenOverheadPerImage*len(prepared.visionImages)
+}
+
+// estimatePreparedOutputTokens bounds one request's output estimate on the
+// same per-content estimate the batch budget uses: every target language
+// reserves the floor, and a single-language request with known source
+// content takes the larger of that floor and the content's own bound.
+func estimatePreparedOutputTokens(prepared preparedTranslation, langs int) int {
+	reserve := translationOutputTokenReserve * langs
+	if langs != 1 {
+		return reserve
+	}
+	sources := prepared.batchSources
+	if len(sources) == 0 && prepared.content != "" {
+		sources = []string{prepared.content}
+	}
+	bounded := 0
+	for _, source := range sources {
+		bounded += estimateMessageOutputTokens(source)
+	}
+	if bounded > batchMaxOutputTokens {
+		bounded = batchMaxOutputTokens
+	}
+	return max(reserve, bounded)
 }
