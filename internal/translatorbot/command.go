@@ -222,7 +222,7 @@ func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.Int
 		return
 	}
 	err = h.store.CreateGroupWithChannel(ctx, TranslationGroup{
-		ID: groupID, GuildID: i.GuildID, DisplayName: groupID, CreatedBy: i.Member.User.ID,
+		ID: groupID, GuildID: i.GuildID, DisplayName: groupID, CreatedBy: interactionUserID(i),
 	}, GroupChannel{
 		GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
 	})
@@ -404,7 +404,7 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 	translation := optionString(data.Options, "translation")
 	attribute := optionString(data.Options, "attribute")
 	alwaysInclude := optionBool(data.Options, "always_include")
-	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, i.Member.User.ID, alwaysInclude); err != nil {
+	if err := h.store.UpsertGlossaryEntry(ctx, i.GuildID, term, translation, attribute, interactionUserID(i), alwaysInclude); err != nil {
 		switch {
 		case errors.Is(err, ErrGlossaryTermRequired):
 			h.reply(s, i, uiKeyGlossaryTermRequired)
@@ -583,10 +583,7 @@ func (h *CommandHandler) handleAddSource(s *discordgo.Session, i *discordgo.Inte
 	if !ok {
 		return
 	}
-	createdBy := ""
-	if i.Member != nil && i.Member.User != nil {
-		createdBy = i.Member.User.ID
-	}
+	createdBy := interactionUserID(i)
 	if err := h.store.AddAllowedSource(context.Background(), i.GuildID, sourceType, sourceID, createdBy); err != nil {
 		switch {
 		case errors.Is(err, ErrSourceAlreadyAllowed):
