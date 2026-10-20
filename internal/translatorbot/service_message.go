@@ -46,38 +46,44 @@ func (d mirrorDestination) threadID() string {
 
 // replyQuote builds the pseudo-reply quote line for a reply message,
 // preferring the mirrored version of the referenced message in the target
-// channel so the jump link stays within that channel.
+// channel so the jump link stays within that channel. An attachment-only
+// referenced message quotes a localized placeholder instead of a snippet.
 func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChannelID, targetLanguage string) (string, error) {
 	if m.ReferencedMessageID == "" {
 		return "", nil
 	}
 	content := m.ReferencedMessageContent
+	hasAttachments := len(m.ReferencedMessageAttachments) > 0
 	quoteChannelID := m.ReferencedMessageChannelID
 	quoteMessageID := m.ReferencedMessageID
 	if quoteChannelID == "" {
 		quoteChannelID = m.ChannelID
 	}
 
-	dbOriginalContent, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
+	source, dbQuoteChannelID, dbQuoteMessageID, ok, err := s.store.MessageQuoteTarget(ctx, m.ChannelID, m.ReferencedMessageID, targetChannelID)
 	if err != nil {
 		return "", err
 	}
 	if ok {
+		hasAttachments = hasAttachments || len(source.SourceImageAttachments) > 0
 		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
 			quoteChannelID = dbQuoteChannelID
 			quoteMessageID = dbQuoteMessageID
 			if transferred, fetchErr := s.discord.Message(quoteChannelID, quoteMessageID); fetchErr == nil && strings.TrimSpace(transferred.Content) != "" {
 				content = transferred.Content
 			} else {
-				content = dbOriginalContent
+				content = source.SourceContentSnapshot
 			}
 		} else {
-			content = dbOriginalContent
+			content = source.SourceContentSnapshot
 		}
 	}
 	snippet := firstLineWithoutPseudoReply(content)
 	if snippet == "" {
-		return "", nil
+		if !hasAttachments {
+			return "", nil
+		}
+		snippet = localizedUIString(targetLanguage, uiKeyAttachmentOnly)
 	}
 	snippet = normalizeMarkdownHeaderSnippet(snippet)
 	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")
@@ -423,7 +429,7 @@ func (s *Service) refreshReplyingQuotes(ctx context.Context, m DiscordMessage, c
 		s.messageLinkTarget,
 		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
 			for _, p := range pending {
-				quote, err := s.replyingMessageQuote(ctx, m.GuildID, p.link, p.target.Language)
+				quote, err := s.replyingMessageQuote(ctx, m, p.link, p.target.Language)
 				if err != nil {
 					return err
 				}
@@ -455,15 +461,17 @@ func (s *Service) refreshReplyingQuotes(ctx context.Context, m DiscordMessage, c
 
 // replyingMessageQuote rebuilds the quote header for a mirror of a message
 // replying to the edited one, from the reference the bot stored when it
-// mirrored the reply.
-func (s *Service) replyingMessageQuote(ctx context.Context, guildID string, link MessageLink, language string) (string, error) {
+// mirrored the reply. The edited message supplies the referenced message's
+// current attachments.
+func (s *Service) replyingMessageQuote(ctx context.Context, edited DiscordMessage, link MessageLink, language string) (string, error) {
 	ref, ok, err := s.store.MessageReferenceOf(ctx, link.SourceChannelID, link.SourceMessageID)
 	if err != nil || !ok {
 		return "", err
 	}
 	return s.replyQuote(ctx, DiscordMessage{
-		ID: link.SourceMessageID, ChannelID: link.SourceChannelID, GuildID: guildID,
+		ID: link.SourceMessageID, ChannelID: link.SourceChannelID, GuildID: edited.GuildID,
 		ReferencedMessageID: ref.MessageID, ReferencedMessageChannelID: ref.ChannelID,
+		ReferencedMessageAttachments: edited.Attachments,
 	}, link.TargetChannelID, language)
 }
 
@@ -566,6 +574,7 @@ func (s *Service) restoreReplyReference(ctx context.Context, m *DiscordMessage) 
 	m.ReferencedMessageID, m.ReferencedMessageChannelID = ref.MessageID, ref.ChannelID
 	if fetched, err := s.discord.Message(ref.ChannelID, ref.MessageID); err == nil {
 		m.ReferencedMessageContent = fetched.Content
+		m.ReferencedMessageAttachments = fetched.Attachments
 	}
 	return nil
 }

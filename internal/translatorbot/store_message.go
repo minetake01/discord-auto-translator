@@ -258,48 +258,48 @@ func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string
 	}, true, nil
 }
 
-func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (content, quoteChannelID, quoteMessageID string, ok bool, err error) {
+// MessageQuoteTarget resolves what a quote to a message looks like in a
+// target channel: the source link the snapshot and attachments come from,
+// plus the message the quote should link to.
+func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (source MessageLink, quoteChannelID, quoteMessageID string, ok bool, err error) {
 	links, err := s.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
-		return "", "", "", false, err
+		return MessageLink{}, "", "", false, err
 	}
 	if len(links) > 0 {
-		link := links[0]
+		source = links[0]
 		for _, target := range links {
 			if target.TargetChannelID == targetChannelID {
-				return link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
+				return source, target.TargetChannelID, target.TargetMessageID, true, nil
 			}
 		}
-		if link.SourceChannelID == targetChannelID {
-			return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
-		}
-		return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+		return source, source.SourceChannelID, source.SourceMessageID, true, nil
 	}
 
 	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
 	link, err := scanMessageLink(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return "", "", "", false, nil
+		return MessageLink{}, "", "", false, nil
 	}
 	if err != nil {
-		return "", "", "", false, err
+		return MessageLink{}, "", "", false, err
 	}
 	if link.TargetChannelID == targetChannelID {
-		return link.SourceContentSnapshot, link.TargetChannelID, link.TargetMessageID, true, nil
+		return link, link.TargetChannelID, link.TargetMessageID, true, nil
 	}
 	if link.SourceChannelID == targetChannelID {
-		return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+		return link, link.SourceChannelID, link.SourceMessageID, true, nil
 	}
 	targets, err := s.MessageTargets(ctx, link.SourceChannelID, link.SourceMessageID)
 	if err != nil {
-		return "", "", "", false, err
+		return MessageLink{}, "", "", false, err
 	}
 	for _, target := range targets {
 		if target.TargetChannelID == targetChannelID {
-			return link.SourceContentSnapshot, target.TargetChannelID, target.TargetMessageID, true, nil
+			return link, target.TargetChannelID, target.TargetMessageID, true, nil
 		}
 	}
-	return link.SourceContentSnapshot, link.SourceChannelID, link.SourceMessageID, true, nil
+	return link, link.SourceChannelID, link.SourceMessageID, true, nil
 }
 
 // MessageHistoryBefore returns up to limit distinct source messages in

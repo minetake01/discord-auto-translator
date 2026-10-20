@@ -77,6 +77,18 @@ func TestReferencedMessageFieldsIgnoresForward(t *testing.T) {
 	}
 }
 
+func TestReferencedMessageAttachments(t *testing.T) {
+	got := referencedMessageAttachments(&discordgo.Message{
+		Attachments: []*discordgo.MessageAttachment{{URL: "https://cdn.discordapp.com/a.png", Filename: "a.png"}},
+	})
+	if len(got) != 1 || got[0].Filename != "a.png" {
+		t.Fatalf("attachments = %#v", got)
+	}
+	if referencedMessageAttachments(nil) != nil {
+		t.Fatal("nil referenced message should have no attachments")
+	}
+}
+
 func TestAttachmentDescriptionsFromRaw(t *testing.T) {
 	descriptions, snapshot := attachmentDescriptionsFromRaw([]byte(`{
 		"attachments":[{"description":"source alt"},{"filename":"b.png"}],

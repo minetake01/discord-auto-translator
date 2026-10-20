@@ -146,6 +146,7 @@ func (d DiscordGoAPI) mapMessage(m *discordgo.Message, raw json.RawMessage, opts
 	}
 	out.ForwardedMessage = forwarded
 	out.ReferencedMessageID, out.ReferencedMessageChannelID, out.ReferencedMessageContent = referencedMessageFields(m.MessageReference, m.ReferencedMessage)
+	out.ReferencedMessageAttachments = referencedMessageAttachments(m.ReferencedMessage)
 	out.Poll = pollFromDiscord(m.Poll)
 	out.PollResult = pollResultFromDiscord(m)
 	return out, nil
@@ -381,6 +382,15 @@ func referencedMessageFields(ref *discordgo.MessageReference, referenced *discor
 		content = referenced.Content
 	}
 	return id, channelID, content
+}
+
+// referencedMessageAttachments keeps the attachments of the referenced
+// message, so a reply quote can describe an attachment-only target.
+func referencedMessageAttachments(referenced *discordgo.Message) []DiscordAttachment {
+	if referenced == nil {
+		return nil
+	}
+	return attachmentsFromDiscord(referenced.Attachments, nil)
 }
 
 func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discordgo.MessageSnapshot, snapshotDescriptions []string) (*DiscordForwardedMessage, error) {

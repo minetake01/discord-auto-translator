@@ -522,6 +522,71 @@ func TestReplyQuoteIsOmittedWhenTransferredAndOriginalContentAreUnavailable(t *t
 	}
 }
 
+func TestReplyQuoteAttachmentOnlyReferencedMessage(t *testing.T) {
+	service := NewService(newTestStore(t), &fakeDiscordAPI{}, &echoTranslator{})
+	got, err := service.replyQuote(context.Background(), DiscordMessage{
+		GuildID: "guild", ChannelID: "en",
+		ReferencedMessageID: "100000000000000001", ReferencedMessageChannelID: "en",
+		ReferencedMessageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png", Filename: "image.png", ContentType: "image/png"}},
+	}, "target", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/en/100000000000000001)"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestReplyQuoteAttachmentOnlyViaStoredLink(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
+		SourceContentSnapshot: "",
+		SourceImageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png", Filename: "image.png", ContentType: "image/png"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := service.replyQuote(ctx, DiscordMessage{
+		GuildID: "guild", ChannelID: "ja", ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+	}, "en", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/en/700000000000000019)"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestHandleMessageCreateAttachmentOnlyReplyQuote(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "画像への返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png", Filename: "image.png", ContentType: "image/png"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	wantPrefix := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
+	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix+"\n\n[en] 画像への返信です" {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+}
+
 func TestFirstLineWithoutPseudoReply(t *testing.T) {
 	tests := []struct {
 		name    string

@@ -132,6 +132,9 @@ type DiscordMessage struct {
 	ReferencedMessageID        string
 	ReferencedMessageChannelID string
 	ReferencedMessageContent   string
+	// ReferencedMessageAttachments carries the referenced message's
+	// attachments so a reply quote can describe an attachment-only target.
+	ReferencedMessageAttachments []DiscordAttachment
 	ForwardedMessage           *DiscordForwardedMessage
 	Poll                       *DiscordPoll
 	PollResult                 *DiscordPollResult
