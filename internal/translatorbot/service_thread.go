@@ -186,6 +186,10 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		TargetThreadID: threadID, TargetChannelID: target.ChannelID, TargetLanguage: target.Language,
 	})
 	if err != nil {
+		// The peer thread exists on Discord but was never linked, so nothing
+		// would ever sync or clean it up; delete it the way sendAndSaveLink
+		// deletes a webhook message whose link could not be saved.
+		_ = s.discord.DeleteThread(threadID)
 		return false, err
 	}
 	if req.InitialMessageID == "" {
