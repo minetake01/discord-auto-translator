@@ -45,6 +45,7 @@ type fakeDiscordAPI struct {
 	webhookEdits           []webhookEditCall
 	webhookAttachmentEdits []webhookAttachmentEditCall
 	webhookDeletes         []webhookDeleteCall
+	deletedWebhooks        []string
 	pinCalls               []pinCall
 	edits                  []threadEditCall
 	deletes                []string
@@ -222,6 +223,12 @@ func (f *fakeDiscordAPI) EditWebhookAttachments(webhookID, token, messageID, thr
 }
 func (f *fakeDiscordAPI) DeleteWebhook(webhookID, token, messageID, threadID string) error {
 	f.webhookDeletes = append(f.webhookDeletes, webhookDeleteCall{messageID: messageID, threadID: threadID})
+	return nil
+}
+func (f *fakeDiscordAPI) DeleteWebhookWithToken(webhookID, token string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedWebhooks = append(f.deletedWebhooks, webhookID)
 	return nil
 }
 func (f *fakeDiscordAPI) AddReaction(channelID, messageID, emoji string) error {

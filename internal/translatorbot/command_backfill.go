@@ -184,18 +184,16 @@ func (h *CommandHandler) handleBackfillStop(s *discordgo.Session, i *discordgo.I
 }
 
 // joinChannel creates the channel's webhook and registers it, together with
-// a backfill job when requested.
+// a backfill job when requested. A failed registration deletes the webhook
+// again.
 func (h *CommandHandler) joinChannel(ctx context.Context, channel GroupChannel, requester string, backfill bool) error {
-	webhookID, token, err := h.api.CreateWebhook(channel.ChannelID, defaultWebhookName)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errWebhookCreate, err)
-	}
-	channel.WebhookID, channel.WebhookToken = webhookID, token
-	if backfill {
-		_, err = h.store.JoinChannelWithBackfill(ctx, channel, requester)
-		return err
-	}
-	return h.store.JoinChannel(ctx, channel)
+	return h.registerChannelWithWebhook(ctx, channel, func(channel GroupChannel) error {
+		if backfill {
+			_, err := h.store.JoinChannelWithBackfill(ctx, channel, requester)
+			return err
+		}
+		return h.store.JoinChannel(ctx, channel)
+	})
 }
 
 // estimateCount formats the message count of an estimate. A truncated scan

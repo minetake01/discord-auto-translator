@@ -27,6 +27,7 @@ type DiscordAPI interface {
 	EditWebhook(webhookID, token, messageID, threadID, content string) error
 	EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error
 	DeleteWebhook(webhookID, token, messageID, threadID string) error
+	DeleteWebhookWithToken(webhookID, token string) error
 	AddReaction(channelID, messageID, emoji string) error
 	RemoveOwnReaction(channelID, messageID, emoji string) error
 	PinMessage(channelID, messageID string) error
@@ -391,6 +392,15 @@ func (d DiscordGoAPI) DeleteWebhook(webhookID, token, messageID, threadID string
 	}
 	return withDiscordRetry(func() error {
 		_, err := d.session.RequestWithBucketID("DELETE", webhookMessageURL(webhookID, token, messageID, threadID), nil, discordgo.EndpointWebhookToken("", ""))
+		return err
+	})
+}
+
+// DeleteWebhookWithToken deletes a webhook the bot just created, using the
+// creation token.
+func (d DiscordGoAPI) DeleteWebhookWithToken(webhookID, token string) error {
+	return withDiscordRetry(func() error {
+		_, err := d.session.WebhookDeleteWithToken(webhookID, token)
 		return err
 	})
 }

@@ -211,6 +211,24 @@ func (h *CommandHandler) resolveCommandChannel(s *discordgo.Session, i *discordg
 	return ch, true
 }
 
+// registerChannelWithWebhook creates the channel's webhook, hands the channel
+// to register, and deletes the webhook again when the registration fails so a
+// rejected join never leaves an orphaned webhook behind.
+func (h *CommandHandler) registerChannelWithWebhook(ctx context.Context, channel GroupChannel, register func(GroupChannel) error) error {
+	webhookID, token, err := h.api.CreateWebhook(channel.ChannelID, defaultWebhookName)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errWebhookCreate, err)
+	}
+	channel.WebhookID, channel.WebhookToken = webhookID, token
+	if err := register(channel); err != nil {
+		if delErr := h.api.DeleteWebhookWithToken(webhookID, token); delErr != nil {
+			log.Printf("delete webhook %s after failed register: %v", webhookID, delErr)
+		}
+		return err
+	}
+	return nil
+}
+
 func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	language := normalizeLanguage(optionString(data.Options, "language"))
@@ -226,16 +244,11 @@ func (h *CommandHandler) handleNewChannel(s *discordgo.Session, i *discordgo.Int
 	if groupID == "" {
 		groupID = ch.Name
 	}
-	webhookID, token, err := h.api.CreateWebhook(ch.ID, defaultWebhookName)
-	if err != nil {
-		log.Printf("new-channel create webhook: %v", err)
-		h.reply(s, i, uiKeyWebhookCreateFailed)
-		return
-	}
-	err = h.store.CreateGroupWithChannel(ctx, TranslationGroup{
-		ID: groupID, GuildID: i.GuildID, DisplayName: groupID, CreatedBy: interactionUserID(i),
-	}, GroupChannel{
-		GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language, WebhookID: webhookID, WebhookToken: token,
+	channel := GroupChannel{GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language}
+	err := h.registerChannelWithWebhook(ctx, channel, func(channel GroupChannel) error {
+		return h.store.CreateGroupWithChannel(ctx, TranslationGroup{
+			ID: groupID, GuildID: i.GuildID, DisplayName: groupID, CreatedBy: interactionUserID(i),
+		}, channel)
 	})
 	if err != nil {
 		h.replyGroupError(s, i, "new-channel", groupID, err)
@@ -272,16 +285,10 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 	if !ok {
 		return
 	}
-	// Reject mismatched channel types before creating the webhook so a
-	// type error does not leave an orphaned webhook behind.
 	peers, err := h.store.ChannelsInGroup(ctx, i.GuildID, groupID)
 	if err != nil {
 		log.Printf("join-channel list channels: %v", err)
 		h.reply(s, i, uiKeyUnexpectedError)
-		return
-	}
-	if len(peers) > 0 && peers[0].ChannelType != int(ch.Type) {
-		h.reply(s, i, uiKeyChannelTypeMismatch, groupID)
 		return
 	}
 	channel := GroupChannel{GroupID: groupID, GuildID: i.GuildID, ChannelID: ch.ID, ChannelType: int(ch.Type), Language: language}
