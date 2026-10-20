@@ -370,29 +370,55 @@ func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.Int
 	h.respond(s, i, msg, true)
 }
 
+// listBuilder assembles a list message up to Discord's content limit,
+// appending the truncation suffix once lines no longer fit.
+type listBuilder struct {
+	b      strings.Builder
+	suffix string
+	full   bool
+}
+
+func newListBuilder(header, truncatedSuffix string) *listBuilder {
+	list := &listBuilder{suffix: truncatedSuffix}
+	list.b.WriteString(header)
+	list.b.WriteString("\n")
+	return list
+}
+
+// add appends a line and reports whether it fit; once a line does not fit
+// the builder ignores the rest.
+func (t *listBuilder) add(line string) bool {
+	if t.full {
+		return false
+	}
+	if t.b.Len()+len(line)+len(t.suffix) > discordMessageContentLimit {
+		t.full = true
+		return false
+	}
+	t.b.WriteString(line)
+	return true
+}
+
+func (t *listBuilder) String() string {
+	result := strings.TrimSpace(t.b.String())
+	if t.full {
+		result += t.suffix
+	}
+	return result
+}
+
 func formatListGroupsMessage(ctx context.Context, store *Store, guildID, lang string, groups []TranslationGroup) (string, error) {
-	truncatedSuffix := localizedUIString(lang, uiKeyGroupsTruncated)
-	var b strings.Builder
-	b.WriteString(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)))
-	b.WriteString("\n")
-	truncated := false
+	list := newListBuilder(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)), localizedUIString(lang, uiKeyGroupsTruncated))
 	for _, g := range groups {
 		channels, err := store.ChannelsInGroup(ctx, guildID, g.ID)
 		if err != nil {
 			return "", err
 		}
-		groupBlock := formatGroupBlock(g, channels, lang)
-		if b.Len()+len(groupBlock)+len(truncatedSuffix) > discordMessageContentLimit {
-			truncated = true
+		if !list.add(formatGroupBlock(g, channels, lang)) {
 			break
 		}
-		b.WriteString(groupBlock)
 	}
-	result := strings.TrimSpace(b.String())
-	if truncated {
-		result += truncatedSuffix
-	}
-	return result, nil
+	return list.String(), nil
 }
 
 func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) string {
@@ -459,25 +485,14 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 		h.reply(s, i, uiKeyNoGlossary)
 		return
 	}
-	truncatedSuffix := localizedUIString(lang, uiKeyGlossaryTruncated)
-	var b strings.Builder
-	b.WriteString(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)))
-	b.WriteString("\n")
-	truncated := false
+	list := newListBuilder(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)), localizedUIString(lang, uiKeyGlossaryTruncated))
 	for _, entry := range entries {
 		mode, attribute := glossaryLabels(lang, entry.AlwaysInclude, entry.Attribute)
-		line := fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)
-		if b.Len()+len(line)+len(truncatedSuffix) > discordMessageContentLimit {
-			truncated = true
+		if !list.add(fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)) {
 			break
 		}
-		b.WriteString(line)
 	}
-	msg := strings.TrimSpace(b.String())
-	if truncated {
-		msg += truncatedSuffix
-	}
-	h.respond(s, i, msg, true)
+	h.respond(s, i, list.String(), true)
 }
 
 func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -640,24 +655,13 @@ func (h *CommandHandler) handleListSources(s *discordgo.Session, i *discordgo.In
 		return
 	}
 	lang := commandLocale(i)
-	truncatedSuffix := localizedUIString(lang, uiKeyAllowedSourcesTruncated)
-	var b strings.Builder
-	b.WriteString(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)))
-	b.WriteString("\n")
-	truncated := false
+	list := newListBuilder(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)), localizedUIString(lang, uiKeyAllowedSourcesTruncated))
 	for _, source := range sources {
-		line := fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID)
-		if b.Len()+len(line)+len(truncatedSuffix) > discordMessageContentLimit {
-			truncated = true
+		if !list.add(fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID)) {
 			break
 		}
-		b.WriteString(line)
 	}
-	msg := strings.TrimSpace(b.String())
-	if truncated {
-		msg += truncatedSuffix
-	}
-	h.respond(s, i, msg, true)
+	h.respond(s, i, list.String(), true)
 }
 
 func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
