@@ -55,6 +55,10 @@ func OpenStore(path string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
+// parseDiscordSnowflakeID converts a trusted snowflake string into the int64
+// held by SQLite INTEGER columns. IDs issued by Discord are canonical, so
+// this only fails fast on values the database cannot hold; user-provided IDs
+// are validated by ValidateCanonicalSnowflake before they reach the store.
 func parseDiscordSnowflakeID(field, id string) (int64, error) {
 	value, err := strconv.ParseInt(id, 10, 64)
 	if err != nil || value <= 0 {

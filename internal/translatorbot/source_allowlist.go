@@ -32,6 +32,9 @@ func ParseSourceType(value string) (SourceType, error) {
 	return t, nil
 }
 
+// ValidateCanonicalSnowflake is the store's one snowflake validation: it
+// rejects anything that is not the canonical decimal form of a nonzero
+// uint64, which is how user-provided IDs arrive.
 func ValidateCanonicalSnowflake(id string) error {
 	if id == "" || strings.IndexFunc(id, func(r rune) bool { return r < '0' || r > '9' }) >= 0 {
 		return ErrInvalidSnowflake
