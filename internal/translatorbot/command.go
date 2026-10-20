@@ -67,6 +67,8 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 		h.handleNewChannel(s, i, data)
 	case "join-channel":
 		h.handleJoinChannel(s, i, data)
+	case "backfill":
+		h.handleBackfill(s, i, data)
 	case "leave-channel":
 		h.handleLeaveChannel(s, i, data)
 	case "delete-group":
@@ -318,7 +320,7 @@ func (h *CommandHandler) groupErrorText(locale, command, groupID string, err err
 		return localizedUIStringf(locale, uiKeyGroupNotFound, groupID)
 	case errors.Is(err, ErrDuplicateGroup):
 		return localizedUIStringf(locale, uiKeyDuplicateGroup, groupID)
-	case errors.Is(err, ErrDuplicateChannel), errors.Is(err, ErrBackfillJobExists):
+	case errors.Is(err, ErrDuplicateChannel):
 		return localizedUIStringf(locale, uiKeyDuplicateChannel, groupID)
 	case errors.Is(err, ErrDuplicateLanguage):
 		return localizedUIStringf(locale, uiKeyDuplicateLanguage, groupID)

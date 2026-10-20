@@ -33,7 +33,7 @@ type topicSummaryStore interface {
 	UpsertTopicSummary(ctx context.Context, guildID, locationKey, generationID, summary string) error
 }
 
-func (s *Service) translationContextForMessage(ctx context.Context, m DiscordMessage, groupID, contextChannelID, historyChannelID, threadName string) TranslationContext {
+func (s *Service) translationContextForMessage(ctx context.Context, m DiscordMessage, groupID, contextChannelID, historyChannelID, threadName string, scope translationScope) TranslationContext {
 	replyChannelID := m.ReferencedMessageChannelID
 	if replyChannelID == "" {
 		replyChannelID = m.ChannelID
@@ -48,17 +48,17 @@ func (s *Service) translationContextForMessage(ctx context.Context, m DiscordMes
 		replyMessageID:   m.ReferencedMessageID,
 		author:           m.AuthorDisplayName,
 		threadName:       threadName,
-	})
+	}, scope)
 	tc.MentionedUsers = m.MentionedUsers
 	tc.MentionedChannels = m.MentionedChannels
 	tc.MentionedRoles = m.MentionedRoles
 	return tc
 }
 
-func (s *Service) groupTranslationContext(ctx context.Context, req translationContextRequest) TranslationContext {
+func (s *Service) groupTranslationContext(ctx context.Context, req translationContextRequest, scope translationScope) TranslationContext {
 	channelIDs, locationKey := s.conversationScope(ctx, req.guildID, req.groupID, req.historyChannelID)
 	replyChain, replyKeys := s.replyChainContext(ctx, req.replyChannelID, req.replyMessageID)
-	translationContext := s.loadConversationContext(ctx, req, channelIDs, locationKey, replyKeys)
+	translationContext := s.loadConversationContext(ctx, req, channelIDs, locationKey, replyKeys, scope)
 	translationContext.ReplyChain = replyChain
 	translationContext.StyleInstructions = s.groupStyleInstructions(ctx, req.guildID, req.groupID)
 	translationContext.Author = strings.TrimSpace(req.author)
@@ -139,7 +139,7 @@ func snowflakeIDLess(a, b string) bool {
 	return a < b
 }
 
-func (s *Service) loadConversationContext(ctx context.Context, req translationContextRequest, historyChannelIDs []string, locationKey string, excludeReplyKeys map[string]bool) TranslationContext {
+func (s *Service) loadConversationContext(ctx context.Context, req translationContextRequest, historyChannelIDs []string, locationKey string, excludeReplyKeys map[string]bool, scope translationScope) TranslationContext {
 	guildID, channelID, messageID := req.guildID, req.contextChannelID, req.excludeMessageID
 	translationContext := TranslationContext{
 		GuildID:   guildID,
@@ -172,17 +172,13 @@ func (s *Service) loadConversationContext(ctx context.Context, req translationCo
 	translationContext.PromptCacheGeneration = generationID
 	// Backfill keeps its summaries per job and summarizes inline so the next
 	// batch already sees the summary of the history it moved past.
-	var summaries topicSummaryStore = s.store
-	run := backfillRunFrom(ctx)
-	if run != nil {
-		summaries = run.summaries
-	}
+	summaries := scope.topicSummaries(s.store)
 	if summary, err := summaries.TopicSummary(ctx, locationKey, generationID); err == nil {
 		translationContext.TopicSummary = summary
 	}
 	if len(discarded) > 0 && translationContext.TopicSummary == "" {
-		if run != nil {
-			if err := s.generateAndStoreTopicSummary(ctx, summaries, guildID, locationKey, generationID, messageID, discarded); err == nil {
+		if scope.backfill != nil {
+			if err := s.generateAndStoreTopicSummary(ctx, summaries, guildID, locationKey, generationID, messageID, discarded, scope); err == nil {
 				if summary, err := summaries.TopicSummary(ctx, locationKey, generationID); err == nil {
 					translationContext.TopicSummary = summary
 				}
@@ -308,7 +304,7 @@ func (s *Service) scheduleTopicSummary(guildID, locationKey, generationID, messa
 	run := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), topicSummaryTimeout)
 		defer cancel()
-		if err := s.generateAndStoreTopicSummary(ctx, s.store, guildID, locationKey, generationID, messageID, copied); err != nil && errors.Is(err, errTranslationRateLimited) {
+		if err := s.generateAndStoreTopicSummary(ctx, s.store, guildID, locationKey, generationID, messageID, copied, liveTranslation); err != nil && errors.Is(err, errTranslationRateLimited) {
 			s.topicSummaryAttempts.Delete(attemptKey)
 		}
 	}
@@ -319,7 +315,7 @@ func (s *Service) scheduleTopicSummary(guildID, locationKey, generationID, messa
 	go run()
 }
 
-func (s *Service) generateAndStoreTopicSummary(ctx context.Context, summaries topicSummaryStore, guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage) error {
+func (s *Service) generateAndStoreTopicSummary(ctx context.Context, summaries topicSummaryStore, guildID, locationKey, generationID, messageID string, discarded []ChatContextMessage, scope translationScope) error {
 	summarizer, ok := s.translator.(TopicSummarizer)
 	if !ok {
 		return nil
@@ -341,7 +337,7 @@ func (s *Service) generateAndStoreTopicSummary(ctx context.Context, summaries to
 	if err != nil {
 		return err
 	}
-	if err := s.checkPreparedTranslationRateLimit(ctx, guildID, prepared); err != nil {
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared, scope); err != nil {
 		return err
 	}
 	result, err := summarizer.SummarizeTopic(ctx, prepared)

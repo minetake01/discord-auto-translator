@@ -98,6 +98,7 @@ Par défaut, les commandes d'administration ne sont accessibles qu'aux utilisate
 |---|---|---|
 | `/new-channel` | Créer un nouveau groupe de traduction et enregistrer un salon | `language` (requis) : Code langue BCP-47<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel)<br>`group` (optionnel) : Nom du groupe (par défaut : nom du salon) |
 | `/join-channel` | Ajouter un salon à un groupe existant | `group` (requis) : Nom du groupe<br>`language` (requis) : Code langue BCP-47<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel)<br>`backfill` (optionnel) : Traduit l'historique existant du groupe dans le salon (après estimation et confirmation) |
+| `/backfill` | Gérer la traduction de l'historique d'un salon | Sous-commande : `stop`<br>`group` (obligatoire) : Nom du groupe<br>`channel` (optionnel) : Salon dont la traduction doit s'arrêter (par défaut : le salon courant) |
 | `/leave-channel` | Retirer un salon d'un groupe | `group` (requis) : Nom du groupe<br>`channel` (optionnel) : Salon cible (par défaut : salon actuel) |
 | `/delete-group` | Supprimer complètement un groupe | `group` (requis) : Nom du groupe à supprimer |
 | `/list-groups` | Lister les groupes de traduction et salons associés | Aucun |

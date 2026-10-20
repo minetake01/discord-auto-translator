@@ -14,17 +14,17 @@ type forwardedTargetContent struct {
 }
 
 type forwardedMirrorPayload struct {
-	content string
+	content mirrorText
 	files   []WebhookFile
 }
 
 // mirrorForwardedMessage mirrors a forwarded message to every destination.
 // When the forwarded source already has a mirror in the destination, its
 // translated body and jump URL are reused without calling the translator.
-func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination) error {
-	contents, pendingAlts, err := s.forwardedContents(ctx, m, contextFn, dests)
+func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
+	contents, pendingAlts, err := s.forwardedContents(ctx, m, contextFn, dests, scope)
 	if err != nil {
-		return s.translationFailure(ctx, m, sourceLanguage, err)
+		return s.translationFailure(ctx, m, sourceLanguage, err, scope)
 	}
 	var posted []postedWebhookMirror
 	var errs []error
@@ -49,7 +49,7 @@ func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, 
 // forwardedContents prepares the outgoing content per destination: a
 // localized forwarded header plus either a reused mirror body or a fresh
 // translation of the forwarded snapshot.
-func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, contextFn func() TranslationContext, dests []mirrorDestination) (map[string]forwardedMirrorPayload, <-chan attachmentAltOutcome, error) {
+func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) (map[string]forwardedMirrorPayload, <-chan attachmentAltOutcome, error) {
 	forwarded := m.ForwardedMessage
 
 	prepared := make(map[string]forwardedTargetContent, len(dests))
@@ -89,7 +89,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		for _, dest := range dests {
 			languages = append(languages, dest.channel.Language)
 		}
-		altCh = s.startAttachmentAltTranslation(ctx, m.GuildID, loaded, languages, contextFn)
+		altCh = s.startAttachmentAltTranslation(ctx, m.GuildID, loaded, languages, contextFn, scope)
 	}
 
 	if len(translateDests) > 0 {
@@ -97,7 +97,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		for _, dest := range translateDests {
 			languages = append(languages, dest.channel.Language)
 		}
-		translations, err := s.translateWithLimit(ctx, m.GuildID, forwarded.Content, loaded, languages, contextFn)
+		translations, err := s.translateWithLimit(ctx, m.GuildID, forwarded.Content, loaded, languages, contextFn, scope)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -137,7 +137,11 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		if strings.TrimSpace(body) != "" {
 			content = header + "\n" + body
 		}
-		contents[dest.targetID] = forwardedMirrorPayload{content: content, files: files}
+		final, err := finishMirrorContent(m.ID, content, dest.timestamp)
+		if err != nil {
+			return nil, nil, err
+		}
+		contents[dest.targetID] = forwardedMirrorPayload{content: final, files: files}
 	}
 	return contents, pendingAlts, nil
 }

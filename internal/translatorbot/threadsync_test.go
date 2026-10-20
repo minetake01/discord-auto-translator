@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -629,5 +630,25 @@ func TestSyncThreadUpdateSyncsMappedForumTags(t *testing.T) {
 	}
 	if got := *discord.edits[0].appliedTags; len(got) != 1 || got[0] != "tag-en" {
 		t.Fatalf("edited tags: %#v", got)
+	}
+}
+
+func TestThreadStateEchoDropsExpiredRecordsWhenANewOneIsAdded(t *testing.T) {
+	var tracker threadStateTracker
+	tracker.expect("thread", threadState{archived: true})
+	tracker.expect("thread", threadState{archived: true})
+	// Age both records past the echo window.
+	for i := range tracker.echo["thread"] {
+		tracker.echo["thread"][i].at = time.Now().Add(-2 * threadStateEchoTTL)
+	}
+	tracker.expect("thread", threadState{locked: true})
+	if got := len(tracker.echo["thread"]); got != 1 {
+		t.Fatalf("expired echoes were kept: %d records", got)
+	}
+	if !tracker.consume("thread", threadState{locked: true}) {
+		t.Fatal("the new echo must still be consumable")
+	}
+	if _, ok := tracker.echo["thread"]; ok {
+		t.Fatal("consuming the only echo must drop the entry")
 	}
 }

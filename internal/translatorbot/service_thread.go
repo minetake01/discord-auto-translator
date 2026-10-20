@@ -39,7 +39,7 @@ func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID
 		SourceMessageID: sourceThreadID,
 		Name:            name,
 		AppliedTags:     appliedTags,
-	})
+	}, liveTranslation)
 	return err
 }
 
@@ -52,7 +52,7 @@ func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sour
 		Name:                  name,
 		AppliedTags:           appliedTags,
 		DeferWithoutSourceMsg: true,
-	})
+	}, liveTranslation)
 	return err
 }
 
@@ -60,7 +60,7 @@ func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sour
 // translating the thread name and initial message together when present.
 // Returns whether any target thread was created together with its initial
 // message so the caller can skip mirroring that message again.
-func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest) (bool, error) {
+func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest, scope translationScope) (bool, error) {
 	s.threadMu.Lock()
 	defer s.threadMu.Unlock()
 
@@ -88,14 +88,14 @@ func (s *Service) syncThreadCreate(ctx context.Context, req threadCreateRequest)
 			if existingThreadTarget(existing, source.GroupID, target.ChannelID) {
 				continue
 			}
-			held, err := s.liveTargetHeld(ctx, source.GroupID, target.ChannelID)
+			held, err := s.liveTargetHeld(ctx, source.GroupID, target.ChannelID, scope)
 			if err != nil {
 				return false, err
 			}
 			if held {
 				continue
 			}
-			created, err := s.createThreadForTarget(ctx, req, source, target)
+			created, err := s.createThreadForTarget(ctx, req, source, target, scope)
 			if err != nil {
 				return false, err
 			}
@@ -121,7 +121,7 @@ type targetThreadPlan struct {
 
 // createThreadForTarget translates the thread name and initial message in one
 // call for one target channel, creates the thread there, and records the links.
-func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel) (bool, error) {
+func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateRequest, source, target GroupChannel, scope translationScope) (bool, error) {
 	plan, err := s.resolveTargetThreadPlan(ctx, source.GroupID, req, target)
 	if err != nil {
 		return false, err
@@ -147,9 +147,9 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 			excludeMessageID: messageID,
 			author:           req.InitialMessageUsername,
 			threadName:       req.Name,
-		})
+		}, scope)
 	}
-	threadTranslations, err := s.translateThreadCreateWithLimit(ctx, req.GuildID, req.Name, req.InitialMessageText, languages, contextFn)
+	threadTranslations, err := s.translateThreadCreateWithLimit(ctx, req.GuildID, req.Name, req.InitialMessageText, languages, contextFn, scope)
 	if err != nil {
 		return false, err
 	}
@@ -162,7 +162,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 	if req.InitialMessagePoll != nil {
 		question := strings.TrimSpace(req.InitialMessagePoll.Question)
 		answers := pollAnswerTexts(req.InitialMessagePoll)
-		pollTranslations, err := s.translatePollWithLimit(ctx, req.GuildID, question, answers, languages, contextFn)
+		pollTranslations, err := s.translatePollWithLimit(ctx, req.GuildID, question, answers, languages, contextFn, scope)
 		if err != nil {
 			return false, err
 		}
@@ -184,7 +184,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, true)
 	}
 
-	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds, plan)
+	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds, plan, scope)
 	if err != nil {
 		return false, err
 	}
@@ -258,7 +258,7 @@ func (s *Service) resolveTargetThreadPlan(ctx context.Context, groupID string, r
 // For forum/media targets the thread starts with the translated initial
 // message. For text/news targets it is attached to the mirrored source
 // message when one exists.
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed, plan targetThreadPlan) (string, string, error) {
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed, plan targetThreadPlan, scope translationScope) (string, string, error) {
 	switch plan.action {
 	case targetThreadForum:
 		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
@@ -273,7 +273,7 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		var descriptions []string
 		alts, altErr := s.translateAttachmentAltsWithLimit(ctx, req.GuildID, loaded, []string{target.Language}, func() TranslationContext {
 			return TranslationContext{GuildID: req.GuildID, MessageID: req.InitialMessageID}
-		})
+		}, scope)
 		if altErr == nil {
 			descriptions = alts[target.Language]
 		}
@@ -281,9 +281,11 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			content = name
 		}
-		if content, err = finishMirrorContent(req.InitialMessageID, content, req.Timestamp && req.InitialMessageID != ""); err != nil {
+		final, err := finishMirrorContent(req.InitialMessageID, content, req.Timestamp && req.InitialMessageID != "")
+		if err != nil {
 			return "", "", err
 		}
+		content = string(final)
 		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
 		if err != nil {
 			return "", "", err
@@ -379,7 +381,7 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 	} else {
 		req.SourceMessageID = m.ChannelID
 	}
-	return s.syncThreadCreate(ctx, req)
+	return s.syncThreadCreate(ctx, req, liveTranslation)
 }
 
 func (s *Service) handleThreadMessageCreate(ctx context.Context, m DiscordMessage) error {
@@ -405,7 +407,7 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	if target == nil {
 		return nil
 	}
-	held, err := s.liveTargetHeld(ctx, thread.GroupID, target.ChannelID)
+	held, err := s.liveTargetHeld(ctx, thread.GroupID, target.ChannelID, liveTranslation)
 	if err != nil || held {
 		return err
 	}
@@ -418,10 +420,10 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	}
 	sourceLanguage := languageForChannel(targets, thread.SourceChannelID)
 	contextFn := func() TranslationContext {
-		return s.translationContextForMessage(ctx, m, thread.GroupID, thread.SourceChannelID, m.ChannelID, s.resolveThreadName(m))
+		return s.translationContextForMessage(ctx, m, thread.GroupID, thread.SourceChannelID, m.ChannelID, s.resolveThreadName(m), liveTranslation)
 	}
 	dests := []mirrorDestination{destinationForThread(*target, thread.TargetThreadID)}
-	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests)
+	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests, liveTranslation)
 }
 
 type pendingThreadEdit struct {
@@ -473,7 +475,7 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 			for _, p := range pending {
 				languages = append(languages, p.target.Language)
 			}
-			translations, err = s.translateWithLimit(ctx, guildID, name, nil, languages, contextFn)
+			translations, err = s.translateWithLimit(ctx, guildID, name, nil, languages, contextFn, liveTranslation)
 			if err != nil {
 				if errors.Is(err, errTranslationRateLimited) {
 					translations = MultiTranslationResult{}

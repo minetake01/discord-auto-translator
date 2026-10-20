@@ -98,6 +98,7 @@ Secara default, perintah administratif hanya dapat dijalankan oleh anggota denga
 |---|---|---|
 | `/new-channel` | Membuat grup penerjemahan baru dan mendaftarkan saluran | `language` (wajib): Kode bahasa BCP-47<br>`channel` (opsional): Saluran target (default: saluran saat ini)<br>`group` (opsional): Nama grup (default: nama saluran) |
 | `/join-channel` | Menambahkan saluran ke grup penerjemahan yang ada | `group` (wajib): Nama grup target<br>`language` (wajib): Kode bahasa BCP-47<br>`channel` (opsional): Saluran target (default: saluran saat ini)<br>`backfill` (opsional): Menerjemahkan riwayat pesan grup yang sudah ada ke saluran (setelah estimasi dan konfirmasi) |
+| `/backfill` | Mengelola terjemahan riwayat sebuah saluran | Subperintah: `stop`<br>`group` (wajib): Nama grup<br>`channel` (opsional): Saluran yang terjemahannya dihentikan (default: saluran saat ini) |
 | `/leave-channel` | Menghapus saluran dari grup | `group` (wajib): Nama grup<br>`channel` (opsional): Saluran target (default: saluran saat ini) |
 | `/delete-group` | Menghapus grup penerjemahan secara menyeluruh | `group` (wajib): Nama grup yang akan dihapus |
 | `/list-groups` | Menampilkan semua grup penerjemahan dan saluran tertaut | Tidak ada |

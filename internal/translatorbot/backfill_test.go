@@ -548,3 +548,64 @@ func TestThreadStateChangeSyncsToPeersWithoutEchoing(t *testing.T) {
 		t.Fatal("a user change on the peer must reach the source")
 	}
 }
+
+func TestBackfillStopCancelsTheJobAndReleasesTheTarget(t *testing.T) {
+	ctx := context.Background()
+	f := newBackfillFixture(t, &echoTranslator{}, sourceMessage("100000000000000001", "a"))
+	stopped, err := f.store.CancelBackfillJob(ctx, "guild", "g", "en")
+	if err != nil || !stopped {
+		t.Fatalf("stopped = %v, err = %v", stopped, err)
+	}
+	if err := f.service.runBackfillJob(ctx, f.job); !errors.Is(err, errBackfillCanceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(f.discord.webhookSends()) != 0 {
+		t.Fatalf("a stopped job must not post: %q", sentContents(f.discord))
+	}
+	if held, _ := f.store.BackfillTargetHeld(ctx, "g", "en"); held {
+		t.Fatal("a stopped job must stop holding its target")
+	}
+	if stopped, err := f.store.CancelBackfillJob(ctx, "guild", "g", "en"); err != nil || stopped {
+		t.Fatalf("second stop = %v, err = %v", stopped, err)
+	}
+}
+
+func TestBackfillReleasesItsHoldLockAndMemberCacheWhenTheJobEnds(t *testing.T) {
+	f := newBackfillFixture(t, &echoTranslator{}, sourceMessage("100000000000000001", "a"))
+	f.run(t)
+
+	if held := len(f.service.backfill.holds); held != 0 {
+		t.Fatalf("finished job kept %d hold locks", held)
+	}
+	if f.discord.forgetMemberCacheCalls != 1 {
+		t.Fatalf("member cache drops = %d, want 1 per job", f.discord.forgetMemberCacheCalls)
+	}
+}
+
+func TestBackfillEstimateReportsALowerBoundWhenTheHistoryIsTooLarge(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", Language: "ja", WebhookID: "w", WebhookToken: "t",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discord := &fakeDiscordAPI{history: map[string][]DiscordMessage{}}
+	for i := 0; i <= backfillEstimateArchivedThreadLimit; i++ {
+		discord.publicThreads = append(discord.publicThreads, DiscordThread{
+			ID: fakeThreadID(i), ParentID: "ja", Name: "t", Archived: true,
+		})
+	}
+	service := NewService(store, discord, &echoTranslator{})
+
+	est, err := service.EstimateBackfill(ctx, "guild", "g")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !est.Truncated {
+		t.Fatalf("estimate = %#v, want a truncated scan", est)
+	}
+	if got := estimateCount(est); got != fmt.Sprintf("%d+", est.Messages) {
+		t.Fatalf("estimate count = %q", got)
+	}
+}

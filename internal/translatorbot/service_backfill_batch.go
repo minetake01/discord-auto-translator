@@ -3,7 +3,6 @@ package translatorbot
 import (
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 )
@@ -104,7 +103,7 @@ func (r *backfillRunner) flushBatch(ctx context.Context, items []backfillItem) e
 		return nil
 	}
 	var translations []string
-	err := r.retryTransient(ctx, func() error {
+	err := r.retry.do(ctx, func() error {
 		var err error
 		translations, err = r.translateBatch(ctx, items)
 		return err
@@ -114,7 +113,7 @@ func (r *backfillRunner) flushBatch(ctx context.Context, items []backfillItem) e
 			return err
 		}
 		if len(items) == 1 {
-			return r.skip(ctx, items[0].dest, items[0].m, err)
+			return r.poster.skip(ctx, items[0].dest, items[0].m, err)
 		}
 		half := len(items) / 2
 		if err := r.flushBatch(ctx, items[:half]); err != nil {
@@ -124,30 +123,11 @@ func (r *backfillRunner) flushBatch(ctx context.Context, items []backfillItem) e
 	}
 	alts := r.batchAlts(ctx, items)
 	for i, item := range items {
-		if err := r.postBatchItem(ctx, item, translations[i], alts[i]); err != nil {
+		if err := r.poster.batchItem(ctx, item, translations[i], alts[i]); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (r *backfillRunner) postBatchItem(ctx context.Context, item backfillItem, translated string, alts []string) error {
-	m, dest := item.m, item.dest
-	content, err := r.s.mirrorContent(ctx, m, dest.targetID, dest.channel.Language, translated, imagesNotReuploaded(m.Attachments, item.loaded))
-	if err == nil {
-		var result WebhookSendResult
-		result, err = r.s.sendMirror(ctx, m, r.run.job.GroupID, dest, content, nil, webhookFilesForImages(item.loaded, alts), m.Content)
-		if err == nil {
-			if err := r.applyPostedState(ctx, m, dest.targetID, result.MessageID); err != nil {
-				log.Printf("backfill job %d: reactions/pins for %s: %v", r.run.job.ID, m.ID, err)
-			}
-			return nil
-		}
-	}
-	if isPermanentBackfillError(err) {
-		return r.skip(ctx, item.dest, m, err)
-	}
-	return err
 }
 
 // translateBatch sends one batch request. Messages without translatable
@@ -210,7 +190,7 @@ func (r *backfillRunner) translateBatch(ctx context.Context, items []backfillIte
 			guildID: first.GuildID, groupID: r.run.job.GroupID,
 			contextChannelID: contextChannelID, historyChannelID: first.ChannelID,
 			excludeMessageID: first.ID, threadName: threadName,
-		})
+		}, r.scope)
 		tc.ReplyChain = replyContext
 		return tc
 	}
@@ -220,7 +200,7 @@ func (r *backfillRunner) translateBatch(ctx context.Context, items []backfillIte
 	}
 	prepared, err := r.s.prepareTranslation(ctx, first.GuildID, strings.Join(lookup, "\n"), []string{language}, contextFn, func(_ []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return prepareBatchTranslation(language, messages, tc, glossary)
-	}, vision)
+	}, vision, r.scope)
 	if err != nil {
 		return nil, err
 	}
@@ -253,11 +233,11 @@ func (r *backfillRunner) batchAlts(ctx context.Context, items []backfillItem) []
 	}
 	language := items[0].dest.channel.Language
 	var descriptions map[string][]string
-	err := r.retryTransient(ctx, func() error {
+	err := r.retry.do(ctx, func() error {
 		var err error
 		descriptions, err = r.s.translateAttachmentAltsWithLimit(ctx, items[0].m.GuildID, loaded, []string{language}, func() TranslationContext {
 			return TranslationContext{GuildID: items[0].m.GuildID, MessageID: items[0].m.ID}
-		})
+		}, r.scope)
 		return err
 	})
 	translated := descriptions[language]

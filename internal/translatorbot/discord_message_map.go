@@ -36,6 +36,18 @@ type memberCache struct {
 	members map[string]*discordgo.Member
 }
 
+// ForgetMemberCache drops the members cached while mapping history pages.
+func (d DiscordGoAPI) ForgetMemberCache() {
+	d.members.forget()
+}
+
+// forget drops every cached member; the next lookup fetches again.
+func (c *memberCache) forget() {
+	c.mu.Lock()
+	c.members = nil
+	c.mu.Unlock()
+}
+
 func (c *memberCache) lookup(session *discordgo.Session, guildID, userID string) *discordgo.Member {
 	if session == nil || guildID == "" || userID == "" {
 		return nil

@@ -20,8 +20,6 @@ type BackfillJob struct {
 	CreatedAt       time.Time
 }
 
-var ErrBackfillJobExists = errors.New("a backfill job already exists for this channel")
-
 // JoinChannelWithBackfill registers the channel and its backfill job in one
 // transaction so no live message can reach the target between the two.
 func (s *Store) JoinChannelWithBackfill(ctx context.Context, ch GroupChannel, requestedBy string) (BackfillJob, error) {
@@ -40,9 +38,6 @@ func (s *Store) JoinChannelWithBackfill(ctx context.Context, ch GroupChannel, re
 	res, err := tx.ExecContext(ctx, `INSERT INTO backfill_jobs(guild_id,group_id,target_channel_id,requested_by,created_at) VALUES(?,?,?,?,?)`,
 		job.GuildID, job.GroupID, job.TargetChannelID, job.RequestedBy, job.CreatedAt.UnixMilli())
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			return BackfillJob{}, ErrBackfillJobExists
-		}
 		return BackfillJob{}, err
 	}
 	if job.ID, err = res.LastInsertId(); err != nil {
@@ -118,6 +113,19 @@ func (s *Store) BackfillTargetHeld(ctx context.Context, groupID, targetChannelID
 func (s *Store) FinishBackfillJob(ctx context.Context, jobID int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM backfill_jobs WHERE id=?`, jobID)
 	return err
+}
+
+// CancelBackfillJob removes the pending job of a target channel and reports
+// whether there was one. A running worker notices the missing row and stops
+// before posting anything else.
+func (s *Store) CancelBackfillJob(ctx context.Context, guildID, groupID, targetChannelID string) (bool, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM backfill_jobs WHERE guild_id=? AND group_id=? AND target_channel_id=?`,
+		guildID, groupID, targetChannelID)
+	if err != nil {
+		return false, err
+	}
+	removed, err := res.RowsAffected()
+	return removed > 0, err
 }
 
 func (s *Store) MarkBackfillSkipped(ctx context.Context, jobID int64, sourceChannelID, sourceMessageID, reason string) error {

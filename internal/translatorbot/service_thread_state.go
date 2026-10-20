@@ -44,21 +44,32 @@ func (t *threadStateTracker) expect(threadID string, state threadState) {
 	if t.echo == nil {
 		t.echo = make(map[string][]threadStateEcho)
 	}
-	t.echo[threadID] = append(t.echo[threadID], threadStateEcho{state: state, at: time.Now()})
+	// Drop the records whose echo never arrived before adding another one, so
+	// a thread the bot changes rarely does not keep them all.
+	now := time.Now()
+	t.echo[threadID] = append(unexpiredEchoes(t.echo[threadID], now), threadStateEcho{state: state, at: now})
+}
+
+// unexpiredEchoes keeps the records that can still match an echo.
+func unexpiredEchoes(echoes []threadStateEcho, now time.Time) []threadStateEcho {
+	kept := echoes[:0]
+	for _, e := range echoes {
+		if now.Sub(e.at) <= threadStateEchoTTL {
+			kept = append(kept, e)
+		}
+	}
+	return kept
 }
 
 // consume reports whether state is the echo of a change the bot made.
 func (t *threadStateTracker) consume(threadID string, state threadState) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	pending := t.echo[threadID]
 	now := time.Now()
+	pending := unexpiredEchoes(t.echo[threadID], now)
 	kept := pending[:0]
 	found := false
 	for _, e := range pending {
-		if now.Sub(e.at) > threadStateEchoTTL {
-			continue
-		}
 		if !found && e.state == state {
 			found = true
 			continue
@@ -149,10 +160,10 @@ func (s *Service) sendWebhookMessage(target GroupChannel, send WebhookSend) (Web
 	return result, err
 }
 
-func (s *Service) editWebhookMessage(_ context.Context, target GroupChannel, link MessageLink, content string) error {
+func (s *Service) editWebhookMessage(_ context.Context, target GroupChannel, link MessageLink, content mirrorText) error {
 	threadID := threadIDForWebhook(link, &target)
 	return s.withOpenThread(link.TargetChannelID, func() error {
-		return s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadID, content)
+		return s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadID, string(content))
 	})
 }
 

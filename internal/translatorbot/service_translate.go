@@ -105,7 +105,7 @@ func (s *Service) notifyTranslationIssue(channelID, messageID, language string, 
 	_ = s.discord.SendChannelMessage(channelID, messageID, content)
 }
 
-func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error), reservedVision []visionImage) (preparedTranslation, error) {
+func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error), reservedVision []visionImage, scope translationScope) (preparedTranslation, error) {
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
 	if err != nil {
 		return preparedTranslation{}, err
@@ -126,7 +126,7 @@ func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText st
 		prepared.buildUserPrompt()
 	}
 	prepared.visionImages = append(append(append([]visionImage{}, reservedVision...), contextVision...), ogpVision...)
-	if err := s.checkPreparedTranslationRateLimit(ctx, guildID, prepared); err != nil {
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared, scope); err != nil {
 		return preparedTranslation{}, err
 	}
 	return prepared, nil
@@ -137,7 +137,7 @@ func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText st
 // Messages without translatable text are returned as-is without calling the
 // translator, in which case contextFn is never invoked.
 // Returns errTranslationRateLimited when the guild is over budget.
-func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext) (MultiTranslationResult, error) {
+func (s *Service) translateWithLimit(ctx context.Context, guildID, content string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext, scope translationScope) (MultiTranslationResult, error) {
 	if !needsTranslation(content) {
 		translations := make(map[string]string, len(languages))
 		for _, language := range languages {
@@ -148,7 +148,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	prepared, err := s.prepareTranslation(ctx, guildID, content, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		tc.Attachments = translationAttachmentsFromLoaded(loaded)
 		return prepareMultiTranslation(langs, content, tc, glossary)
-	}, visionFromLoaded(loaded))
+	}, visionFromLoaded(loaded), scope)
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
@@ -165,7 +165,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	return result, nil
 }
 
-func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext) (map[string][]string, error) {
+func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext, scope translationScope) (map[string][]string, error) {
 	attachments := translationAttachmentsFromLoaded(loaded)
 	if translatableAttachmentCount(attachments) == 0 {
 		return nil, nil
@@ -192,7 +192,7 @@ func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID 
 		return nil, nil
 	}
 	prepared.visionImages = visionFromLoaded(loaded)
-	if err := s.checkPreparedTranslationRateLimit(ctx, guildID, prepared); err != nil {
+	if err := s.checkPreparedTranslationRateLimit(guildID, prepared, scope); err != nil {
 		return nil, err
 	}
 	result, err := s.translator.TranslateAttachmentAlts(ctx, prepared)
@@ -213,14 +213,14 @@ type attachmentAltOutcome struct {
 	Err          error
 }
 
-func (s *Service) startAttachmentAltTranslation(ctx context.Context, guildID string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext) <-chan attachmentAltOutcome {
+func (s *Service) startAttachmentAltTranslation(ctx context.Context, guildID string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext, scope translationScope) <-chan attachmentAltOutcome {
 	ch := make(chan attachmentAltOutcome, 1)
 	if translatableAttachmentCount(translationAttachmentsFromLoaded(loaded)) == 0 {
 		ch <- attachmentAltOutcome{}
 		return ch
 	}
 	go func() {
-		descriptions, err := s.translateAttachmentAltsWithLimit(ctx, guildID, loaded, languages, contextFn)
+		descriptions, err := s.translateAttachmentAltsWithLimit(ctx, guildID, loaded, languages, contextFn, scope)
 		ch <- attachmentAltOutcome{Descriptions: descriptions, Err: err}
 	}()
 	return ch
@@ -275,7 +275,7 @@ func (s *Service) patchWebhookAttachmentDescriptions(posted postedWebhookMirror,
 	return s.discord.EditWebhookAttachments(posted.channel.WebhookID, posted.channel.WebhookToken, posted.messageID, posted.threadID, edits)
 }
 
-func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question string, answers []string, languages []string, contextFn func() TranslationContext) (map[string]PollTranslation, error) {
+func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question string, answers []string, languages []string, contextFn func() TranslationContext, scope translationScope) (map[string]PollTranslation, error) {
 	translations := make(map[string]PollTranslation, len(languages))
 	needsTranslation := hasTranslatableText(question) || slices.ContainsFunc(answers, hasTranslatableText)
 	if !needsTranslation {
@@ -289,7 +289,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 	pollText := strings.Join(append([]string{question}, answers...), "\n")
 	prepared, err := s.prepareTranslation(ctx, guildID, pollText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return preparePollTranslation(langs, question, answers, tc, glossary)
-	}, nil)
+	}, nil, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -311,7 +311,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 // translateThreadCreateWithLimit translates a thread name and optional initial
 // message in one translator call. When neither field has translatable text,
 // both are returned as-is without calling the translator.
-func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, name, message string, languages []string, contextFn func() TranslationContext) (map[string]ThreadCreateTranslation, error) {
+func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, name, message string, languages []string, contextFn func() TranslationContext, scope translationScope) (map[string]ThreadCreateTranslation, error) {
 	translations := make(map[string]ThreadCreateTranslation, len(languages))
 	if !hasTranslatableText(name) && !hasTranslatableText(message) {
 		for _, language := range languages {
@@ -325,7 +325,7 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	}
 	prepared, err := s.prepareTranslation(ctx, guildID, lookupText, languages, contextFn, func(langs []string, tc TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 		return prepareThreadCreateTranslation(langs, name, message, tc, glossary)
-	}, nil)
+	}, nil, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -347,12 +347,12 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 // checkPreparedTranslationRateLimit admits a request against the guild token
 // budget. Backfill shares the budget with live translation but only uses
 // part of it, so a long backfill never starves live messages.
-func (s *Service) checkPreparedTranslationRateLimit(ctx context.Context, guildID string, prepared preparedTranslation) error {
+func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared preparedTranslation, scope translationScope) error {
 	if s.rateLimiter == nil {
 		return nil
 	}
 	fraction := 1.0
-	if backfillRunFrom(ctx) != nil {
+	if scope.backfill != nil {
 		fraction = backfillRateLimitShare
 	}
 	if !s.rateLimiter.AllowShare(guildID, estimatePreparedTokens(prepared), fraction) {
@@ -367,8 +367,8 @@ func (s *Service) checkPreparedTranslationRateLimit(ctx context.Context, guildID
 // translationFailure reports a failed live translation to the source channel
 // and decides whether the caller should surface the error. Backfill never
 // posts notices and needs rate-limit errors back so it can wait and retry.
-func (s *Service) translationFailure(ctx context.Context, m DiscordMessage, sourceLanguage string, err error) error {
-	if backfillRunFrom(ctx) != nil {
+func (s *Service) translationFailure(ctx context.Context, m DiscordMessage, sourceLanguage string, err error, scope translationScope) error {
+	if scope.backfill != nil {
 		return err
 	}
 	s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)

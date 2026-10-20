@@ -62,6 +62,7 @@ type fakeDiscordAPI struct {
 	publicThreads          []DiscordThread
 	sendErr                func(WebhookSend) error
 	editErr                func(webhookEditCall) error
+	forgetMemberCacheCalls int
 }
 type threadStateCall struct {
 	threadID string
@@ -307,16 +308,33 @@ func (f *fakeDiscordAPI) ChannelMessagePage(guildID, channelID, beforeID, afterI
 	}
 	return out, nil
 }
-func (f *fakeDiscordAPI) PublicThreads(guildID string, parentIDs []string, includeArchived bool) ([]DiscordThread, error) {
+func (f *fakeDiscordAPI) PublicThreads(guildID string, parentIDs []string, includeArchived bool, archivedLimit int) (DiscordThreads, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var out []DiscordThread
+	var out DiscordThreads
+	archived := 0
 	for _, thread := range f.publicThreads {
-		if slices.Contains(parentIDs, thread.ParentID) && (includeArchived || !thread.Archived) {
-			out = append(out, thread)
+		if !slices.Contains(parentIDs, thread.ParentID) || (!includeArchived && thread.Archived) {
+			continue
 		}
+		if thread.Archived {
+			if archivedLimit > 0 && archived >= archivedLimit {
+				out.Truncated = true
+				continue
+			}
+			archived++
+		}
+		out.Threads = append(out.Threads, thread)
 	}
 	return out, nil
+}
+
+// ForgetMemberCache implements DiscordAPI; the fake keeps no member cache but
+// records that the cache was dropped.
+func (f *fakeDiscordAPI) ForgetMemberCache() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.forgetMemberCacheCalls++
 }
 
 type echoTranslator struct {

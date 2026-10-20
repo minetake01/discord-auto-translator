@@ -98,6 +98,7 @@ Theo mặc định, các lệnh quản trị chỉ có thể được thực hi�
 |---|---|---|
 | `/new-channel` | Tạo nhóm dịch mới và đăng ký kênh | `language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại)<br>`group` (tùy chọn): Tên nhóm (mặc định: tên kênh) |
 | `/join-channel` | Thêm kênh vào nhóm dịch hiện có | `group` (bắt buộc): Tên nhóm mục tiêu<br>`language` (bắt buộc): Mã ngôn ngữ BCP-47<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại)<br>`backfill` (tùy chọn): Dịch lịch sử tin nhắn hiện có của nhóm vào kênh (sau khi xem ước tính và xác nhận) |
+| `/backfill` | Quản lý việc dịch lịch sử của một kênh | Lệnh con: `stop`<br>`group` (bắt buộc): Tên nhóm<br>`channel` (tùy chọn): Kênh cần dừng dịch (mặc định: kênh hiện tại) |
 | `/leave-channel` | Rút một kênh ra khỏi nhóm dịch | `group` (bắt buộc): Tên nhóm<br>`channel` (tùy chọn): Kênh mục tiêu (mặc định: kênh hiện tại) |
 | `/delete-group` | Xóa hoàn toàn một nhóm dịch thuật | `group` (bắt buộc): Tên nhóm cần xóa |
 | `/list-groups` | Liệt kê tất cả các nhóm dịch và kênh liên kết | Không có |

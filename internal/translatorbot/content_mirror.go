@@ -29,9 +29,15 @@ func withTimestampLine(sourceMessageID, content string) (string, error) {
 	return line + "\n" + content, nil
 }
 
-// finishMirrorContent adds the timestamp line when requested and enforces
-// the Discord content limit on the complete text.
-func finishMirrorContent(sourceMessageID, content string, timestamp bool) (string, error) {
+// mirrorText is a mirror body that already carries its timestamp line and fits
+// the Discord content limit. Only content assembly produces it, and sends and
+// edits accept nothing else, so a new path cannot skip the final step.
+type mirrorText string
+
+// finishMirrorContent turns an assembled mirror body into its final form: the
+// timestamp line when the mirror shows the source posting time, then the
+// Discord content limit on the complete text.
+func finishMirrorContent(sourceMessageID, content string, timestamp bool) (mirrorText, error) {
 	if timestamp {
 		var err error
 		if content, err = withTimestampLine(sourceMessageID, content); err != nil {
@@ -41,7 +47,7 @@ func finishMirrorContent(sourceMessageID, content string, timestamp bool) (strin
 	if n := utf8.RuneCountInString(content); n > discordMessageContentLimit {
 		return "", fmt.Errorf("%w: %d characters, limit %d", errContentTooLong, n, discordMessageContentLimit)
 	}
-	return content, nil
+	return mirrorText(content), nil
 }
 
 func dropTimestampLine(lines []string) []string {

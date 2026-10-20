@@ -560,3 +560,41 @@ func viewOriginalInteraction(guildID, channelID, messageID string, member *disco
 		},
 	}
 }
+
+func TestBackfillStopCommandStopsTheJobOfAChannel(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	if err := store.CreateGroupWithChannel(ctx, TranslationGroup{ID: "g", GuildID: "guild", DisplayName: "g", CreatedBy: "u"}, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "ja", Language: "ja", WebhookID: "w-ja", WebhookToken: "t-ja",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.JoinChannelWithBackfill(ctx, GroupChannel{
+		GroupID: "g", GuildID: "guild", ChannelID: "en", Language: "en", WebhookID: "w-en", WebhookToken: "t-en",
+	}, "u"); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewCommandHandler(store, &fakeDiscordAPI{})
+	responses := captureResponses(handler)
+	stop := func() {
+		handler.Handle(nil, slashCommandInteraction("guild", "backfill", []*discordgo.ApplicationCommandInteractionDataOption{
+			{Name: "stop", Type: discordgo.ApplicationCommandOptionSubCommand, Options: []*discordgo.ApplicationCommandInteractionDataOption{
+				{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "g"},
+				{Name: "channel", Type: discordgo.ApplicationCommandOptionChannel, Value: "en"},
+			}},
+		}))
+	}
+
+	stop()
+	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillStopped, "g", "en"); got != want {
+		t.Fatalf("stop response = %q, want %q", got, want)
+	}
+	if jobs, err := store.BackfillJobs(ctx); err != nil || len(jobs) != 0 {
+		t.Fatalf("jobs = %#v, err = %v", jobs, err)
+	}
+
+	stop()
+	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillNotRunning, "g", "en"); got != want {
+		t.Fatalf("second stop response = %q, want %q", got, want)
+	}
+}

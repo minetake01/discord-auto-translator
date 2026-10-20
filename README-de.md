@@ -98,6 +98,7 @@ Standardmäßig können administrative Befehle nur von Benutzern mit **Administr
 |---|---|---|
 | `/new-channel` | Erstellt eine neue Übersetzungsgruppe und registriert einen Kanal | `language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal)<br>`group` (optional): Gruppenname (Standard: Kanalname) |
 | `/join-channel` | Fügt einen Kanal zu einer bestehenden Gruppe hinzu | `group` (erforderlich): Gruppenname<br>`language` (erforderlich): BCP-47 Sprachcode<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal)<br>`backfill` (optional): Übersetzt den bisherigen Verlauf der Gruppe in den Kanal (nach Schätzung und Bestätigung) |
+| `/backfill` | Übersetzung des Verlaufs eines Kanals verwalten | Unterbefehl: `stop`<br>`group` (erforderlich): Gruppenname<br>`channel` (optional): Kanal, dessen Übersetzung gestoppt wird (Standard: aktueller Kanal) |
 | `/leave-channel` | Entfernt einen Kanal aus einer Gruppe | `group` (erforderlich): Gruppenname<br>`channel` (optional): Zielkanal (Standard: aktueller Kanal) |
 | `/delete-group` | Löscht eine Übersetzungsgruppe vollständig | `group` (erforderlich): Name der zu löschenden Gruppe |
 | `/list-groups` | Listet alle Übersetzungsgruppen und verknüpften Kanäle auf | Keine |

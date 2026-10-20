@@ -131,7 +131,10 @@ func (h *CommandHandler) handleJoinWithBackfill(s *discordgo.Session, i *discord
 	}
 	id := h.pendingBackfills.put(pendingBackfill{channel: channel, requester: interactionUserID(i), createdAt: time.Now()})
 	content := localizedUIStringf(locale, uiKeyBackfillEstimate, channel.GroupID, channel.ChannelID,
-		estimate.Messages, estimate.Images, estimate.InputTokens, estimate.OutputTokens, formatEstimateDuration(estimate.Duration))
+		estimateCount(estimate), estimate.Images, estimate.InputTokens, estimate.OutputTokens, formatEstimateDuration(estimate.Duration))
+	if estimate.Truncated {
+		content += localizedUIString(locale, uiKeyBackfillEstimateLimited)
+	}
 	edit(content, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillStart), Style: discordgo.PrimaryButton, CustomID: backfillCustomStart + id},
 		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillCancel), Style: discordgo.SecondaryButton, CustomID: backfillCustomCancel + id},
@@ -168,6 +171,47 @@ func (h *CommandHandler) handleBackfillComponent(s *discordgo.Session, i *discor
 	update(localizedUIStringf(locale, uiKeyBackfillJoined, channel.GroupID, channel.ChannelID, channel.Language))
 }
 
+// handleBackfill dispatches the /backfill subcommands.
+func (h *CommandHandler) handleBackfill(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
+	if len(data.Options) != 1 || data.Options[0].Type != discordgo.ApplicationCommandOptionSubCommand {
+		log.Printf("backfill invalid subcommand payload")
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	subcommand := data.Options[0]
+	switch subcommand.Name {
+	case "stop":
+		h.handleBackfillStop(s, i, subcommand.Options)
+	default:
+		log.Printf("backfill unknown subcommand %q", subcommand.Name)
+		h.reply(s, i, uiKeyUnexpectedError)
+	}
+}
+
+// handleBackfillStop removes the job of a channel. The worker watches the job
+// row, so deleting it stops the run before the next message is posted and
+// live mirroring into the channel resumes immediately.
+func (h *CommandHandler) handleBackfillStop(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) {
+	ctx := context.Background()
+	groupID := strings.TrimSpace(optionString(options, "group"))
+	if groupID == "" {
+		h.reply(s, i, uiKeyGroupRequired)
+		return
+	}
+	channelID := optionChannel(options, "channel", i.ChannelID)
+	stopped, err := h.store.CancelBackfillJob(ctx, i.GuildID, groupID, channelID)
+	if err != nil {
+		log.Printf("backfill stop store: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
+		return
+	}
+	if !stopped {
+		h.reply(s, i, uiKeyBackfillNotRunning, groupID, channelID)
+		return
+	}
+	h.reply(s, i, uiKeyBackfillStopped, groupID, channelID)
+}
+
 // joinChannel creates the channel's webhook and registers it, together with
 // a backfill job when requested.
 func (h *CommandHandler) joinChannel(ctx context.Context, channel GroupChannel, requester string, backfill bool) error {
@@ -181,6 +225,15 @@ func (h *CommandHandler) joinChannel(ctx context.Context, channel GroupChannel, 
 		return err
 	}
 	return h.store.JoinChannel(ctx, channel)
+}
+
+// estimateCount formats the message count of an estimate. A truncated scan
+// only knows a lower bound, which the "+" marks.
+func estimateCount(estimate BackfillEstimate) string {
+	if estimate.Truncated {
+		return fmt.Sprintf("%d+", estimate.Messages)
+	}
+	return fmt.Sprintf("%d", estimate.Messages)
 }
 
 func formatEstimateDuration(d time.Duration) string {

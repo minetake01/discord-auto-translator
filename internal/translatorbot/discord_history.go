@@ -92,17 +92,33 @@ func (d DiscordGoAPI) ChannelMessagePage(guildID, channelID, beforeID, afterID s
 	return out, nil
 }
 
-// PublicThreads lists the public threads and forum posts under parentIDs:
-// the active ones and, when includeArchived is set, the archived ones.
-// Private threads are never listed.
-func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeArchived bool) ([]DiscordThread, error) {
+// DiscordThreads is one listing of public threads under parent channels.
+type DiscordThreads struct {
+	Threads []DiscordThread
+	// Truncated reports that archived threads were left unread because the
+	// caller's limit was reached; Threads is then a lower bound.
+	Truncated bool
+}
+
+// PublicThreads lists the public threads and forum posts under parentIDs: the
+// active ones and, when includeArchived is set, the archived ones. Private
+// threads are never listed.
+//
+// archivedLimit bounds how many archived threads are read across all parents;
+// zero reads them all. Every archived page costs a REST request, so callers
+// working against a deadline pass a limit and tell the user the count is a
+// lower bound.
+func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeArchived bool, archivedLimit int) (DiscordThreads, error) {
 	parents := make(map[string]bool, len(parentIDs))
 	for _, id := range parentIDs {
 		parents[id] = true
 	}
 	seen := map[string]bool{}
 	var out []DiscordThread
-	add := func(threads []*discordgo.Channel) {
+	// add appends the unseen threads of a page and reports how many of them
+	// were archived.
+	add := func(threads []*discordgo.Channel) int {
+		archived := 0
 		for _, ch := range threads {
 			if ch == nil || seen[ch.ID] || !parents[ch.ParentID] {
 				continue
@@ -111,41 +127,53 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 				continue
 			}
 			seen[ch.ID] = true
-			out = append(out, threadFromChannel(ch))
+			thread := threadFromChannel(ch)
+			if thread.Archived {
+				archived++
+			}
+			out = append(out, thread)
 		}
+		return archived
 	}
 	active, err := withDiscordRetryValue(func() (*discordgo.ThreadsList, error) {
 		return d.session.GuildThreadsActive(guildID)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list active threads: %w", err)
+		return DiscordThreads{}, fmt.Errorf("list active threads: %w", err)
 	}
 	add(active.Threads)
 	if !includeArchived {
-		return out, nil
+		return DiscordThreads{Threads: out}, nil
 	}
-	for _, parentID := range parentIDs {
+	archived := 0
+	for i, parentID := range parentIDs {
 		var before *time.Time
 		for {
 			page, err := withDiscordRetryValue(func() (*discordgo.ThreadsList, error) {
 				return d.session.ThreadsArchived(parentID, before, discordMessagePageLimit)
 			})
 			if err != nil {
-				return nil, fmt.Errorf("list archived threads in %s: %w", parentID, err)
+				return DiscordThreads{}, fmt.Errorf("list archived threads in %s: %w", parentID, err)
 			}
-			add(page.Threads)
+			archived += add(page.Threads)
 			if !page.HasMore || len(page.Threads) == 0 {
 				break
 			}
+			if archivedLimit > 0 && archived >= archivedLimit {
+				return DiscordThreads{Threads: out, Truncated: true}, nil
+			}
 			last := page.Threads[len(page.Threads)-1]
 			if last.ThreadMetadata == nil {
-				return nil, fmt.Errorf("archived thread %s has no metadata", last.ID)
+				return DiscordThreads{}, fmt.Errorf("archived thread %s has no metadata", last.ID)
 			}
 			stamp := last.ThreadMetadata.ArchiveTimestamp
 			before = &stamp
 		}
+		if archivedLimit > 0 && archived >= archivedLimit && i < len(parentIDs)-1 {
+			return DiscordThreads{Threads: out, Truncated: true}, nil
+		}
 	}
-	return out, nil
+	return DiscordThreads{Threads: out}, nil
 }
 
 func threadFromChannel(ch *discordgo.Channel) DiscordThread {

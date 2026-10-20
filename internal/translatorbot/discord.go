@@ -38,7 +38,8 @@ type DiscordAPI interface {
 	Channel(channelID string) (*discordgo.Channel, error)
 	SetThreadState(threadID string, archived, locked *bool) error
 	ChannelMessagePage(guildID, channelID, beforeID, afterID string) ([]DiscordMessage, error)
-	PublicThreads(guildID string, parentIDs []string, includeArchived bool) ([]DiscordThread, error)
+	PublicThreads(guildID string, parentIDs []string, includeArchived bool, archivedLimit int) (DiscordThreads, error)
+	ForgetMemberCache()
 }
 
 type WebhookSend struct {

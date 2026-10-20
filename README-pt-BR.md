@@ -98,6 +98,7 @@ Por padrão, os comandos de administração só podem ser executados por membros
 |---|---|---|
 | `/new-channel` | Cria um novo grupo de tradução e registra um canal | `language` (obrigatório): Código BCP-47 do idioma<br>`channel` (opcional): Canal alvo (padrão: canal atual)<br>`group` (opcional): Nome do grupo (padrão: nome do canal) |
 | `/join-channel` | Adiciona um canal a um grupo existente | `group` (obrigatório): Nome do grupo<br>`language` (obrigatório): Código BCP-47 do idioma<br>`channel` (opcional): Canal alvo (padrão: canal atual)<br>`backfill` (opcional): Traduz o histórico existente do grupo para o canal (após estimativa e confirmação) |
+| `/backfill` | Gerencia a tradução do histórico de um canal | Subcomando: `stop`<br>`group` (obrigatório): Nome do grupo<br>`channel` (opcional): Canal cuja tradução será interrompida (padrão: canal atual) |
 | `/leave-channel` | Remove um canal de um grupo | `group` (obrigatório): Nome do grupo<br>`channel` (opcional): Canal alvo (padrão: canal atual) |
 | `/delete-group` | Exclui um grupo de tradução por completo | `group` (obrigatório): Nome do grupo a excluir |
 | `/list-groups` | Lista todos os grupos e canais vinculados | Nenhuma |

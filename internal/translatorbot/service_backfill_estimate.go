@@ -12,6 +12,12 @@ const (
 	backfillRequestOverheadTokens = 3500
 	backfillRequestSeconds        = 20
 	backfillPostSeconds           = 1
+
+	// backfillEstimateArchivedThreadLimit bounds how many archived threads the
+	// estimate reads. Paging every archived thread of a large server would
+	// exhaust the interaction's time budget, so the estimate stops there and
+	// reports its numbers as lower bounds.
+	backfillEstimateArchivedThreadLimit = 500
 )
 
 // BackfillEstimate summarizes what a backfill into a new channel would do.
@@ -21,6 +27,9 @@ type BackfillEstimate struct {
 	InputTokens  int
 	OutputTokens int
 	Duration     time.Duration
+	// Truncated reports that the history was larger than the scan reads, so
+	// every count above is a lower bound.
+	Truncated bool
 }
 
 // EstimateBackfill scans every source of the group (parent channels and
@@ -95,11 +104,12 @@ func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string)
 		}
 	}
 	if len(allIDs) > 0 {
-		threads, err := s.discord.PublicThreads(guildID, allIDs, true)
+		listing, err := s.discord.PublicThreads(guildID, allIDs, true, backfillEstimateArchivedThreadLimit)
 		if err != nil {
 			return BackfillEstimate{}, err
 		}
-		families, err := (&backfillRunner{s: s, run: &backfillRun{job: BackfillJob{GroupID: groupID}}}).threadFamilies(ctx, threads)
+		est.Truncated = listing.Truncated
+		families, err := groupThreadFamilies(ctx, s.store, groupID, "", listing.Threads)
 		if err != nil {
 			return BackfillEstimate{}, err
 		}
