@@ -106,6 +106,18 @@ func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCre
 	h.respond(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
 }
 
+// updateInteraction replaces the interaction's message with new content;
+// nil components clear them.
+func (h *CommandHandler) updateInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, content string, components []discordgo.MessageComponent) {
+	if components == nil {
+		components = []discordgo.MessageComponent{}
+	}
+	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseUpdateMessage,
+		Data: &discordgo.InteractionResponseData{Content: content, Components: components},
+	})
+}
+
 // commandLocale resolves the invoking user's Discord client locale to a
 // supported catalog language for ephemeral command responses.
 func commandLocale(i *discordgo.InteractionCreate) string {

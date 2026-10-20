@@ -142,30 +142,24 @@ func (h *CommandHandler) handleJoinWithBackfill(s *discordgo.Session, i *discord
 // is ephemeral to the invoker, so the click needs no permission check.
 func (h *CommandHandler) handleBackfillComponent(s *discordgo.Session, i *discordgo.InteractionCreate, customID string) {
 	locale := commandLocale(i)
-	update := func(content string) {
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseUpdateMessage,
-			Data: &discordgo.InteractionResponseData{Content: content, Components: []discordgo.MessageComponent{}},
-		})
-	}
 	start := strings.HasPrefix(customID, backfillCustomStart)
 	id := strings.TrimPrefix(strings.TrimPrefix(customID, backfillCustomStart), backfillCustomCancel)
 	pending, ok := h.pendingBackfills.take(id)
 	if !ok {
-		update(localizedUIString(locale, uiKeyUnexpectedError))
+		h.updateInteraction(s, i, localizedUIString(locale, uiKeyUnexpectedError), nil)
 		return
 	}
 	channel := pending.channel
 	if !start {
-		update(localizedUIStringf(locale, uiKeyBackfillCanceled, channel.ChannelID))
+		h.updateInteraction(s, i, localizedUIStringf(locale, uiKeyBackfillCanceled, channel.ChannelID), nil)
 		return
 	}
 	if err := h.joinChannel(context.Background(), channel, pending.requester, true); err != nil {
-		update(h.groupErrorText(locale, "join-channel", channel.GroupID, err))
+		h.updateInteraction(s, i, h.groupErrorText(locale, "join-channel", channel.GroupID, err), nil)
 		return
 	}
 	h.backfill.StartBackfill(channel.GuildID)
-	update(localizedUIStringf(locale, uiKeyBackfillJoined, channel.GroupID, channel.ChannelID, channel.Language))
+	h.updateInteraction(s, i, localizedUIStringf(locale, uiKeyBackfillJoined, channel.GroupID, channel.ChannelID, channel.Language), nil)
 }
 
 // handleBackfill dispatches the /backfill subcommands.

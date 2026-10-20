@@ -271,13 +271,7 @@ func (h *CommandHandler) respondComponents(s *discordgo.Session, i *discordgo.In
 
 func (h *CommandHandler) updateForumTagUIMessage(s *discordgo.Session, i *discordgo.InteractionCreate, session *forumTagUISession) {
 	content, components := h.renderForumTagUI(session)
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-		Type: discordgo.InteractionResponseUpdateMessage,
-		Data: &discordgo.InteractionResponseData{
-			Content:    content,
-			Components: components,
-		},
-	})
+	h.updateInteraction(s, i, content, components)
 }
 
 func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string) {
@@ -374,13 +368,7 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 	data := i.MessageComponentData()
 	session := h.getTagUI(i.Message.ID)
 	if session == nil {
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseUpdateMessage,
-			Data: &discordgo.InteractionResponseData{
-				Content:    localizedUIString(commandLocale(i), uiKeyForumTagMapFinished),
-				Components: []discordgo.MessageComponent{},
-			},
-		})
+		h.updateInteraction(s, i, localizedUIString(commandLocale(i), uiKeyForumTagMapFinished), nil)
 		return
 	}
 	ctx := context.Background()
@@ -416,25 +404,13 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 		if session.PeerTagID == forumTagUINoneValue {
 			if err := h.store.DeleteForumTagMap(ctx, session.GuildID, session.GroupID, session.FocusChannelID, session.FocusTagID, session.PeerChannelID); err != nil {
 				log.Printf("delete forum tag map: %v", err)
-				_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Content:    localizedUIString(session.Locale, uiKeyUnexpectedError),
-						Components: []discordgo.MessageComponent{},
-					},
-				})
+				h.updateInteraction(s, i, localizedUIString(session.Locale, uiKeyUnexpectedError), nil)
 				return
 			}
 		} else {
 			if err := h.store.UpsertForumTagMap(ctx, session.GuildID, session.GroupID, session.FocusChannelID, session.FocusTagID, session.PeerChannelID, session.PeerTagID); err != nil {
 				log.Printf("upsert forum tag map: %v", err)
-				_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-					Type: discordgo.InteractionResponseUpdateMessage,
-					Data: &discordgo.InteractionResponseData{
-						Content:    localizedUIString(session.Locale, uiKeyUnexpectedError),
-						Components: []discordgo.MessageComponent{},
-					},
-				})
+				h.updateInteraction(s, i, localizedUIString(session.Locale, uiKeyUnexpectedError), nil)
 				return
 			}
 		}
@@ -446,13 +422,7 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 			content += "\n\n"
 		}
 		content += localizedUIString(session.Locale, uiKeyForumTagMapFinished)
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseUpdateMessage,
-			Data: &discordgo.InteractionResponseData{
-				Content:    content,
-				Components: []discordgo.MessageComponent{},
-			},
-		})
+		h.updateInteraction(s, i, content, nil)
 	default:
 		log.Printf("unknown forum tag ui custom_id: %s", data.CustomID)
 	}
