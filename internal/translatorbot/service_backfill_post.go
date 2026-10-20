@@ -100,7 +100,7 @@ func (p *backfillPoster) applyPostedStateTo(ctx context.Context, m DiscordMessag
 	if err == nil {
 		for _, link := range links {
 			if link.TargetChannelID == targetChannelID {
-				err = p.applyPostedState(ctx, m, link.TargetChannelID, link.TargetMessageID)
+				err = p.applyPostedStateToLinks(ctx, m, links, link.TargetChannelID, link.TargetMessageID)
 			}
 		}
 	}
@@ -109,16 +109,23 @@ func (p *backfillPoster) applyPostedStateTo(ctx context.Context, m DiscordMessag
 	}
 }
 
-// applyPostedState gives a new mirror the reactions and pin of its source:
-// every emoji on the source or its existing mirrors is added once by the bot,
-// and the mirror is pinned if any copy is pinned.
+// applyPostedState looks the source's links up itself and applies the state
+// to the mirror in targetChannelID.
 func (p *backfillPoster) applyPostedState(ctx context.Context, m DiscordMessage, targetChannelID, targetMessageID string) error {
-	emojis := append([]string(nil), m.Reactions...)
-	pinned := m.Pinned
 	links, err := p.s.store.MessageTargets(ctx, m.ChannelID, m.ID)
 	if err != nil {
 		return err
 	}
+	return p.applyPostedStateToLinks(ctx, m, links, targetChannelID, targetMessageID)
+}
+
+// applyPostedStateToLinks gives a new mirror the reactions and pin of its
+// source: every emoji on the source or its existing mirrors (the source's
+// links, already looked up by the caller) is added once by the bot, and the
+// mirror is pinned if any copy is pinned.
+func (p *backfillPoster) applyPostedStateToLinks(ctx context.Context, m DiscordMessage, links []MessageLink, targetChannelID, targetMessageID string) error {
+	emojis := append([]string(nil), m.Reactions...)
+	pinned := m.Pinned
 	for _, link := range links {
 		if link.TargetChannelID == targetChannelID {
 			continue
