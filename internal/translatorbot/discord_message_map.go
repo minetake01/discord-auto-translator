@@ -62,7 +62,9 @@ func (c *memberCache) lookup(session *discordgo.Session, guildID, userID string)
 	if ok {
 		return member
 	}
-	member, err := session.GuildMember(guildID, userID)
+	member, err := withDiscordRetryValue(func() (*discordgo.Member, error) {
+		return session.GuildMember(guildID, userID)
+	})
 	if err != nil {
 		member = nil
 	}
@@ -402,7 +404,9 @@ func forwardedMessageFields(ref *discordgo.MessageReference, snapshots []discord
 func (d DiscordGoAPI) threadContext(channelID string) (string, string) {
 	ch, err := d.session.State.Channel(channelID)
 	if err != nil || ch == nil {
-		ch, err = d.session.Channel(channelID)
+		ch, err = withDiscordRetryValue(func() (*discordgo.Channel, error) {
+			return d.session.Channel(channelID)
+		})
 		if err != nil || ch == nil {
 			return "", ""
 		}
@@ -423,7 +427,9 @@ func (d DiscordGoAPI) memberRoleColor(guildID string, member *discordgo.Member) 
 	}
 	guild, err := d.session.State.Guild(guildID)
 	if err != nil {
-		guild, err = d.session.Guild(guildID)
+		guild, err = withDiscordRetryValue(func() (*discordgo.Guild, error) {
+			return d.session.Guild(guildID)
+		})
 		if err != nil {
 			return 0
 		}

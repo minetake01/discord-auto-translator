@@ -90,7 +90,9 @@ func NewDiscordGoAPI(session *discordgo.Session) DiscordGoAPI {
 }
 
 func (d DiscordGoAPI) CurrentUserID() (string, error) {
-	user, err := d.session.User("@me")
+	user, err := withDiscordRetryValue(func() (*discordgo.User, error) {
+		return d.session.User("@me")
+	})
 	if err != nil {
 		return "", fmt.Errorf("fetch current Discord user: %w", err)
 	}
@@ -101,7 +103,9 @@ func (d DiscordGoAPI) CurrentUserID() (string, error) {
 }
 
 func (d DiscordGoAPI) GuildName(guildID string) (string, error) {
-	g, err := d.session.Guild(guildID)
+	g, err := withDiscordRetryValue(func() (*discordgo.Guild, error) {
+		return d.session.Guild(guildID)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -109,7 +113,9 @@ func (d DiscordGoAPI) GuildName(guildID string) (string, error) {
 }
 
 func (d DiscordGoAPI) GuildDescription(guildID string) (string, error) {
-	g, err := d.session.Guild(guildID)
+	g, err := withDiscordRetryValue(func() (*discordgo.Guild, error) {
+		return d.session.Guild(guildID)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -117,7 +123,9 @@ func (d DiscordGoAPI) GuildDescription(guildID string) (string, error) {
 }
 
 func (d DiscordGoAPI) ChannelName(channelID string) (string, error) {
-	ch, err := d.session.Channel(channelID)
+	ch, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.Channel(channelID)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -125,7 +133,9 @@ func (d DiscordGoAPI) ChannelName(channelID string) (string, error) {
 }
 
 func (d DiscordGoAPI) ChannelTopic(channelID string) (string, error) {
-	ch, err := d.session.Channel(channelID)
+	ch, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.Channel(channelID)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -175,16 +185,20 @@ func (d DiscordGoAPI) SendChannelMessage(channelID, replyToMessageID, content st
 	if replyToMessageID == "" {
 		return errors.New("send channel message: replyToMessageID is required")
 	}
-	_, err := d.session.ChannelMessageSendReply(channelID, content, &discordgo.MessageReference{
-		MessageID: replyToMessageID,
-		ChannelID: channelID,
+	_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
+		return d.session.ChannelMessageSendReply(channelID, content, &discordgo.MessageReference{
+			MessageID: replyToMessageID,
+			ChannelID: channelID,
+		})
 	})
 	return err
 }
 
 func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, error) {
 	name = sanitizeWebhookName(name)
-	w, err := d.session.WebhookCreate(channelID, name, "")
+	w, err := withDiscordRetryValue(func() (*discordgo.Webhook, error) {
+		return d.session.WebhookCreate(channelID, name, "")
+	})
 	if err != nil {
 		return "", "", err
 	}
@@ -425,19 +439,27 @@ func webhookMessageURL(webhookID, token, messageID, threadID string) string {
 }
 
 func (d DiscordGoAPI) AddReaction(channelID, messageID, emoji string) error {
-	return d.session.MessageReactionAdd(channelID, messageID, emoji)
+	return withDiscordRetry(func() error {
+		return d.session.MessageReactionAdd(channelID, messageID, emoji)
+	})
 }
 
 func (d DiscordGoAPI) RemoveOwnReaction(channelID, messageID, emoji string) error {
-	return d.session.MessageReactionRemove(channelID, messageID, emoji, "@me")
+	return withDiscordRetry(func() error {
+		return d.session.MessageReactionRemove(channelID, messageID, emoji, "@me")
+	})
 }
 
 func (d DiscordGoAPI) PinMessage(channelID, messageID string) error {
-	return d.session.ChannelMessagePin(channelID, messageID)
+	return withDiscordRetry(func() error {
+		return d.session.ChannelMessagePin(channelID, messageID)
+	})
 }
 
 func (d DiscordGoAPI) UnpinMessage(channelID, messageID string) error {
-	return d.session.ChannelMessageUnpin(channelID, messageID)
+	return withDiscordRetry(func() error {
+		return d.session.ChannelMessageUnpin(channelID, messageID)
+	})
 }
 
 type forumThreadStartPayload struct {
@@ -465,11 +487,13 @@ func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, init
 		}
 		if len(files) == 0 {
 			message := &discordgo.MessageSend{Content: initialMessage, Embeds: embeds, AllowedMentions: &discordgo.MessageAllowedMentions{}}
-			t, err := d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
-				Name:                name,
-				AutoArchiveDuration: 1440,
-				AppliedTags:         appliedTags,
-			}, message)
+			t, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+				return d.session.ForumThreadStartComplex(channelID, &discordgo.ThreadStart{
+					Name:                name,
+					AutoArchiveDuration: 1440,
+					AppliedTags:         appliedTags,
+				}, message)
+			})
 			if err != nil {
 				return "", "", err
 			}
@@ -489,7 +513,9 @@ func (d DiscordGoAPI) CreateThread(channelID string, channelType int, name, init
 		}
 		return t.ID, messageID, nil
 	}
-	t, err := d.session.ThreadStart(channelID, name, discordgo.ChannelTypeGuildPublicThread, 1440)
+	t, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.ThreadStart(channelID, name, discordgo.ChannelTypeGuildPublicThread, 1440)
+	})
 	if err != nil {
 		return "", "", err
 	}
@@ -517,7 +543,9 @@ func (d DiscordGoAPI) startForumThreadWithFiles(channelID, name, initialMessage 
 		return nil, err
 	}
 	endpoint := discordgo.EndpointChannelThreads(channelID)
-	response, err := d.session.RequestRaw("POST", endpoint, contentType, body, endpoint, 0)
+	response, err := withDiscordRetryValue(func() ([]byte, error) {
+		return d.session.RequestRaw("POST", endpoint, contentType, body, endpoint, 0)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +557,9 @@ func (d DiscordGoAPI) startForumThreadWithFiles(channelID, name, initialMessage 
 }
 
 func (d DiscordGoAPI) CreateThreadFromMessage(channelID, messageID, name string) (string, error) {
-	t, err := d.session.MessageThreadStart(channelID, messageID, name, 1440)
+	t, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.MessageThreadStart(channelID, messageID, name, 1440)
+	})
 	if err != nil {
 		return "", err
 	}
@@ -544,15 +574,21 @@ func (d DiscordGoAPI) EditThread(threadID, name string, appliedTags *[]string) e
 	if appliedTags != nil {
 		edit.AppliedTags = appliedTags
 	}
-	_, err := d.session.ChannelEdit(threadID, edit)
+	_, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.ChannelEdit(threadID, edit)
+	})
 	return err
 }
 
 func (d DiscordGoAPI) DeleteThread(threadID string) error {
-	_, err := d.session.ChannelDelete(threadID)
+	_, err := withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.ChannelDelete(threadID)
+	})
 	return err
 }
 
 func (d DiscordGoAPI) Channel(channelID string) (*discordgo.Channel, error) {
-	return d.session.Channel(channelID)
+	return withDiscordRetryValue(func() (*discordgo.Channel, error) {
+		return d.session.Channel(channelID)
+	})
 }

@@ -32,6 +32,10 @@ func isDiscordRetryable(err error) bool {
 	return code == http.StatusTooManyRequests || code >= http.StatusInternalServerError
 }
 
+// withDiscordRetry is the application-layer retry policy shared by every
+// Discord REST call in this package: 429 and 5xx responses are retried with
+// exponential backoff. It sits above discordgo's own transport-level retry
+// (MaxRestRetries on the session), which stays untouched.
 func withDiscordRetry(fn func() error) error {
 	_, err := withDiscordRetryValue(func() (struct{}, error) { return struct{}{}, fn() })
 	return err
