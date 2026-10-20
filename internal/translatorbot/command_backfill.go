@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -36,43 +35,29 @@ type BackfillService interface {
 type pendingBackfill struct {
 	channel   GroupChannel
 	requester string
-	createdAt time.Time
 }
 
 type pendingBackfills struct {
-	mu    sync.Mutex
-	items map[string]pendingBackfill
+	sessions *sessionStore[pendingBackfill]
 }
 
+func newPendingBackfills() pendingBackfills {
+	return pendingBackfills{sessions: newSessionStore[pendingBackfill](backfillPendingTTL)}
+}
+
+// put stores a pending backfill under a fresh random id and returns it.
 func (p *pendingBackfills) put(item pendingBackfill) string {
 	var raw [8]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		panic(err)
 	}
 	id := hex.EncodeToString(raw[:])
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.items == nil {
-		p.items = make(map[string]pendingBackfill)
-	}
-	for key, old := range p.items {
-		if time.Since(old.createdAt) > backfillPendingTTL {
-			delete(p.items, key)
-		}
-	}
-	p.items[id] = item
+	p.sessions.put(id, item)
 	return id
 }
 
 func (p *pendingBackfills) take(id string) (pendingBackfill, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	item, ok := p.items[id]
-	delete(p.items, id)
-	if ok && time.Since(item.createdAt) > backfillPendingTTL {
-		return pendingBackfill{}, false
-	}
-	return item, ok
+	return p.sessions.take(id)
 }
 
 func (h *CommandHandler) SetBackfill(backfill BackfillService) {
@@ -129,7 +114,7 @@ func (h *CommandHandler) handleJoinWithBackfill(s *discordgo.Session, i *discord
 		edit(localizedUIStringf(locale, uiKeyChannelJoined, channel.GroupID, channel.ChannelID, channel.Language), nil)
 		return
 	}
-	id := h.pendingBackfills.put(pendingBackfill{channel: channel, requester: interactionUserID(i), createdAt: time.Now()})
+	id := h.pendingBackfills.put(pendingBackfill{channel: channel, requester: interactionUserID(i)})
 	content := localizedUIStringf(locale, uiKeyBackfillEstimate, channel.GroupID, channel.ChannelID,
 		estimateCount(estimate), estimate.Images, estimate.InputTokens, estimate.OutputTokens, formatEstimateDuration(estimate.Duration))
 	edit(content, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -17,8 +16,7 @@ type CommandHandler struct {
 	// respond delivers the interaction response; replaced in tests.
 	respond func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
 
-	tagUIMu sync.Mutex
-	tagUI   map[string]forumTagUIEntry
+	tagUI *sessionStore[*forumTagUISession]
 
 	backfill         BackfillService
 	pendingBackfills pendingBackfills
@@ -26,10 +24,11 @@ type CommandHandler struct {
 
 func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
 	return &CommandHandler{
-		store:   store,
-		api:     api,
-		respond: respondInteraction,
-		tagUI:   make(map[string]forumTagUIEntry),
+		store:            store,
+		api:              api,
+		respond:          respondInteraction,
+		tagUI:            newSessionStore[*forumTagUISession](forumTagUISessionTTL),
+		pendingBackfills: newPendingBackfills(),
 	}
 }
 

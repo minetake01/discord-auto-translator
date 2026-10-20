@@ -39,52 +39,6 @@ type forumTagUISession struct {
 // forgotten window would pin its channel listing in memory forever.
 const forumTagUISessionTTL = 30 * time.Minute
 
-type forumTagUIEntry struct {
-	session   *forumTagUISession
-	expiresAt time.Time
-}
-
-func (h *CommandHandler) putTagUI(messageID string, session *forumTagUISession) {
-	h.tagUIMu.Lock()
-	defer h.tagUIMu.Unlock()
-	if h.tagUI == nil {
-		h.tagUI = make(map[string]forumTagUIEntry)
-	}
-	now := time.Now()
-	for id, entry := range h.tagUI {
-		if now.After(entry.expiresAt) {
-			delete(h.tagUI, id)
-		}
-	}
-	h.tagUI[messageID] = forumTagUIEntry{session: session, expiresAt: now.Add(forumTagUISessionTTL)}
-}
-
-func (h *CommandHandler) getTagUI(messageID string) *forumTagUISession {
-	h.tagUIMu.Lock()
-	defer h.tagUIMu.Unlock()
-	if h.tagUI == nil {
-		return nil
-	}
-	entry, ok := h.tagUI[messageID]
-	if !ok {
-		return nil
-	}
-	if time.Now().After(entry.expiresAt) {
-		delete(h.tagUI, messageID)
-		return nil
-	}
-	return entry.session
-}
-
-func (h *CommandHandler) deleteTagUI(messageID string) {
-	h.tagUIMu.Lock()
-	defer h.tagUIMu.Unlock()
-	if h.tagUI == nil {
-		return
-	}
-	delete(h.tagUI, messageID)
-}
-
 func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, groupID string, focus *discordgo.Channel, locale, intro string) (*forumTagUISession, error) {
 	if focus == nil || !isThreadOnlyChannelType(int(focus.Type)) || len(focus.AvailableTags) == 0 {
 		return nil, nil
@@ -299,7 +253,7 @@ func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.Inter
 		return
 	}
 	if msg != nil {
-		h.putTagUI(msg.ID, session)
+		h.tagUI.put(msg.ID, session)
 	}
 }
 
@@ -366,7 +320,7 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 		return
 	}
 	data := i.MessageComponentData()
-	session := h.getTagUI(i.Message.ID)
+	session, _ := h.tagUI.get(i.Message.ID)
 	if session == nil {
 		h.updateInteraction(s, i, localizedUIString(commandLocale(i), uiKeyForumTagMapFinished), nil)
 		return
@@ -416,7 +370,7 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 		}
 		h.updateForumTagUIMessage(s, i, session)
 	case forumTagUICustomDone:
-		h.deleteTagUI(i.Message.ID)
+		h.tagUI.delete(i.Message.ID)
 		content := session.Intro
 		if content != "" {
 			content += "\n\n"
