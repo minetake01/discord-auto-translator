@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -27,6 +28,9 @@ type DiscordThread struct {
 	Archived      bool
 	Locked        bool
 	LastMessageID string
+	// CreatedAt is when the thread was created. Discord reports it only for
+	// threads created after 2022-01-09, so it is zero for older ones.
+	CreatedAt time.Time
 }
 
 // discordErrorCode returns the JSON error code of a Discord REST error, or 0.
@@ -102,7 +106,8 @@ type DiscordThreads struct {
 
 // PublicThreads lists the public threads and forum posts under parentIDs: the
 // active ones and, when includeArchived is set, the archived ones. Private
-// threads are never listed.
+// threads are never listed. Each thread carries the creation time Discord
+// reports for it.
 //
 // archivedLimit bounds how many archived threads are read across all parents;
 // zero reads them all. Every archived page costs a REST request, so callers
@@ -117,9 +122,10 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 	var out []DiscordThread
 	// add appends the unseen threads of a page and reports how many of them
 	// were archived.
-	add := func(threads []*discordgo.Channel) int {
+	add := func(threads []listedThread) int {
 		archived := 0
-		for _, ch := range threads {
+		for _, listed := range threads {
+			ch := listed.channel
 			if ch == nil || seen[ch.ID] || !parents[ch.ParentID] {
 				continue
 			}
@@ -128,6 +134,7 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 			}
 			seen[ch.ID] = true
 			thread := threadFromChannel(ch)
+			thread.CreatedAt = listed.createdAt
 			if thread.Archived {
 				archived++
 			}
@@ -135,13 +142,11 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 		}
 		return archived
 	}
-	active, err := withDiscordRetryValue(func() (*discordgo.ThreadsList, error) {
-		return d.session.GuildThreadsActive(guildID)
-	})
+	active, _, err := d.threadListing(discordgo.EndpointGuildActiveThreads(guildID), nil)
 	if err != nil {
 		return DiscordThreads{}, fmt.Errorf("list active threads: %w", err)
 	}
-	add(active.Threads)
+	add(active)
 	if !includeArchived {
 		return DiscordThreads{Threads: out}, nil
 	}
@@ -149,20 +154,23 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 	for i, parentID := range parentIDs {
 		var before *time.Time
 		for {
-			page, err := withDiscordRetryValue(func() (*discordgo.ThreadsList, error) {
-				return d.session.ThreadsArchived(parentID, before, discordMessagePageLimit)
-			})
+			query := url.Values{}
+			query.Set("limit", strconv.Itoa(discordMessagePageLimit))
+			if before != nil {
+				query.Set("before", before.Format(time.RFC3339))
+			}
+			page, more, err := d.threadListing(discordgo.EndpointChannelPublicArchivedThreads(parentID), query)
 			if err != nil {
 				return DiscordThreads{}, fmt.Errorf("list archived threads in %s: %w", parentID, err)
 			}
-			archived += add(page.Threads)
-			if !page.HasMore || len(page.Threads) == 0 {
+			archived += add(page)
+			if !more || len(page) == 0 {
 				break
 			}
 			if archivedLimit > 0 && archived >= archivedLimit {
 				return DiscordThreads{Threads: out, Truncated: true}, nil
 			}
-			last := page.Threads[len(page.Threads)-1]
+			last := page[len(page)-1].channel
 			if last.ThreadMetadata == nil {
 				return DiscordThreads{}, fmt.Errorf("archived thread %s has no metadata", last.ID)
 			}
@@ -174,6 +182,66 @@ func (d DiscordGoAPI) PublicThreads(guildID string, parentIDs []string, includeA
 		}
 	}
 	return DiscordThreads{Threads: out}, nil
+}
+
+// listedThread is one thread of a listed page. The creation time lives in
+// thread_metadata.create_timestamp, which discordgo does not decode, so the
+// page is read as raw JSON for it.
+type listedThread struct {
+	channel   *discordgo.Channel
+	createdAt time.Time
+}
+
+// threadListing reads one page of a thread listing and reports whether the
+// listing continues.
+func (d DiscordGoAPI) threadListing(endpoint string, query url.Values) ([]listedThread, bool, error) {
+	target := endpoint
+	if len(query) > 0 {
+		target += "?" + query.Encode()
+	}
+	body, err := withDiscordRetryValue(func() ([]byte, error) {
+		return d.session.RequestWithBucketID("GET", target, nil, endpoint)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	var page struct {
+		Threads []json.RawMessage `json:"threads"`
+		HasMore bool              `json:"has_more"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		return nil, false, fmt.Errorf("decode thread listing: %w", err)
+	}
+	out := make([]listedThread, 0, len(page.Threads))
+	for _, raw := range page.Threads {
+		var ch discordgo.Channel
+		if err := discordgo.Unmarshal(raw, &ch); err != nil {
+			return nil, false, fmt.Errorf("decode listed thread: %w", err)
+		}
+		createdAt, err := threadCreateTimestamp(raw)
+		if err != nil {
+			return nil, false, err
+		}
+		out = append(out, listedThread{channel: &ch, createdAt: createdAt})
+	}
+	return out, page.HasMore, nil
+}
+
+// threadCreateTimestamp returns thread_metadata.create_timestamp, which
+// Discord reports only for threads created after 2022-01-09.
+func threadCreateTimestamp(raw json.RawMessage) (time.Time, error) {
+	var payload struct {
+		ThreadMetadata struct {
+			CreateTimestamp *time.Time `json:"create_timestamp"`
+		} `json:"thread_metadata"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return time.Time{}, fmt.Errorf("decode thread metadata: %w", err)
+	}
+	if payload.ThreadMetadata.CreateTimestamp == nil {
+		return time.Time{}, nil
+	}
+	return *payload.ThreadMetadata.CreateTimestamp, nil
 }
 
 func threadFromChannel(ch *discordgo.Channel) DiscordThread {

@@ -57,6 +57,24 @@ webhook/thread IDs.
 | Edit/delete/reaction/pin in threads | Message lives on the thread channel | Webhook edit/delete need `thread_id`. Reaction/pin use the target message's channel ID. |
 | Archive / lock change | `THREAD_UPDATE` with `thread_metadata` | Apply the same archived/locked state to peer threads, skipping the bot's own echoes. |
 
+## Backfill
+
+A backfill replays a source channel into a new target, so a thread created at the
+end of the run announces itself to that channel in one cluster, long after the
+messages it belongs to. Create the peer thread where the *parent timeline*
+reaches the instant the source thread was created: a thread may only be created
+once the starter message (for message-backed threads) is already mirrored, so
+emit the message when the two timestamps are equal and the thread after it.
+Creation time comes from `thread_metadata.create_timestamp` (decoded from raw
+JSON; discordgo's `ThreadMetadata` does not expose it) and falls back to the
+thread's own snowflake for threads created before 2022-01-09, when Discord left
+the field empty. Discord posts its `THREAD_CREATED` line only for threads started
+from an older message, so a thread started from the message just mirrored appears
+attached to that message with no line of its own; either way it lands at its
+source position, which is what the ordering is for. Thread bodies still follow
+their family after the parent timeline, since their messages live inside the
+thread.
+
 ## Tests to keep
 
 - `THREAD_CREATE` then `THREAD_STARTER_MESSAGE` when the parent link appears later (no translation on the deferred gateway event).
@@ -68,3 +86,4 @@ webhook/thread IDs.
 - Webhook edit/delete in target threads pass `thread_id`.
 - Operations on an archived or locked target thread reopen it and restore the state.
 - An archive/lock change syncs to peers once and its echo does not bounce back.
+- A backfill creates each thread between the mirrored messages its source thread was created between.

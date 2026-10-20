@@ -60,6 +60,9 @@ type fakeDiscordAPI struct {
 	threadStates           []threadStateCall
 	history                map[string][]DiscordMessage // channel → messages, any order
 	publicThreads          []DiscordThread
+	// events records what reached Discord, in order, as "message" or "thread"
+	// so a test can pin where in a channel a thread was created.
+	events                 []string
 	sendErr                func(WebhookSend) error
 	editErr                func(webhookEditCall) error
 	forgetMemberCacheCalls int
@@ -126,6 +129,13 @@ func (f *fakeDiscordAPI) webhookSends() []WebhookSend {
 	return append([]WebhookSend(nil), f.sent...)
 }
 
+// eventLog returns the posts and thread creations of a run in order.
+func (f *fakeDiscordAPI) eventLog() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.events...)
+}
+
 func (f *fakeDiscordAPI) attachmentEdits() []webhookAttachmentEditCall {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -182,6 +192,7 @@ func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (
 	}
 	f.nextID++
 	f.sent = append(f.sent, msg)
+	f.events = append(f.events, "message")
 	ids := make([]string, len(msg.Files))
 	for i := range msg.Files {
 		ids[i] = fmt.Sprintf("att-%d-%d", f.nextID, i)
@@ -236,6 +247,7 @@ func (f *fakeDiscordAPI) CreateThread(channelID string, channelType int, name, i
 		initialMessageID = threadID
 	}
 	f.threads = append(f.threads, threadCall{channelID: channelID, channelType: channelType, name: name, content: initialMessage, embeds: embeds, appliedTags: append([]string(nil), appliedTags...), files: append([]WebhookFile(nil), files...)})
+	f.events = append(f.events, "thread")
 	f.registerThread(threadID, channelID)
 	return threadID, initialMessageID, nil
 }
@@ -251,6 +263,7 @@ func (f *fakeDiscordAPI) registerThread(threadID, parentID string) {
 func (f *fakeDiscordAPI) CreateThreadFromMessage(channelID, messageID, name string) (threadID string, err error) {
 	f.nextID++
 	f.threads = append(f.threads, threadCall{channelID: channelID, messageID: messageID, name: name})
+	f.events = append(f.events, "thread")
 	f.registerThread(fakeThreadID(f.nextID), channelID)
 	return fakeThreadID(f.nextID), nil
 }

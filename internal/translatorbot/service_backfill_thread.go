@@ -116,6 +116,24 @@ func (t *backfillThreads) create(ctx context.Context, family *threadFamily, m *D
 	return consumed, nil
 }
 
+// createThread creates the family's target thread where the timeline reaches
+// the thread's creation, and reports whether a thread exists afterwards. The
+// fresh thread takes the archive and lock state of the source threads it
+// mirrors, so a family without new messages still ends up faithful.
+func (r *backfillRunner) createThread(ctx context.Context, family *threadFamily) (bool, error) {
+	if _, err := r.threads.create(ctx, family, nil); err != nil {
+		return false, err
+	}
+	if family.targetThreadID == "" {
+		return false, nil
+	}
+	rep := family.threads[0]
+	if err := r.s.applyThreadState(family.targetThreadID, threadState{archived: rep.Archived, locked: rep.Locked}); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // processFamily mirrors one family: its threads' new messages, the target
 // thread itself, and the archive/lock state of the family.
 func (r *backfillRunner) processFamily(ctx context.Context, family *threadFamily) (int, error) {

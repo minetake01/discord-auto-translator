@@ -7,58 +7,8 @@ import (
 	"strings"
 )
 
-// timelineReader merges the histories of several channels or threads into
-// one oldest-first stream. It reads forward from each cursor and advances
-// the cursor as messages are handed out.
-type timelineReader struct {
-	discord DiscordAPI
-	guildID string
-	ids     []string
-	buffers map[string][]DiscordMessage
-	done    map[string]bool
-	cursors map[string]string
-}
-
-func newTimelineReader(discord DiscordAPI, guildID string, channelIDs []string, cursors map[string]string) *timelineReader {
-	return &timelineReader{
-		discord: discord, guildID: guildID, ids: channelIDs, cursors: cursors,
-		buffers: map[string][]DiscordMessage{}, done: map[string]bool{},
-	}
-}
-
-func (t *timelineReader) next() (DiscordMessage, bool, error) {
-	best := ""
-	for _, id := range t.ids {
-		if len(t.buffers[id]) == 0 && !t.done[id] {
-			after := t.cursors[id]
-			if after == "" {
-				after = "0"
-			}
-			page, err := t.discord.ChannelMessagePage(t.guildID, id, "", after)
-			if err != nil {
-				return DiscordMessage{}, false, fmt.Errorf("read history of %s: %w", id, err)
-			}
-			if len(page) < discordMessagePageLimit {
-				t.done[id] = true
-			}
-			t.buffers[id] = page
-		}
-		if len(t.buffers[id]) == 0 {
-			continue
-		}
-		if best == "" || snowflakeIDLess(t.buffers[id][0].ID, t.buffers[best][0].ID) {
-			best = id
-		}
-	}
-	if best == "" {
-		return DiscordMessage{}, false, nil
-	}
-	m := t.buffers[best][0]
-	t.buffers[best] = t.buffers[best][1:]
-	t.cursors[best] = m.ID
-	return m, true, nil
-}
-
+// backfillItem is one message of a batch: the destination it goes to and the
+// image attachments already fetched for it.
 type backfillItem struct {
 	m      DiscordMessage
 	dest   mirrorDestination

@@ -257,9 +257,11 @@ func (r *backfillRunner) sources() []GroupChannel {
 	return out
 }
 
-// pass processes parent channels first (merged by posting order), then every
-// thread family in creation order. It returns how many new source messages
-// or threads it saw.
+// pass mirrors the source channels in the order the source lived them: the
+// threads a parent channel holds are created in that channel's timeline where
+// their source threads were created, and the messages inside every thread
+// family follow once their channel's timeline is done. It returns how many new
+// source messages or threads it saw.
 func (r *backfillRunner) pass(ctx context.Context) (int, error) {
 	if err := r.retry.active(ctx); err != nil {
 		return 0, err
@@ -271,27 +273,28 @@ func (r *backfillRunner) pass(ctx context.Context) (int, error) {
 			parentIDs = append(parentIDs, ch.ChannelID)
 		}
 	}
+	if len(allIDs) == 0 {
+		return 0, nil
+	}
+	listing, err := r.s.discord.PublicThreads(r.run.job.GuildID, allIDs, true, 0)
+	if err != nil {
+		return 0, err
+	}
+	families, err := groupThreadFamilies(ctx, r.s.store, r.run.job.GroupID, r.run.target.ChannelID, listing.Threads)
+	if err != nil {
+		return 0, err
+	}
 	seen := 0
 	if len(parentIDs) > 0 {
 		reader := newTimelineReader(r.s.discord, r.run.job.GuildID, parentIDs, r.cursors)
-		n, err := r.processTimeline(ctx, reader, func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
+		timeline := newBackfillTimeline(reader, pendingThreadCreations(families, parentIDs))
+		n, err := r.processTimeline(ctx, timeline, func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
 			return mirrorDestination{channel: r.run.target, targetID: r.run.target.ChannelID, timestamp: true}, true, nil
 		})
 		seen += n
 		if err != nil {
 			return seen, err
 		}
-	}
-	if len(allIDs) == 0 {
-		return seen, nil
-	}
-	listing, err := r.s.discord.PublicThreads(r.run.job.GuildID, allIDs, true, 0)
-	if err != nil {
-		return seen, err
-	}
-	families, err := groupThreadFamilies(ctx, r.s.store, r.run.job.GroupID, r.run.target.ChannelID, listing.Threads)
-	if err != nil {
-		return seen, err
 	}
 	for _, family := range families {
 		n, err := r.processFamily(ctx, family)
@@ -307,9 +310,10 @@ func (r *backfillRunner) pass(ctx context.Context) (int, error) {
 // false when the message was consumed or cannot be posted.
 type destinationFunc func(context.Context, DiscordMessage) (mirrorDestination, bool, error)
 
-// processTimeline reads a merged timeline in posting order and mirrors
-// every eligible message, batching consecutive normal messages.
-func (r *backfillRunner) processTimeline(ctx context.Context, reader *timelineReader, destFor destinationFunc) (int, error) {
+// processTimeline reads a timeline in posting order, mirrors every eligible
+// message and creates every thread where the timeline reaches it. Consecutive
+// normal messages share one translation request.
+func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineSource, destFor destinationFunc) (int, error) {
 	seen := 0
 	var batch backfillBatch
 	flush := func() error {
@@ -323,13 +327,29 @@ func (r *backfillRunner) processTimeline(ctx context.Context, reader *timelineRe
 		if err := r.retry.active(ctx); err != nil {
 			return seen, err
 		}
-		m, ok, err := reader.next()
+		step, ok, err := timeline.nextStep()
 		if err != nil {
 			return seen, err
 		}
 		if !ok {
 			break
 		}
+		if step.family != nil {
+			// The thread may only be created once the messages before it are
+			// posted: Discord announces it to the channel as it appears.
+			if err := flush(); err != nil {
+				return seen, err
+			}
+			created, err := r.createThread(ctx, step.family)
+			if err != nil {
+				return seen, err
+			}
+			if created {
+				seen++
+			}
+			continue
+		}
+		m := step.message
 		seen++
 		eligible, err := r.s.backfillEligible(ctx, m)
 		if err != nil {

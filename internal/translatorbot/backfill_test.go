@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -340,6 +341,70 @@ func TestBackfillPostsParentChannelThenThreadsAndRestoresArchivedState(t *testin
 	last := f.discord.threadStates[len(f.discord.threadStates)-1]
 	if last.threadID != sends[3].ThreadID || !last.archived || !last.locked {
 		t.Fatalf("last state change = %#v, target thread %s", last, targetThread)
+	}
+}
+
+// A target channel must announce a thread where the source thread was
+// created. Creating every thread at the end of the run bunches the channel's
+// own announcements into one burst far away from the messages around them.
+func TestBackfillCreatesThreadsWhereTheSourceCreatedThem(t *testing.T) {
+	base := time.Date(2023, 6, 1, 12, 0, 0, 0, time.UTC)
+	id := func(d time.Duration) string { return snowflakeForTime(base.Add(d), 0) }
+	var (
+		first        = id(0)
+		earlyStarter = id(10 * time.Minute)
+		earlyCreated = base.Add(15 * time.Minute)
+		middle       = id(20 * time.Minute)
+		lateStarter  = id(30 * time.Minute)
+		lateCreated  = base.Add(40 * time.Minute)
+	)
+	starter := func(id, content string) DiscordMessage {
+		m := sourceMessage(id, content)
+		m.StartsThread = true
+		return m
+	}
+	f := newBackfillFixture(t, &echoTranslator{},
+		sourceMessage(first, "最初"),
+		starter(earlyStarter, "早いスレッド"),
+		sourceMessage(middle, "途中"),
+		starter(lateStarter, "遅いスレッド"),
+	)
+	f.discord.publicThreads = []DiscordThread{
+		{ID: lateStarter, ParentID: "ja", Name: "遅いスレッド", CreatedAt: lateCreated},
+		{ID: earlyStarter, ParentID: "ja", Name: "早いスレッド", CreatedAt: earlyCreated},
+	}
+	f.run(t)
+
+	want := []string{"message", "message", "thread", "message", "message", "thread"}
+	if got := f.discord.eventLog(); !slices.Equal(got, want) {
+		t.Fatalf("Discord calls = %v, want %v", got, want)
+	}
+	threads := f.discord.threads
+	if len(threads) != 2 {
+		t.Fatalf("threads = %#v", threads)
+	}
+	if threads[0].messageID != fakeSentID(2) || !strings.Contains(threads[0].name, "早い") {
+		t.Fatalf("first thread = %#v, want the early thread on the mirror of its starter", threads[0])
+	}
+	if threads[1].messageID != fakeSentID(5) || !strings.Contains(threads[1].name, "遅い") {
+		t.Fatalf("second thread = %#v, want the late thread on the mirror of its starter", threads[1])
+	}
+}
+
+// A thread created at the same moment as a message may only be announced after
+// it: the starter a thread started from a message hangs on has to be there
+// first.
+func TestBackfillCreatesAThreadAfterTheMessageItSharesATimeWith(t *testing.T) {
+	base := time.Date(2023, 6, 1, 12, 0, 0, 0, time.UTC)
+	id := func(d time.Duration) string { return snowflakeForTime(base.Add(d), 0) }
+	starter := sourceMessage(id(0), "スレッド元")
+	starter.StartsThread = true
+	f := newBackfillFixture(t, &echoTranslator{}, starter, sourceMessage(id(10*time.Minute), "次"))
+	f.discord.publicThreads = []DiscordThread{{ID: starter.ID, ParentID: "ja", Name: "スレッド元", CreatedAt: base}}
+	f.run(t)
+
+	if got, want := f.discord.eventLog(), []string{"message", "thread", "message"}; !slices.Equal(got, want) {
+		t.Fatalf("Discord calls = %v, want %v", got, want)
 	}
 }
 
