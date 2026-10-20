@@ -195,16 +195,26 @@ func (s *Service) runBackfillJob(ctx context.Context, job BackfillJob) error {
 	r := newBackfillRunner(s, run, channels)
 	for {
 		seen, err := r.pass(ctx)
-		if err != nil {
+		if err == nil {
+			if seen > 0 {
+				continue
+			}
+			done, err := r.finish(ctx)
+			if err == nil {
+				if done {
+					return nil
+				}
+				continue
+			}
+		}
+		if errors.Is(err, errBackfillCanceled) {
 			return err
 		}
-		if seen > 0 {
-			continue
-		}
-		done, err := r.finish(ctx)
-		if err != nil || done {
-			return err
-		}
+		// A transient failure retries in place so the runner's timeline
+		// cursors survive: the next pass reads only what arrived since,
+		// instead of replaying the whole history through the store's dedup.
+		log.Printf("backfill job %d (guild %s, target %s): %v", job.ID, job.GuildID, job.TargetChannelID, err)
+		_ = s.backfill.wait(ctx, backfillErrorWait)
 	}
 }
 
