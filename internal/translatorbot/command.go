@@ -409,6 +409,20 @@ func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) 
 	return b.String()
 }
 
+// glossaryLabels resolves the always-include mode and the attribute labels
+// shown with a glossary entry.
+func glossaryLabels(lang string, alwaysInclude bool, attribute string) (mode, attributeLabel string) {
+	mode = localizedUIString(lang, uiKeyGlossaryModeMatched)
+	if alwaysInclude {
+		mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
+	}
+	attributeLabel = localizedUIString(lang, uiKeyGlossaryAttributeNone)
+	if attribute = strings.TrimSpace(attribute); attribute != "" {
+		attributeLabel = localizedUIStringf(lang, uiKeyGlossaryAttributeLabel, attribute)
+	}
+	return mode, attributeLabel
+}
+
 func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
 	ctx := context.Background()
 	lang := commandLocale(i)
@@ -428,14 +442,7 @@ func (h *CommandHandler) handleAddGlossary(s *discordgo.Session, i *discordgo.In
 		}
 		return
 	}
-	mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
-	if alwaysInclude {
-		mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
-	}
-	attributeLabel := localizedUIString(lang, uiKeyGlossaryAttributeNone)
-	if strings.TrimSpace(attribute) != "" {
-		attributeLabel = localizedUIStringf(lang, uiKeyGlossaryAttributeLabel, strings.TrimSpace(attribute))
-	}
+	mode, attributeLabel := glossaryLabels(lang, alwaysInclude, attribute)
 	h.reply(s, i, uiKeyGlossaryAdded, strings.TrimSpace(term), strings.TrimSpace(translation), attributeLabel, mode)
 }
 
@@ -458,14 +465,7 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 	b.WriteString("\n")
 	truncated := false
 	for _, entry := range entries {
-		mode := localizedUIString(lang, uiKeyGlossaryModeMatched)
-		if entry.AlwaysInclude {
-			mode = localizedUIString(lang, uiKeyGlossaryModeAlways)
-		}
-		attribute := localizedUIString(lang, uiKeyGlossaryAttributeNone)
-		if entry.Attribute != "" {
-			attribute = entry.Attribute
-		}
+		mode, attribute := glossaryLabels(lang, entry.AlwaysInclude, entry.Attribute)
 		line := fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)
 		if b.Len()+len(line)+len(truncatedSuffix) > discordMessageContentLimit {
 			truncated = true
