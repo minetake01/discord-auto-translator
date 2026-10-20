@@ -436,7 +436,7 @@ func openaiUserContent(images []visionImage, stable, history, variable string) j
 		parts = append(parts, openaiTextPart{Type: "text", Text: variable})
 	}
 	for _, img := range images {
-		parts = append(parts, openaiImagePart{Type: "image_url", ImageURL: openaiImageURL{URL: img.DataURL}})
+		parts = append(parts, openaiImagePart{Type: "image_url", ImageURL: openaiImageURL{URL: img.dataURL}})
 	}
 	if len(parts) == 0 {
 		return openaiTextContent("")

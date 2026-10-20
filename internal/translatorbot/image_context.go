@@ -39,7 +39,7 @@ func (s *Service) loadContextVisionImages(ctx context.Context, tc *TranslationCo
 			return
 		}
 		indexed[locIdx] = nextIndex
-		vision = append(vision, visionImage{DataURL: jpegDataURL(jpegBytes)})
+		vision = append(vision, visionImageFromJPEG(jpegBytes))
 		nextIndex++
 	}
 	for i := range tc.History {

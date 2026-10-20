@@ -32,8 +32,18 @@ const (
 	visionTokenOverheadPerImage       = 160
 )
 
+// visionImage pairs the data URL sent to the vision model with the decoded
+// size of its payload, so budget accounting never re-decodes base64. Build
+// values only through visionImageFromJPEG.
 type visionImage struct {
-	DataURL string
+	dataURL     string
+	payloadSize int
+}
+
+// visionImageFromJPEG encodes a resized vision JPEG as its data URL and
+// records the payload size.
+func visionImageFromJPEG(jpegBytes []byte) visionImage {
+	return visionImage{dataURL: jpegDataURL(jpegBytes), payloadSize: len(jpegBytes)}
 }
 
 type loadedImageAttachment struct {
@@ -209,7 +219,7 @@ func (s *Service) loadImageAttachments(ctx context.Context, attachments []Discor
 			continue
 		}
 		totalVisionBytes += len(jpegBytes)
-		loaded[i].Vision = visionImage{DataURL: jpegDataURL(jpegBytes)}
+		loaded[i].Vision = visionImageFromJPEG(jpegBytes)
 		visionCount++
 	}
 	return loaded
@@ -232,7 +242,7 @@ func (s *Service) loadOGPVisionImages(ctx context.Context, sites []SiteContextEn
 		remainingBytes -= len(jpegBytes)
 		remainingSlots--
 		sites[i].HasVisionImage = true
-		out = append(out, visionImage{DataURL: jpegDataURL(jpegBytes)})
+		out = append(out, visionImageFromJPEG(jpegBytes))
 	}
 	return out
 }

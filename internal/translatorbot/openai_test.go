@@ -294,7 +294,7 @@ func TestOpenAITranslatorSendsVisionImagesAfterCachedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	prepared.visionImages = []visionImage{visionImageFromJPEG([]byte{0xff, 0xd8, 0xff})}
 	result, err := testTranslator(client).TranslateMulti(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)
@@ -326,7 +326,7 @@ func TestOpenAITranslatorAttachmentAltsUseDedicatedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	prepared.visionImages = []visionImage{visionImageFromJPEG([]byte{0xff, 0xd8, 0xff})}
 	result, err := testTranslator(client).TranslateAttachmentAlts(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)
@@ -346,7 +346,7 @@ func TestOpenAITranslatorIgnoresOGPAltsWhenThereAreNoAttachments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	prepared.visionImages = []visionImage{visionImageFromJPEG([]byte{0xff, 0xd8, 0xff})}
 	result, err := testTranslator(client).TranslateMulti(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)
@@ -725,7 +725,7 @@ func TestOpenAITranslatorMessageSystemInstructionIgnoresAttachments(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared.visionImages = []visionImage{{DataURL: jpegDataURL([]byte{0xff, 0xd8, 0xff})}}
+	prepared.visionImages = []visionImage{visionImageFromJPEG([]byte{0xff, 0xd8, 0xff})}
 	if _, err := translator.TranslateMulti(context.Background(), prepared); err != nil {
 		t.Fatal(err)
 	}

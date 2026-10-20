@@ -1,7 +1,6 @@
 package translatorbot
 
 import (
-	"encoding/base64"
 	"net/http"
 	"strings"
 )
@@ -90,7 +89,7 @@ func visionFromLoaded(loaded []loadedImageAttachment) []visionImage {
 	}
 	vision := make([]visionImage, 0, len(loaded))
 	for _, item := range loaded {
-		if item.Vision.DataURL == "" {
+		if item.Vision.dataURL == "" {
 			continue
 		}
 		vision = append(vision, item.Vision)
@@ -98,17 +97,12 @@ func visionFromLoaded(loaded []loadedImageAttachment) []visionImage {
 	return vision
 }
 
+// visionBytesTotal sums the decoded vision payload sizes. Sizes are carried by
+// visionImage from its construction, so this never decodes base64 again.
 func visionBytesTotal(images []visionImage) int {
 	total := 0
 	for _, img := range images {
-		if i := strings.Index(img.DataURL, ","); i >= 0 {
-			decoded, err := base64.StdEncoding.DecodeString(img.DataURL[i+1:])
-			if err == nil {
-				total += len(decoded)
-				continue
-			}
-		}
-		total += len(img.DataURL)
+		total += img.payloadSize
 	}
 	return total
 }
