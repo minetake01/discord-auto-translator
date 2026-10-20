@@ -27,7 +27,6 @@ type forumTagUISession struct {
 	PeerChannelID  string
 	FocusTagID     string
 	PeerTagID      string
-	UserID         string
 	Locale         string
 	Intro          string
 	FocusTags      []discordgo.ForumTag
@@ -86,7 +85,7 @@ func (h *CommandHandler) deleteTagUI(messageID string) {
 	delete(h.tagUI, messageID)
 }
 
-func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, groupID string, focus *discordgo.Channel, userID, locale, intro string) (*forumTagUISession, error) {
+func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, groupID string, focus *discordgo.Channel, locale, intro string) (*forumTagUISession, error) {
 	if focus == nil || !isThreadOnlyChannelType(int(focus.Type)) || len(focus.AvailableTags) == 0 {
 		return nil, nil
 	}
@@ -118,7 +117,6 @@ func (h *CommandHandler) buildForumTagUISession(ctx context.Context, guildID, gr
 		GroupID:        groupID,
 		FocusChannelID: focus.ID,
 		PeerChannelID:  peerIDs[0],
-		UserID:         userID,
 		Locale:         locale,
 		Intro:          intro,
 		FocusTags:      append([]discordgo.ForumTag(nil), focus.AvailableTags...),
@@ -285,7 +283,7 @@ func (h *CommandHandler) updateForumTagUIMessage(s *discordgo.Session, i *discor
 func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string) {
 	ctx := context.Background()
 	locale := commandLocale(i)
-	session, err := h.buildForumTagUISession(ctx, i.GuildID, groupID, focus, interactionUserID(i), locale, intro)
+	session, err := h.buildForumTagUISession(ctx, i.GuildID, groupID, focus, locale, intro)
 	if err != nil {
 		log.Printf("forum tag ui build: %v", err)
 		h.reply(s, i, uiKeyUnexpectedError)
@@ -366,6 +364,9 @@ func (h *CommandHandler) handleEditForumTags(s *discordgo.Session, i *discordgo.
 	h.openForumTagUI(s, i, groupID, ch, "")
 }
 
+// handleForumTagComponent edits the tag mapping window. The window is an
+// ephemeral interaction response, so only the invoker sees and clicks it and
+// no permission check runs here.
 func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if i.Message == nil {
 		return
@@ -380,10 +381,6 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 				Components: []discordgo.MessageComponent{},
 			},
 		})
-		return
-	}
-	if session.UserID != "" && interactionUserID(i) != session.UserID {
-		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
 	ctx := context.Background()
