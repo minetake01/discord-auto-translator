@@ -13,9 +13,19 @@ const (
 	discordRetryBackoff  = 200 * time.Millisecond
 )
 
-func isDiscordRetryable(err error) bool {
+// discordRESTError reports whether err carries a Discord REST response, and
+// returns it.
+func discordRESTError(err error) (*discordgo.RESTError, bool) {
 	var restErr *discordgo.RESTError
-	if !errors.As(err, &restErr) || restErr.Response == nil {
+	if errors.As(err, &restErr) && restErr.Response != nil {
+		return restErr, true
+	}
+	return nil, false
+}
+
+func isDiscordRetryable(err error) bool {
+	restErr, ok := discordRESTError(err)
+	if !ok {
 		return false
 	}
 	code := restErr.Response.StatusCode

@@ -3,10 +3,7 @@ package translatorbot
 import (
 	"context"
 	"errors"
-	"net/http"
 	"time"
-
-	"github.com/bwmarrin/discordgo"
 )
 
 // backfillRetrier waits out the failures that retrying the same request fixes:
@@ -56,15 +53,15 @@ func (b *backfillRetrier) active(ctx context.Context) error {
 
 // isPermanentBackfillError reports failures that retrying the same message
 // cannot fix: an unusable translation, text over the Discord limit, or a
-// Discord 4xx rejection.
+// Discord rejection the API layer's transient retry does not cover. A Discord
+// REST error is either retryable or permanent, so permanence is the
+// complement of isDiscordRetryable and the two tables cannot drift apart.
 func isPermanentBackfillError(err error) bool {
 	if errors.Is(err, errTranslationContent) || errors.Is(err, errContentTooLong) {
 		return true
 	}
-	var restErr *discordgo.RESTError
-	if errors.As(err, &restErr) && restErr.Response != nil {
-		code := restErr.Response.StatusCode
-		return code >= 400 && code < 500 && code != http.StatusTooManyRequests
+	if _, ok := discordRESTError(err); ok {
+		return !isDiscordRetryable(err)
 	}
 	return false
 }
