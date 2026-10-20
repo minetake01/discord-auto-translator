@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestReplyQuoteUsesTransferredContentWithoutRetranslationOrMention(t *testing.T) {
@@ -285,6 +287,94 @@ func TestHandleMessageUpdateKeepsDeletedOriginalNotice(t *testing.T) {
 	}
 	if got := discord.webhookEdits[1].content; got != "> -# The original message was deleted\n\n[en] 返信を直しました" {
 		t.Fatalf("edit content = %q", got)
+	}
+}
+
+func TestHandleMessageUpdateRefreshesReplyingQuotes(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "元のメッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "元のメッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 2 || !strings.HasPrefix(discord.sent[1].Content, "> -# [en] 元のメッセージ本文") {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+
+	// Editing the referenced message rewrites its mirror and then the quote
+	// of the reply's mirror.
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "変更後の本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 2 {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+	if got := discord.webhookEdits[0]; got.messageID != "900000000000000001" || got.content != "[en] 変更後の本文" {
+		t.Fatalf("referenced edit = %#v", got)
+	}
+	want := "> -# [en] 変更後の本文 · [Source](https://discord.com/channels/guild/en/900000000000000001)\n\n[en] 返信です"
+	if got := discord.webhookEdits[1]; got.messageID != "900000000000000002" || got.content != want {
+		t.Fatalf("reply quote edit = %#v, want %q", got, want)
+	}
+}
+
+func TestHandleMessageUpdateSkipsReplyingQuotesWhenSnippetUnchanged(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "一行目\n二行目",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "一行目\n二行目",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// An edit that does not change the quoted first line refreshes nothing
+	// beyond the referenced message's own mirror.
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "一行目\n二行目改",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].messageID != "900000000000000001" {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+}
+
+func TestFetchedContentDoesNotAccumulateEmbedLine(t *testing.T) {
+	embeds := []*discordgo.MessageEmbed{{Title: "ページのタイトル"}}
+	first := contentWithEmbedQuoteText("body\nhttps://example.com/page", embeds)
+	second := contentWithEmbedQuoteText(first, embeds)
+	if first != "body\nhttps://example.com/page\nページのタイトル" {
+		t.Fatalf("first fetch = %q", first)
+	}
+	if second != first {
+		t.Fatalf("refetch accumulated the embed line: %q", second)
 	}
 }
 

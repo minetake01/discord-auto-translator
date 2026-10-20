@@ -8,7 +8,8 @@ import (
 
 // contentWithEmbedQuoteText merges message content with the first embed's
 // title (or description first line) so reply quotes can see poll questions
-// that live only in embeds.
+// that live only in embeds. Appending is idempotent: a mirror fetched twice
+// (quote refresh, delete replacement) must not accumulate the embed line.
 func contentWithEmbedQuoteText(content string, embeds []*discordgo.MessageEmbed) string {
 	embedLine := ""
 	for _, embed := range embeds {
@@ -32,6 +33,10 @@ func contentWithEmbedQuoteText(content string, embeds []*discordgo.MessageEmbed)
 	}
 	if strings.TrimSpace(content) == "" {
 		return embedLine
+	}
+	lines := strings.Split(content, "\n")
+	if strings.TrimSpace(lines[len(lines)-1]) == embedLine {
+		return content
 	}
 	return content + "\n" + embedLine
 }

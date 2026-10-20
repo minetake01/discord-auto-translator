@@ -388,18 +388,83 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 			edited = append(edited, link)
 		}
 	}
-	if len(edited) > 0 {
-		if err := s.restoreReplyReference(ctx, &m); err != nil {
-			return err
-		}
+	if len(edited) == 0 {
+		return nil
 	}
-	return forEachGroupEdit(ctx, s.store, m.GuildID, edited,
+	if err := s.restoreReplyReference(ctx, &m); err != nil {
+		return err
+	}
+	if err := forEachGroupEdit(ctx, s.store, m.GuildID, edited,
 		func(link MessageLink) string { return link.GroupID },
 		s.messageLinkTarget,
 		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
 			return s.editMessageMirrors(ctx, m, groupID, pending)
 		},
+	); err != nil {
+		return err
+	}
+	// The mirrors of messages replying to this one quote its snippet; follow
+	// the edit the way the delete pass follows a deletion.
+	return s.refreshReplyingQuotes(ctx, m, links)
+}
+
+// refreshReplyingQuotes re-renders the quote header of every mirror of a
+// message replying to the edited message, so the snippet and jump link follow
+// the referenced message's current state. A quote that cannot be rebuilt is
+// left as rendered, and a mirror whose rebuilt text is unchanged is not
+// edited again.
+func (s *Service) refreshReplyingQuotes(ctx context.Context, m DiscordMessage, copies []MessageLink) error {
+	replies, err := s.messageTargetsReplyingToCopies(ctx, m.ChannelID, m.ID, copies)
+	if err != nil {
+		return err
+	}
+	return forEachGroupEdit(ctx, s.store, m.GuildID, replies,
+		func(link MessageLink) string { return link.GroupID },
+		s.messageLinkTarget,
+		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
+			for _, p := range pending {
+				quote, err := s.replyingMessageQuote(ctx, m.GuildID, p.link, p.target.Language)
+				if err != nil {
+					return err
+				}
+				if quote == "" {
+					continue
+				}
+				message, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
+				if err != nil {
+					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
+				}
+				content, err := finishMirrorContent(p.link.SourceMessageID, withQuote(
+					quote,
+					mirroredMessageBody(message.Content),
+				), p.link.TimestampLine)
+				if err != nil {
+					return err
+				}
+				if string(content) == message.Content {
+					continue
+				}
+				if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
 	)
+}
+
+// replyingMessageQuote rebuilds the quote header for a mirror of a message
+// replying to the edited one, from the reference the bot stored when it
+// mirrored the reply.
+func (s *Service) replyingMessageQuote(ctx context.Context, guildID string, link MessageLink, language string) (string, error) {
+	ref, ok, err := s.store.MessageReferenceOf(ctx, link.SourceChannelID, link.SourceMessageID)
+	if err != nil || !ok {
+		return "", err
+	}
+	return s.replyQuote(ctx, DiscordMessage{
+		ID: link.SourceMessageID, ChannelID: link.SourceChannelID, GuildID: guildID,
+		ReferencedMessageID: ref.MessageID, ReferencedMessageChannelID: ref.ChannelID,
+	}, link.TargetChannelID, language)
 }
 
 // editMessageMirrors translates the edited source once for the group's target
