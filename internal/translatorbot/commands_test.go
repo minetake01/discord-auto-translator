@@ -579,14 +579,13 @@ func TestBackfillStopCommandStopsTheJobOfAChannel(t *testing.T) {
 	stop := func() {
 		handler.Handle(nil, slashCommandInteraction("guild", "backfill", []*discordgo.ApplicationCommandInteractionDataOption{
 			{Name: "stop", Type: discordgo.ApplicationCommandOptionSubCommand, Options: []*discordgo.ApplicationCommandInteractionDataOption{
-				{Name: "group", Type: discordgo.ApplicationCommandOptionString, Value: "g"},
 				{Name: "channel", Type: discordgo.ApplicationCommandOptionChannel, Value: "en"},
 			}},
 		}))
 	}
 
 	stop()
-	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillStopped, "g", "en"); got != want {
+	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillStopped, "en"); got != want {
 		t.Fatalf("stop response = %q, want %q", got, want)
 	}
 	if jobs, err := store.BackfillJobs(ctx); err != nil || len(jobs) != 0 {
@@ -594,7 +593,7 @@ func TestBackfillStopCommandStopsTheJobOfAChannel(t *testing.T) {
 	}
 
 	stop()
-	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillNotRunning, "g", "en"); got != want {
+	if got, want := (*responses)[len(*responses)-1], localizedUIStringf("en", uiKeyBackfillNotRunning, "en"); got != want {
 		t.Fatalf("second stop response = %q, want %q", got, want)
 	}
 }

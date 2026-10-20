@@ -98,7 +98,7 @@
 |---|---|---|
 | `/new-channel` | 建立新的翻譯群組並註冊頻道 | `language`（必填）: BCP-47 語言代碼<br>`channel`（選填）: 目標頻道（預設當前頻道）<br>`group`（選填）: 群組識別碼（預設頻道名） |
 | `/join-channel` | 將頻道加入現有的翻譯群組 | `group`（必填）: 目標群組名稱<br>`language`（必填）: BCP-47 語言代碼<br>`channel`（選填）: 目標頻道（預設當前頻道）<br>`backfill`（選填）: 將群組內既有的歷史訊息翻譯到該頻道（先顯示估算並確認） |
-| `/backfill` | 管理頻道的歷史訊息翻譯 | 子命令: `stop`<br>`group`（必填）: 群組名稱<br>`channel`（選填）: 要停止的目標頻道（預設當前頻道） |
+| `/backfill` | 管理頻道的歷史訊息翻譯 | 子命令: `stop`<br>`channel`（選填）: 要停止的目標頻道（預設當前頻道） |
 | `/leave-channel` | 從翻譯群組中移除頻道 | `group`（必填）: 群組名稱<br>`channel`（選填）: 目標頻道（預設當前頻道） |
 | `/delete-group` | 徹底刪除一個翻譯群組 | `group`（必填）: 要刪除的群組名稱 |
 | `/list-groups` | 列出伺服器中的所有翻譯群組與頻道 | 無 |

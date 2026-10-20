@@ -98,7 +98,7 @@
 |---|---|---|
 | `/new-channel` | 创建新的翻译组并注册频道 | `language`（必填）: BCP-47 语言代码<br>`channel`（选填）: 目标频道（默认当前频道）<br>`group`（选填）: 组标识名（默认频道名） |
 | `/join-channel` | 将频道加入现有的翻译组 | `group`（必填）: 目标组名称<br>`language`（必填）: BCP-47 语言代码<br>`channel`（选填）: 目标频道（默认当前频道）<br>`backfill`（选填）: 将组内已有的历史消息翻译到该频道（先显示估算并确认） |
-| `/backfill` | 管理频道的历史消息翻译 | 子命令: `stop`<br>`group`（必填）: 组名称<br>`channel`（选填）: 要停止的目标频道（默认当前频道） |
+| `/backfill` | 管理频道的历史消息翻译 | 子命令: `stop`<br>`channel`（选填）: 要停止的目标频道（默认当前频道） |
 | `/leave-channel` | 从翻译组中移除频道 | `group`（必填）: 组名称<br>`channel`（选填）: 目标频道（默认当前频道） |
 | `/delete-group` | 彻底删除一个翻译组 | `group`（必填）: 要删除的组名称 |
 | `/list-groups` | 列出服务器中的所有翻译组与频道 | 无 |

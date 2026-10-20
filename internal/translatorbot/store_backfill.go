@@ -115,17 +115,16 @@ func (s *Store) FinishBackfillJob(ctx context.Context, jobID int64) error {
 	return err
 }
 
-// CancelBackfillJob removes the pending job of a target channel and reports
-// whether there was one. A running worker notices the missing row and stops
-// before posting anything else.
-func (s *Store) CancelBackfillJob(ctx context.Context, guildID, groupID, targetChannelID string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM backfill_jobs WHERE guild_id=? AND group_id=? AND target_channel_id=?`,
-		guildID, groupID, targetChannelID)
+// CancelBackfillJobs removes every pending job that fills the channel and
+// reports how many there were. A channel can belong to several groups, so the
+// stop command works on the channel, not on one group. A running worker
+// notices the missing row and stops before posting anything else.
+func (s *Store) CancelBackfillJobs(ctx context.Context, guildID, targetChannelID string) (int64, error) {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM backfill_jobs WHERE guild_id=? AND target_channel_id=?`, guildID, targetChannelID)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	removed, err := res.RowsAffected()
-	return removed > 0, err
+	return res.RowsAffected()
 }
 
 func (s *Store) MarkBackfillSkipped(ctx context.Context, jobID int64, sourceChannelID, sourceMessageID, reason string) error {

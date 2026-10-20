@@ -76,7 +76,6 @@ func Commands() []*discordgo.ApplicationCommand {
 					Description: "Stop the backfill into a channel",
 					Type:        discordgo.ApplicationCommandOptionSubCommand,
 					Options: []*discordgo.ApplicationCommandOption{
-						{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
 						{Name: "channel", Description: "Channel to stop backfilling into", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
 					},
 				},

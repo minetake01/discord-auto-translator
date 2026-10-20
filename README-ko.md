@@ -98,7 +98,7 @@ Discord 개발자 포털의 **Bot** 탭에서 `MESSAGE CONTENT INTENT`가 활성
 |---|---|---|
 | `/new-channel` | 새 번역 그룹을 생성하고 채널을 등록 | `language` (필수): BCP-47 언어 코드<br>`channel` (선택): 대상 채널 (기본값: 현재 채널)<br>`group` (선택): 그룹 식별자 (기본값: 채널명) |
 | `/join-channel` | 기존 번역 그룹에 채널 추가 | `group` (필수): 참여할 그룹명<br>`language` (필수): BCP-47 언어 코드<br>`channel` (선택): 대상 채널 (기본값: 현재 채널)<br>`backfill` (선택): 그룹의 기존 메시지 기록을 이 채널로 번역(견적 확인 후 시작) |
-| `/backfill` | 채널의 이전 메시지 번역을 관리 | 하위 명령: `stop`<br>`group` (필수): 그룹명<br>`channel` (선택): 번역을 중지할 대상 채널 (기본값: 현재 채널) |
+| `/backfill` | 채널의 이전 메시지 번역을 관리 | 하위 명령: `stop`<br>`channel` (선택): 번역을 중지할 대상 채널 (기본값: 현재 채널) |
 | `/leave-channel` | 번역 그룹에서 채널 제거 | `group` (필수): 그룹명<br>`channel` (선택): 대상 채널 (기본값: 현재 채널) |
 | `/delete-group` | 번역 그룹 완전 삭제 | `group` (필수): 삭제할 그룹명 |
 | `/list-groups` | 서버 내 모든 번역 그룹 및 채널 목록 표시 | 없음 |

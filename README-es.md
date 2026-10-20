@@ -98,7 +98,7 @@ Por defecto, los comandos de administración solo pueden ser ejecutados por miem
 |---|---|---|
 | `/new-channel` | Crea un nuevo grupo de traducción y registra un canal | `language` (obligatorio): Código de idioma BCP-47<br>`channel` (opcional): Canal objetivo (por defecto: canal actual)<br>`group` (opcional): Nombre del grupo (por defecto: nombre del canal) |
 | `/join-channel` | Añade un canal a un grupo existente | `group` (obligatorio): Nombre del grupo<br>`language` (obligatorio): Código de idioma BCP-47<br>`channel` (opcional): Canal objetivo (por defecto: canal actual)<br>`backfill` (opcional): Traduce el historial existente del grupo al canal (tras una estimación y confirmación) |
-| `/backfill` | Gestiona la traducción del historial de un canal | Subcomando: `stop`<br>`group` (obligatorio): Nombre del grupo<br>`channel` (opcional): Canal cuya traducción se detiene (por defecto: el canal actual) |
+| `/backfill` | Gestiona la traducción del historial de un canal | Subcomando: `stop`<br>`channel` (opcional): Canal cuya traducción se detiene (por defecto: el canal actual) |
 | `/leave-channel` | Retira un canal de un grupo | `group` (obligatorio): Nombre del grupo<br>`channel` (opcional): Canal objetivo (por defecto: canal actual) |
 | `/delete-group` | Elimina un grupo de traducción por completo | `group` (obligatorio): Nombre del grupo a eliminar |
 | `/list-groups` | Lista todos los grupos y canales vinculados | Ninguna |

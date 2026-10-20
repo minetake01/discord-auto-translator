@@ -98,7 +98,7 @@ Per impostazione predefinita, i comandi di amministrazione sono riservati agli u
 |---|---|---|
 | `/new-channel` | Crea un nuovo gruppo di traduzione e registra un canale | `language` (obbligatorio): Codice lingua BCP-47<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente)<br>`group` (opzionale): Nome del gruppo (predefinito: nome canale) |
 | `/join-channel` | Aggiunge un canale a un gruppo esistente | `group` (obbligatorio): Nome del gruppo<br>`language` (obbligatorio): Codice lingua BCP-47<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente)<br>`backfill` (opzionale): Traduce la cronologia esistente del gruppo nel canale (dopo stima e conferma) |
-| `/backfill` | Gestisce la traduzione della cronologia di un canale | Sottocomando: `stop`<br>`group` (obbligatorio): Nome del gruppo<br>`channel` (opzionale): Canale di cui interrompere la traduzione (predefinito: canale corrente) |
+| `/backfill` | Gestisce la traduzione della cronologia di un canale | Sottocomando: `stop`<br>`channel` (opzionale): Canale di cui interrompere la traduzione (predefinito: canale corrente) |
 | `/leave-channel` | Rimuove un canale da un gruppo | `group` (obbligatorio): Nome del gruppo<br>`channel` (opzionale): Canale di destinazione (predefinito: canale corrente) |
 | `/delete-group` | Elimina completamente un gruppo di traduzione | `group` (obbligatorio): Nome del gruppo da eliminare |
 | `/list-groups` | Elenca tutti i gruppi di traduzione e i canali collegati | Nessuna |

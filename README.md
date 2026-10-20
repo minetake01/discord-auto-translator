@@ -98,7 +98,7 @@ By default, administrative slash commands can only be executed by users with **A
 |---|---|---|
 | `/new-channel` | Create a new translation group and register a channel | `language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel)<br>`group` (optional): Group identifier (defaults to channel name) |
 | `/join-channel` | Add a channel to an existing translation group | `group` (required): Group identifier<br>`language` (required): BCP-47 language code<br>`channel` (optional): Target channel (defaults to current channel)<br>`backfill` (optional): Translate the group's existing history into the channel after an estimate and confirmation |
-| `/backfill` | Manage a channel's history backfill | Subcommand: `stop`<br>`group` (required): Group identifier<br>`channel` (optional): Channel to stop backfilling into (defaults to current channel) |
+| `/backfill` | Manage a channel's history backfill | Subcommand: `stop`<br>`channel` (optional): Channel to stop backfilling into (defaults to current channel) |
 | `/leave-channel` | Remove a channel from a translation group | `group` (required): Group identifier<br>`channel` (optional): Target channel (defaults to current channel) |
 | `/delete-group` | Delete an entire translation group | `group` (required): Group identifier to delete |
 | `/list-groups` | List all translation groups and linked channels | None |

@@ -552,9 +552,9 @@ func TestThreadStateChangeSyncsToPeersWithoutEchoing(t *testing.T) {
 func TestBackfillStopCancelsTheJobAndReleasesTheTarget(t *testing.T) {
 	ctx := context.Background()
 	f := newBackfillFixture(t, &echoTranslator{}, sourceMessage("100000000000000001", "a"))
-	stopped, err := f.store.CancelBackfillJob(ctx, "guild", "g", "en")
-	if err != nil || !stopped {
-		t.Fatalf("stopped = %v, err = %v", stopped, err)
+	stopped, err := f.store.CancelBackfillJobs(ctx, "guild", "en")
+	if err != nil || stopped != 1 {
+		t.Fatalf("stopped = %d, err = %v", stopped, err)
 	}
 	if err := f.service.runBackfillJob(ctx, f.job); !errors.Is(err, errBackfillCanceled) {
 		t.Fatalf("err = %v", err)
@@ -565,8 +565,8 @@ func TestBackfillStopCancelsTheJobAndReleasesTheTarget(t *testing.T) {
 	if held, _ := f.store.BackfillTargetHeld(ctx, "g", "en"); held {
 		t.Fatal("a stopped job must stop holding its target")
 	}
-	if stopped, err := f.store.CancelBackfillJob(ctx, "guild", "g", "en"); err != nil || stopped {
-		t.Fatalf("second stop = %v, err = %v", stopped, err)
+	if stopped, err := f.store.CancelBackfillJobs(ctx, "guild", "en"); err != nil || stopped != 0 {
+		t.Fatalf("second stop = %d, err = %v", stopped, err)
 	}
 }
 

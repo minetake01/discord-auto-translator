@@ -132,9 +132,6 @@ func (h *CommandHandler) handleJoinWithBackfill(s *discordgo.Session, i *discord
 	id := h.pendingBackfills.put(pendingBackfill{channel: channel, requester: interactionUserID(i), createdAt: time.Now()})
 	content := localizedUIStringf(locale, uiKeyBackfillEstimate, channel.GroupID, channel.ChannelID,
 		estimateCount(estimate), estimate.Images, estimate.InputTokens, estimate.OutputTokens, formatEstimateDuration(estimate.Duration))
-	if estimate.Truncated {
-		content += localizedUIString(locale, uiKeyBackfillEstimateLimited)
-	}
 	edit(content, []discordgo.MessageComponent{discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillStart), Style: discordgo.PrimaryButton, CustomID: backfillCustomStart + id},
 		discordgo.Button{Label: localizedUIString(locale, uiKeyBackfillCancel), Style: discordgo.SecondaryButton, CustomID: backfillCustomCancel + id},
@@ -188,28 +185,23 @@ func (h *CommandHandler) handleBackfill(s *discordgo.Session, i *discordgo.Inter
 	}
 }
 
-// handleBackfillStop removes the job of a channel. The worker watches the job
-// row, so deleting it stops the run before the next message is posted and
-// live mirroring into the channel resumes immediately.
+// handleBackfillStop removes every job that fills the channel. The worker
+// watches the job row, so deleting it stops the run before the next message is
+// posted and live mirroring into the channel resumes immediately.
 func (h *CommandHandler) handleBackfillStop(s *discordgo.Session, i *discordgo.InteractionCreate, options []*discordgo.ApplicationCommandInteractionDataOption) {
 	ctx := context.Background()
-	groupID := strings.TrimSpace(optionString(options, "group"))
-	if groupID == "" {
-		h.reply(s, i, uiKeyGroupRequired)
-		return
-	}
 	channelID := optionChannel(options, "channel", i.ChannelID)
-	stopped, err := h.store.CancelBackfillJob(ctx, i.GuildID, groupID, channelID)
+	stopped, err := h.store.CancelBackfillJobs(ctx, i.GuildID, channelID)
 	if err != nil {
 		log.Printf("backfill stop store: %v", err)
 		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
-	if !stopped {
-		h.reply(s, i, uiKeyBackfillNotRunning, groupID, channelID)
+	if stopped == 0 {
+		h.reply(s, i, uiKeyBackfillNotRunning, channelID)
 		return
 	}
-	h.reply(s, i, uiKeyBackfillStopped, groupID, channelID)
+	h.reply(s, i, uiKeyBackfillStopped, channelID)
 }
 
 // joinChannel creates the channel's webhook and registers it, together with
