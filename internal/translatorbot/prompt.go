@@ -1,12 +1,9 @@
 package translatorbot
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
-	"io"
 	"strings"
 )
 
@@ -385,14 +382,8 @@ func parseTopicSummaryResponse(raw string) (string, error) {
 	var parsed struct {
 		Summary string `json:"summary"`
 	}
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&parsed); err != nil {
+	if err := decodeStrictJSONValue([]byte(raw), &parsed); err != nil {
 		return "", fmt.Errorf("parse topic summary response: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return "", fmt.Errorf("parse topic summary response: multiple JSON values")
 	}
 	summary := strings.TrimSpace(html.UnescapeString(parsed.Summary))
 	if summary == "" {

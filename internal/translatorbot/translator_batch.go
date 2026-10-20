@@ -1,12 +1,9 @@
 package translatorbot
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
-	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -156,14 +153,9 @@ func parseBatchTranslationResponse(raw string, sources, protected []string, prot
 	if structuredOutputPadding.MatchString(raw) {
 		return nil, fmt.Errorf("%w: whitespace-padded structured output", errBatchContent)
 	}
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
-	var parsed map[string]json.RawMessage
-	if err := decoder.Decode(&parsed); err != nil {
+	parsed, err := decodeJSONObjectMap(raw)
+	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errBatchContent, err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, fmt.Errorf("%w: multiple JSON values", errBatchContent)
 	}
 	if len(parsed) != len(sources) {
 		return nil, fmt.Errorf("%w: got %d messages, want %d", errBatchContent, len(parsed), len(sources))
@@ -183,10 +175,8 @@ func parseBatchTranslationResponse(raw string, sources, protected []string, prot
 		if !ok {
 			return nil, fmt.Errorf("%w: missing message %q", errBatchContent, id)
 		}
-		itemDecoder := json.NewDecoder(bytes.NewReader(itemRaw))
-		itemDecoder.DisallowUnknownFields()
 		var item translationResponseItem
-		if err := itemDecoder.Decode(&item); err != nil {
+		if err := decodeStrictJSONValue(itemRaw, &item); err != nil {
 			return nil, fmt.Errorf("%w: message %q: %v", errBatchContent, id, err)
 		}
 		text := strings.TrimSpace(html.UnescapeString(item.TranslatedText))

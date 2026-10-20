@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"html"
-	"io"
 	"strings"
 )
 
@@ -228,15 +226,36 @@ type attachmentAltResponseItem struct {
 	AttachmentDescriptions []string `json:"attachment_descriptions"`
 }
 
-func decodeLanguageKeyedJSON[T any](raw string, targetLanguages []string) (map[string]T, error) {
-	decoder := json.NewDecoder(bytes.NewBufferString(raw))
+// decodeJSONObjectMap decodes exactly one JSON object into raw per-key values
+// and rejects any trailing data after it.
+func decodeJSONObjectMap(raw string) (map[string]json.RawMessage, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
 	var parsed map[string]json.RawMessage
 	if err := decoder.Decode(&parsed); err != nil {
 		return nil, err
 	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		return nil, errors.New("multiple JSON values")
+	if err := ensureJSONEOF(decoder); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+// decodeStrictJSONValue decodes exactly one JSON value into dst, rejecting
+// unknown fields and any trailing data after the value. Every structured
+// translation response is held to this contract before its own validation.
+func decodeStrictJSONValue(raw []byte, dst any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	return ensureJSONEOF(decoder)
+}
+
+func decodeLanguageKeyedJSON[T any](raw string, targetLanguages []string) (map[string]T, error) {
+	parsed, err := decodeJSONObjectMap(raw)
+	if err != nil {
+		return nil, err
 	}
 	for _, lang := range targetLanguages {
 		if _, ok := parsed[lang]; !ok {
@@ -248,23 +267,14 @@ func decodeLanguageKeyedJSON[T any](raw string, targetLanguages []string) (map[s
 	}
 	out := make(map[string]T, len(targetLanguages))
 	for _, lang := range targetLanguages {
-		itemRaw, ok := parsed[lang]
-		if !ok {
-			return nil, fmt.Errorf("missing language %q", lang)
-		}
+		itemRaw := parsed[lang]
 		trimmedItem := bytes.TrimSpace(itemRaw)
 		if len(trimmedItem) == 0 || trimmedItem[0] != '{' {
 			return nil, fmt.Errorf("language %q is not an object", lang)
 		}
-		itemDecoder := json.NewDecoder(bytes.NewReader(itemRaw))
-		itemDecoder.DisallowUnknownFields()
 		var item T
-		if err := itemDecoder.Decode(&item); err != nil {
+		if err := decodeStrictJSONValue(itemRaw, &item); err != nil {
 			return nil, fmt.Errorf("language %q: %w", lang, err)
-		}
-		var itemTrailing any
-		if err := itemDecoder.Decode(&itemTrailing); err != io.EOF {
-			return nil, fmt.Errorf("language %q: multiple JSON values", lang)
 		}
 		out[lang] = item
 	}
