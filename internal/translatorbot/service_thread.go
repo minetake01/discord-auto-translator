@@ -32,28 +32,28 @@ type threadCreateRequest struct {
 }
 
 func (s *Service) SyncThreadCreate(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string, appliedTags []string) error {
-	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
-		GuildID:         guildID,
-		SourceChannelID: sourceChannelID,
-		SourceThreadID:  sourceThreadID,
-		SourceMessageID: sourceThreadID,
-		Name:            name,
-		AppliedTags:     appliedTags,
-	}, liveTranslation)
+	_, err := s.syncThreadCreate(ctx, threadCreateFromEvent(guildID, sourceChannelID, sourceThreadID, name, appliedTags, false), liveTranslation)
 	return err
 }
 
 func (s *Service) SyncThreadCreateFromGateway(ctx context.Context, guildID, sourceChannelID, sourceThreadID, name string, appliedTags []string) error {
-	_, err := s.syncThreadCreate(ctx, threadCreateRequest{
+	_, err := s.syncThreadCreate(ctx, threadCreateFromEvent(guildID, sourceChannelID, sourceThreadID, name, appliedTags, true), liveTranslation)
+	return err
+}
+
+// threadCreateFromEvent builds the request for a thread created in Discord.
+// A gateway event can arrive before the parent message is linked and before a
+// forum post has its initial message, so that path defers instead.
+func threadCreateFromEvent(guildID, sourceChannelID, sourceThreadID, name string, appliedTags []string, fromGateway bool) threadCreateRequest {
+	return threadCreateRequest{
 		GuildID:               guildID,
 		SourceChannelID:       sourceChannelID,
 		SourceThreadID:        sourceThreadID,
 		SourceMessageID:       sourceThreadID,
 		Name:                  name,
 		AppliedTags:           appliedTags,
-		DeferWithoutSourceMsg: true,
-	}, liveTranslation)
-	return err
+		DeferWithoutSourceMsg: fromGateway,
+	}
 }
 
 // syncThreadCreate mirrors a newly created thread to every peer channel,
@@ -166,20 +166,10 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		if err != nil {
 			return false, err
 		}
-		poll := pollTranslations[target.Language]
-		translatedQuestion := s.postProcessContent(ctx, req.GuildID, poll.Question, target.Language)
-		translatedAnswers := make([]string, len(poll.Answers))
-		for i, answer := range poll.Answers {
-			translatedAnswers[i] = s.postProcessContent(ctx, req.GuildID, answer, target.Language)
-		}
-		if embed := buildPollEmbed(translatedQuestion, formatTranslatedPollAnswers(req.InitialMessagePoll, translatedAnswers), req.InitialMessageRoleColor); embed != nil {
-			embeds = []*discordgo.MessageEmbed{embed}
-		}
-		pollSnapshot := formatPollSnapshot(req.InitialMessagePoll)
-		if strings.TrimSpace(snapshot) != "" && pollSnapshot != "" {
-			snapshot = strings.TrimSpace(snapshot) + "\n\n" + pollSnapshot
-		} else if pollSnapshot != "" {
-			snapshot = pollSnapshot
+		embeds = s.translatedPollEmbeds(ctx, req.GuildID, req.InitialMessagePoll, pollTranslations[target.Language], target.Language, req.InitialMessageRoleColor)
+		snapshot = pollMessageSnapshot(snapshot, req.InitialMessagePoll)
+		if err := s.saveTranslatedPolls(ctx, req.SourceThreadID, req.InitialMessageID, req.InitialMessagePoll.Expiry, pollTranslations); err != nil {
+			return false, err
 		}
 		translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, true)
 	}
@@ -216,7 +206,6 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 			}); err != nil {
 				return false, err
 			}
-			_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(req.SourceThreadID, req.InitialMessageID, threadID))
 		}
 		return true, nil
 	}
@@ -224,7 +213,12 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 }
 
 func threadCreateHasInitialPayload(req threadCreateRequest) bool {
-	return strings.TrimSpace(req.InitialMessageText) != "" || req.InitialMessagePoll != nil || len(req.InitialMessageFiles) > 0 || len(req.InitialMessageStickers) > 0
+	return !DiscordMessage{
+		Content:     req.InitialMessageText,
+		Attachments: req.InitialMessageFiles,
+		Stickers:    req.InitialMessageStickers,
+		Poll:        req.InitialMessagePoll,
+	}.hasNoPayload()
 }
 
 // resolveTargetThreadPlan decides how to create the mirrored thread before any

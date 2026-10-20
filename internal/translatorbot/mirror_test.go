@@ -840,7 +840,7 @@ func TestHandleMessageCreateRateLimitBlocksTranslation(t *testing.T) {
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
-	service.SetRateLimiter(NewTokenRateLimiter(10))
+	service.SetRateLimiter(NewRateLimiter(10))
 	seedGroup(t, store)
 
 	if err := service.HandleMessageCreate(ctx, DiscordMessage{
@@ -1022,7 +1022,7 @@ func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) 
 	store := newTestStore(t)
 	discord := &fakeDiscordAPI{}
 	service := NewService(store, discord, &echoTranslator{})
-	service.SetRateLimiter(NewTokenRateLimiter(10))
+	service.SetRateLimiter(NewRateLimiter(10))
 	seedGroup(t, store)
 
 	if err := postSourceMessage(t, service, "ja", "100000000000000001", rateLimitOversizeContent); err != nil {
@@ -1066,7 +1066,7 @@ func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) 
 		t.Fatalf("skip-translation success must not reset rate-limit notices: %#v", discord.channelMessages)
 	}
 
-	service.SetRateLimiter(NewTokenRateLimiter(100000))
+	service.SetRateLimiter(NewRateLimiter(100000))
 	sentBefore := len(discord.sent)
 	if err := postSourceMessage(t, service, "ja", "100000000000000006", "recovered"); err != nil {
 		t.Fatal(err)
@@ -1075,7 +1075,7 @@ func TestHandleMessageCreateNotifiesRateLimitOncePerSourceChannel(t *testing.T) 
 		t.Fatal("expected mirrored message after rate limit recovered")
 	}
 
-	service.SetRateLimiter(NewTokenRateLimiter(10))
+	service.SetRateLimiter(NewRateLimiter(10))
 	if err := postSourceMessage(t, service, "ja", "100000000000000007", rateLimitOversizeContent); err != nil {
 		t.Fatal(err)
 	}

@@ -14,10 +14,12 @@ type NameMaps struct {
 	Users    map[string]string // userID → display name
 	Channels map[string]string // channelID → channel name (source)
 	Roles    map[string]string // roleID → role name
-	Sites    map[string]string // rawURL → page title
 }
 
+// SiteContextEntry is the metadata gathered for one linked page. Protection
+// assigns the [SITE:N] id when that page's URL appears in the source text.
 type SiteContextEntry struct {
+	URL            string // raw URL as it appears in the source text
 	ID             string // matches N in [SITE:N]
 	Title          string // page title for model background only
 	Description    string
@@ -26,13 +28,12 @@ type SiteContextEntry struct {
 }
 
 type Protector struct {
-	names            NameMaps
-	siteDescriptions map[string]string
-	siteImages       map[string]string
-	items            map[string]string
-	counts           map[string]int
-	sites            []SiteContextEntry
-	siteSeq          int
+	names    NameMaps
+	siteMeta map[string]SiteContextEntry
+	items    map[string]string
+	counts   map[string]int
+	sites    []SiteContextEntry
+	siteSeq  int
 }
 
 func NewProtector(names NameMaps) *Protector {
@@ -43,12 +44,14 @@ func NewProtector(names NameMaps) *Protector {
 	}
 }
 
-func (p *Protector) SetSiteDescriptions(descriptions map[string]string) {
-	p.siteDescriptions = descriptions
-}
-
-func (p *Protector) SetSiteImages(images map[string]string) {
-	p.siteImages = images
+func (p *Protector) SetSites(sites []SiteContextEntry) {
+	if len(sites) == 0 {
+		return
+	}
+	p.siteMeta = make(map[string]SiteContextEntry, len(sites))
+	for _, site := range sites {
+		p.siteMeta[site.URL] = site
+	}
 }
 
 func (p *Protector) SiteContext() []SiteContextEntry {
@@ -173,11 +176,7 @@ func (p *Protector) tokenFor(match string) string {
 		rawURL := strings.Trim(match, "<>")
 		p.siteSeq++
 		id := strconv.Itoa(p.siteSeq)
-		title := ""
-		if p.names.Sites != nil {
-			title = p.names.Sites[rawURL]
-		}
-		p.recordSiteContext(rawURL, id, title)
+		p.recordSiteContext(rawURL, id)
 		return "[SITE:" + id + "]"
 
 	default:
@@ -185,19 +184,14 @@ func (p *Protector) tokenFor(match string) string {
 	}
 }
 
-func (p *Protector) recordSiteContext(rawURL, id, title string) {
-	if strings.TrimSpace(title) == "" {
+func (p *Protector) recordSiteContext(rawURL, id string) {
+	site, ok := p.siteMeta[rawURL]
+	if !ok || strings.TrimSpace(site.Title) == "" {
 		return
 	}
-	desc := ""
-	if p.siteDescriptions != nil {
-		desc = p.siteDescriptions[rawURL]
-	}
-	imageURL := ""
-	if p.siteImages != nil {
-		imageURL = p.siteImages[rawURL]
-	}
-	p.sites = append(p.sites, SiteContextEntry{ID: id, Title: title, Description: desc, ImageURL: imageURL})
+	site.URL = rawURL
+	site.ID = id
+	p.sites = append(p.sites, site)
 }
 
 func (p *Protector) nextToken(kind, label string) string {

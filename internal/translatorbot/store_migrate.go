@@ -19,6 +19,7 @@ type schemaMigration func(ctx context.Context, tx *sql.Tx) error
 var schemaMigrations = []schemaMigration{
 	migrateBaselineSchema,
 	migrateBackfillSchema,
+	migrateDropProcessedEvents,
 }
 
 func currentSchemaVersion() int { return len(schemaMigrations) }
@@ -295,7 +296,6 @@ func migrateBaselineSchema(ctx context.Context, tx *sql.Tx) error {
 		"translation_groups":     {"created_at": "INTEGER"},
 		"message_links":          {"source_message_id": "INTEGER"},
 		"pin_states":             {"message_id": "INTEGER"},
-		"processed_events":       {"created_at": "INTEGER"},
 		"glossary_entries":       {"created_at": "INTEGER"},
 		"poll_translation_cache": {"source_message_id": "INTEGER", "expires_at": "INTEGER"},
 		"topic_summaries":        {"created_at": "INTEGER"},
@@ -421,4 +421,11 @@ func migrateBackfillSchema(ctx context.Context, tx *sql.Tx) error {
 			FOREIGN KEY (job_id) REFERENCES backfill_jobs(id) ON DELETE CASCADE
 		)`,
 	)
+}
+
+// migrateDropProcessedEvents removes the processed_events bookkeeping. The
+// message_links row written with each post already records that a source
+// message was mirrored into a target channel.
+func migrateDropProcessedEvents(ctx context.Context, tx *sql.Tx) error {
+	return execAll(ctx, tx, `DROP TABLE IF EXISTS processed_events`)
 }

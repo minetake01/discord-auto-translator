@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -34,13 +35,29 @@ type forumTagUISession struct {
 	PeerChannelIDs []string
 }
 
+// forumTagUISessionTTL bounds how long an unanswered tag window stays usable.
+// Discord keeps the components clickable indefinitely; without a deadline a
+// forgotten window would pin its channel listing in memory forever.
+const forumTagUISessionTTL = 30 * time.Minute
+
+type forumTagUIEntry struct {
+	session   *forumTagUISession
+	expiresAt time.Time
+}
+
 func (h *CommandHandler) putTagUI(messageID string, session *forumTagUISession) {
 	h.tagUIMu.Lock()
 	defer h.tagUIMu.Unlock()
 	if h.tagUI == nil {
-		h.tagUI = make(map[string]*forumTagUISession)
+		h.tagUI = make(map[string]forumTagUIEntry)
 	}
-	h.tagUI[messageID] = session
+	now := time.Now()
+	for id, entry := range h.tagUI {
+		if now.After(entry.expiresAt) {
+			delete(h.tagUI, id)
+		}
+	}
+	h.tagUI[messageID] = forumTagUIEntry{session: session, expiresAt: now.Add(forumTagUISessionTTL)}
 }
 
 func (h *CommandHandler) getTagUI(messageID string) *forumTagUISession {
@@ -49,7 +66,15 @@ func (h *CommandHandler) getTagUI(messageID string) *forumTagUISession {
 	if h.tagUI == nil {
 		return nil
 	}
-	return h.tagUI[messageID]
+	entry, ok := h.tagUI[messageID]
+	if !ok {
+		return nil
+	}
+	if time.Now().After(entry.expiresAt) {
+		delete(h.tagUI, messageID)
+		return nil
+	}
+	return entry.session
 }
 
 func (h *CommandHandler) deleteTagUI(messageID string) {
@@ -257,39 +282,32 @@ func (h *CommandHandler) updateForumTagUIMessage(s *discordgo.Session, i *discor
 	})
 }
 
-func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string, respondFresh bool) {
+func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, focus *discordgo.Channel, intro string) {
 	ctx := context.Background()
 	locale := commandLocale(i)
 	session, err := h.buildForumTagUISession(ctx, i.GuildID, groupID, focus, interactionUserID(i), locale, intro)
 	if err != nil {
 		log.Printf("forum tag ui build: %v", err)
-		if respondFresh {
-			h.reply(s, i, uiKeyUnexpectedError)
-		}
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
 	if session == nil {
-		if respondFresh {
-			if intro != "" {
-				h.respond(s, i, intro, true)
-				return
-			}
-			h.reply(s, i, uiKeyForumTagMapNoPeers)
+		if intro != "" {
+			h.respond(s, i, intro, true)
+			return
 		}
+		h.reply(s, i, uiKeyForumTagMapNoPeers)
 		return
 	}
 	content, components := h.renderForumTagUI(session)
-	if respondFresh {
-		msg, err := h.respondComponents(s, i, content, components)
-		if err != nil {
-			log.Printf("forum tag ui respond: %v", err)
-			h.reply(s, i, uiKeyUnexpectedError)
-			return
-		}
-		if msg != nil {
-			h.putTagUI(msg.ID, session)
-		}
+	msg, err := h.respondComponents(s, i, content, components)
+	if err != nil {
+		log.Printf("forum tag ui respond: %v", err)
+		h.reply(s, i, uiKeyUnexpectedError)
 		return
+	}
+	if msg != nil {
+		h.putTagUI(msg.ID, session)
 	}
 }
 
@@ -345,7 +363,7 @@ func (h *CommandHandler) handleEditForumTags(s *discordgo.Session, i *discordgo.
 		h.reply(s, i, uiKeyChannelNotJoined, groupID)
 		return
 	}
-	h.openForumTagUI(s, i, groupID, ch, "", true)
+	h.openForumTagUI(s, i, groupID, ch, "")
 }
 
 func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -449,5 +467,5 @@ func (h *CommandHandler) maybeOpenForumTagUIAfterJoin(s *discordgo.Session, i *d
 		h.respond(s, i, intro, true)
 		return
 	}
-	h.openForumTagUI(s, i, groupID, ch, intro, true)
+	h.openForumTagUI(s, i, groupID, ch, intro)
 }

@@ -50,6 +50,9 @@ func LoadConfig(path string) (Config, error) {
 		if err != nil {
 			return cfg, errors.New("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN must be an integer")
 		}
+		if limit <= 0 {
+			return cfg, errors.New("TRANSLATION_RATE_LIMIT_TOKENS_PER_MIN must be a positive integer")
+		}
 		cfg.TranslationRateLimitTokensPerMin = limit
 	} else {
 		cfg.TranslationRateLimitTokensPerMin = defaultRateLimitTokensPerMinute
@@ -58,6 +61,9 @@ func LoadConfig(path string) (Config, error) {
 		limit, err := strconv.Atoi(raw)
 		if err != nil {
 			return cfg, errors.New("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN must be an integer")
+		}
+		if limit <= 0 {
+			return cfg, errors.New("AVATAR_RATE_LIMIT_REQUESTS_PER_MIN must be a positive integer")
 		}
 		cfg.AvatarRateLimitRequestsPerMin = limit
 	} else {

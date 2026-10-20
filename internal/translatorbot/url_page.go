@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -80,27 +81,27 @@ func (c *urlPageCache) Lookup(ctx context.Context, content string) map[string]ur
 	return out
 }
 
+// attachURLPageMeta hands every linked page with a title to the translation.
+// Entries are ordered by URL so linked-page vision prioritisation is stable.
 func attachURLPageMeta(tc *TranslationContext, pages map[string]urlPageInfo) {
 	if len(pages) == 0 {
 		return
 	}
-	titles := make(map[string]string, len(pages))
-	descriptions := make(map[string]string, len(pages))
-	images := make(map[string]string, len(pages))
+	sites := make([]SiteContextEntry, 0, len(pages))
 	for rawURL, page := range pages {
-		if title := strings.TrimSpace(page.Title); title != "" {
-			titles[rawURL] = title
+		title := strings.TrimSpace(page.Title)
+		if title == "" {
+			continue
 		}
-		if desc := strings.TrimSpace(page.Description); desc != "" {
-			descriptions[rawURL] = desc
-		}
-		if imageURL := strings.TrimSpace(page.ImageURL); imageURL != "" {
-			images[rawURL] = imageURL
-		}
+		sites = append(sites, SiteContextEntry{
+			URL:         rawURL,
+			Title:       title,
+			Description: strings.TrimSpace(page.Description),
+			ImageURL:    strings.TrimSpace(page.ImageURL),
+		})
 	}
-	tc.SiteTitles = titles
-	tc.SiteDescriptions = descriptions
-	tc.SiteImages = images
+	sort.Slice(sites, func(i, j int) bool { return sites[i].URL < sites[j].URL })
+	tc.Sites = sites
 }
 
 func (c *urlPageCache) Replace(ctx context.Context, text, targetLanguage string) string {

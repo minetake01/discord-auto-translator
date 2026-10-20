@@ -20,8 +20,8 @@ var (
 
 // nativePhrasingInstruction is the baseline for the default style and every
 // casual-leaning preset: translate into what a native would actually type in
-// chat, phrased positively so the translation model receives direct guidance
-// reliably than prohibitions.
+// chat. It is phrased positively because the translation model follows direct
+// guidance more reliably than prohibitions.
 const nativePhrasingInstruction = `Write each translation as a native speaker of the target language would naturally type it in this chat: keep the source's tone and intent, and use natural conversational grammar and phrasing rather than stiff textbook wording.`
 
 var stylePresetInstructions = map[string]string{
@@ -35,18 +35,43 @@ var stylePresetInstructions = map[string]string{
 	"tweet":    nativePhrasingInstruction + ` Default to casual social media phrasing (a tweet): short, punchy, and colloquial. Do not add hashtags, emoji, or mentions that are not in the source text.`,
 }
 
+// stylePresetOrder lists the presets in choice order with the catalog key of
+// each label.
+var stylePresetOrder = []struct {
+	Preset string
+	Label  uiKey
+}{
+	{StylePresetDefault, uiKeyStylePresetDefaultLabel},
+	{"formal", uiKeyStylePresetFormalLabel},
+	{"casual", uiKeyStylePresetCasualLabel},
+	{"business", uiKeyStylePresetBusinessLabel},
+	{"literal", uiKeyStylePresetLiteralLabel},
+	{"gaming", uiKeyStylePresetGamingLabel},
+	{"friendly", uiKeyStylePresetFriendlyLabel},
+	{"netslang", uiKeyStylePresetNetslangLabel},
+	{"tweet", uiKeyStylePresetTweetLabel},
+}
+
 func StylePresetChoices() []*discordgo.ApplicationCommandOptionChoice {
-	return []*discordgo.ApplicationCommandOptionChoice{
-		{Name: "default (自然なチャット)", Value: StylePresetDefault},
-		{Name: "formal (丁寧・格式)", Value: "formal"},
-		{Name: "casual (カジュアル)", Value: "casual"},
-		{Name: "business (ビジネス)", Value: "business"},
-		{Name: "literal (直訳)", Value: "literal"},
-		{Name: "gaming (ゲーム)", Value: "gaming"},
-		{Name: "friendly (親しみやすい)", Value: "friendly"},
-		{Name: "netslang (ネットスレ風)", Value: "netslang"},
-		{Name: "tweet (つぶやき風)", Value: "tweet"},
+	choices := make([]*discordgo.ApplicationCommandOptionChoice, 0, len(stylePresetOrder))
+	for _, entry := range stylePresetOrder {
+		choices = append(choices, &discordgo.ApplicationCommandOptionChoice{
+			Name:              commandText(entry.Label),
+			NameLocalizations: commandLocalizations(entry.Label),
+			Value:             entry.Preset,
+		})
 	}
+	return choices
+}
+
+// stylePresetLabel renders a preset for display in the given language.
+func stylePresetLabel(language, preset string) string {
+	for _, entry := range stylePresetOrder {
+		if entry.Preset == preset {
+			return localizedUIString(language, entry.Label)
+		}
+	}
+	return preset
 }
 
 func IsValidStylePreset(preset string) bool {
@@ -81,21 +106,20 @@ func ResolveStyleInstructions(preset, custom string) string {
 	return stylePresetInstructions[preset]
 }
 
-func FormatGroupStyle(g TranslationGroup) string {
+// FormatGroupStyle renders a group's style for display: the preset label in the
+// reader's language, or the truncated custom instruction.
+func FormatGroupStyle(language string, g TranslationGroup) string {
 	if custom := strings.TrimSpace(g.StyleCustom); custom != "" {
-		return formatCustomStylePreview(custom)
+		const maxRunes = 40
+		runes := []rune(custom)
+		if len(runes) > maxRunes {
+			custom = string(runes[:maxRunes]) + "…"
+		}
+		return localizedUIStringf(language, uiKeyStyleCustomPreview, custom)
 	}
-	if preset := strings.TrimSpace(g.StylePreset); preset != "" && preset != StylePresetDefault {
-		return preset
+	preset := strings.TrimSpace(g.StylePreset)
+	if preset == "" {
+		preset = StylePresetDefault
 	}
-	return StylePresetDefault
-}
-
-func formatCustomStylePreview(custom string) string {
-	const maxRunes = 40
-	runes := []rune(custom)
-	if len(runes) <= maxRunes {
-		return "custom: " + custom
-	}
-	return "custom: " + string(runes[:maxRunes]) + "…"
+	return stylePresetLabel(language, preset)
 }

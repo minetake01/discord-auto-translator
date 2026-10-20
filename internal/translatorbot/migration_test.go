@@ -67,6 +67,10 @@ func TestOpenStoreMigratesLegacyDatabaseKeepingDataAndBackup(t *testing.T) {
 	if original, ok, err := s.MessageOriginal(ctx, "en", "100000000000000002"); err != nil || !ok || original.SourceMessageID != "100000000000000001" {
 		t.Fatalf("original = %#v ok=%v err=%v", original, ok, err)
 	}
+	var processedEvents int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='processed_events'`).Scan(&processedEvents); err != nil || processedEvents != 0 {
+		t.Fatalf("processed_events tables = %d err=%v", processedEvents, err)
+	}
 	backups, err := filepath.Glob(path + ".v0-*.bak")
 	if err != nil || len(backups) != 1 {
 		t.Fatalf("backups = %v err=%v", backups, err)

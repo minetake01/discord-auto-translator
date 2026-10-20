@@ -17,19 +17,218 @@ const (
 	botWhitelistCommandName = "bot-whitelist"
 )
 
-var glossaryAttributeDefaults = []string{"人名", "地名", "スラング", "略語", "専門用語"}
+// Option kinds used by the command specs below.
+const (
+	optionKindString     = discordgo.ApplicationCommandOptionString
+	optionKindBoolean    = discordgo.ApplicationCommandOptionBoolean
+	optionKindChannel    = discordgo.ApplicationCommandOptionChannel
+	optionKindSubCommand = discordgo.ApplicationCommandOptionSubCommand
+)
+
+// guildChannelTypes selects the channels and forums that can join a group.
+var guildChannelTypes = []discordgo.ChannelType{
+	discordgo.ChannelTypeGuildText,
+	discordgo.ChannelTypeGuildNews,
+	discordgo.ChannelTypeGuildForum,
+	discordgo.ChannelTypeGuildMedia,
+}
+
+// glossaryAttributeKeys lists the attribute suggestions in display order.
+var glossaryAttributeKeys = []uiKey{
+	uiKeyGlossaryAttributePersonName,
+	uiKeyGlossaryAttributePlaceName,
+	uiKeyGlossaryAttributeSlang,
+	uiKeyGlossaryAttributeAbbreviation,
+	uiKeyGlossaryAttributeTechnicalTerm,
+}
+
+// commandOptionSpec declares one option. Descriptions are catalog keys, so the
+// text Discord stores for the default locale and every localized variant come
+// from the same entry.
+type commandOptionSpec struct {
+	name         string
+	description  uiKey
+	kind         discordgo.ApplicationCommandOptionType
+	required     bool
+	autocomplete bool
+	channelTypes []discordgo.ChannelType
+	choices      []*discordgo.ApplicationCommandOptionChoice
+	options      []commandOptionSpec
+}
+
+func (o commandOptionSpec) discordgo() *discordgo.ApplicationCommandOption {
+	option := &discordgo.ApplicationCommandOption{
+		Name:                     o.name,
+		Description:              commandText(o.description),
+		DescriptionLocalizations: commandLocalizations(o.description),
+		Type:                     o.kind,
+		ChannelTypes:             o.channelTypes,
+		Required:                 o.required,
+		Autocomplete:             o.autocomplete,
+		Choices:                  o.choices,
+	}
+	for _, child := range o.options {
+		option.Options = append(option.Options, child.discordgo())
+	}
+	return option
+}
+
+// commandSpec declares one slash command.
+type commandSpec struct {
+	name        string
+	description uiKey
+	options     []commandOptionSpec
+}
+
+func (c commandSpec) discordgo() *discordgo.ApplicationCommand {
+	command := &discordgo.ApplicationCommand{
+		Name:                     c.name,
+		Description:              commandText(c.description),
+		DescriptionLocalizations: commandDescriptionLocalizations(c.description),
+	}
+	for _, option := range c.options {
+		command.Options = append(command.Options, option.discordgo())
+	}
+	return command
+}
+
+// guildCommandSpecs lists the commands registered in every guild. Option names
+// stay in ASCII because Discord keeps them untranslated.
+var guildCommandSpecs = []commandSpec{
+	{
+		name:        "new-channel",
+		description: uiKeyCmdNewChannelDesc,
+		options: []commandOptionSpec{
+			{name: "language", description: uiKeyOptLanguageDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "channel", description: uiKeyOptChannelRegisterDesc, kind: optionKindChannel, channelTypes: guildChannelTypes},
+			{name: "group", description: uiKeyOptGroupIDDesc, kind: optionKindString},
+		},
+	},
+	{
+		name:        "join-channel",
+		description: uiKeyCmdJoinChannelDesc,
+		options: []commandOptionSpec{
+			{name: "group", description: uiKeyOptExistingGroupDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "language", description: uiKeyOptLanguageDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "channel", description: uiKeyOptChannelJoinDesc, kind: optionKindChannel, channelTypes: guildChannelTypes},
+			{name: "backfill", description: uiKeyOptBackfillToggleDesc, kind: optionKindBoolean},
+		},
+	},
+	{
+		name:        "backfill",
+		description: uiKeyCmdBackfillDesc,
+		options: []commandOptionSpec{
+			{
+				name:        "stop",
+				description: uiKeyCmdBackfillStopDesc,
+				kind:        optionKindSubCommand,
+				options: []commandOptionSpec{
+					{name: "channel", description: uiKeyOptChannelBackfillStopDesc, kind: optionKindChannel, channelTypes: guildChannelTypes},
+				},
+			},
+		},
+	},
+	{
+		name:        "leave-channel",
+		description: uiKeyCmdLeaveChannelDesc,
+		options: []commandOptionSpec{
+			{name: "group", description: uiKeyOptExistingGroupDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "channel", description: uiKeyOptChannelRemoveDesc, kind: optionKindChannel, channelTypes: guildChannelTypes},
+		},
+	},
+	{
+		name:        "delete-group",
+		description: uiKeyCmdDeleteGroupDesc,
+		options: []commandOptionSpec{
+			{name: "group", description: uiKeyOptExistingGroupDesc, kind: optionKindString, required: true, autocomplete: true},
+		},
+	},
+	{
+		name:        "add-glossary",
+		description: uiKeyCmdAddGlossaryDesc,
+		options: []commandOptionSpec{
+			{name: "term", description: uiKeyOptTermMatchDesc, kind: optionKindString, required: true},
+			{name: "translation", description: uiKeyOptTranslationDesc, kind: optionKindString, required: true},
+			{name: "attribute", description: uiKeyOptAttributeDesc, kind: optionKindString, autocomplete: true},
+			{name: "always_include", description: uiKeyOptAlwaysIncludeDesc, kind: optionKindBoolean},
+		},
+	},
+	{name: "list-groups", description: uiKeyCmdListGroupsDesc},
+	{name: "list-glossary", description: uiKeyCmdListGlossaryDesc},
+	{
+		name:        "remove-glossary",
+		description: uiKeyCmdRemoveGlossaryDesc,
+		options: []commandOptionSpec{
+			{name: "term", description: uiKeyOptTermRemoveDesc, kind: optionKindString, required: true},
+		},
+	},
+	{
+		name:        "set-style",
+		description: uiKeyCmdSetStyleDesc,
+		options: []commandOptionSpec{
+			{name: "group", description: uiKeyOptExistingGroupDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "preset", description: uiKeyOptStylePresetDesc, kind: optionKindString, choices: StylePresetChoices()},
+			{name: "custom", description: uiKeyOptStyleCustomDesc, kind: optionKindString},
+		},
+	},
+	{
+		name:        editForumTagsCommand,
+		description: uiKeyCmdEditForumTagsDesc,
+		options: []commandOptionSpec{
+			{name: "group", description: uiKeyOptExistingGroupDesc, kind: optionKindString, required: true, autocomplete: true},
+			{name: "channel", description: uiKeyOptForumChannelDesc, kind: optionKindChannel, channelTypes: []discordgo.ChannelType{
+				discordgo.ChannelTypeGuildForum,
+				discordgo.ChannelTypeGuildMedia,
+			}},
+		},
+	},
+	{
+		name:        botWhitelistCommandName,
+		description: uiKeyCmdBotWhitelistDesc,
+		options: []commandOptionSpec{
+			{
+				name:        "add",
+				description: uiKeyCmdWhitelistAddDesc,
+				kind:        optionKindSubCommand,
+				options: []commandOptionSpec{
+					{name: "source_type", description: uiKeyOptSourceTypeDesc, kind: optionKindString, required: true, choices: sourceTypeChoices()},
+					{name: "source_id", description: uiKeyOptSourceIDDesc, kind: optionKindString, required: true},
+				},
+			},
+			{
+				name:        "remove",
+				description: uiKeyCmdWhitelistRmDesc,
+				kind:        optionKindSubCommand,
+				options: []commandOptionSpec{
+					{name: "source_type", description: uiKeyOptSourceTypeDesc, kind: optionKindString, required: true, choices: sourceTypeChoices()},
+					{name: "source_id", description: uiKeyOptSourceIDDesc, kind: optionKindString, required: true},
+				},
+			},
+			{name: "list", description: uiKeyCmdWhitelistListDesc, kind: optionKindSubCommand},
+		},
+	},
+}
 
 func sourceTypeChoices() []*discordgo.ApplicationCommandOptionChoice {
 	return []*discordgo.ApplicationCommandOptionChoice{
-		{Name: "Bot", Value: string(SourceTypeBot)},
-		{Name: "Webhook", Value: string(SourceTypeWebhook)},
+		{
+			Name:              commandText(uiKeyChoiceSourceTypeBot),
+			NameLocalizations: commandLocalizations(uiKeyChoiceSourceTypeBot),
+			Value:             string(SourceTypeBot),
+		},
+		{
+			Name:              commandText(uiKeyChoiceSourceTypeWebhook),
+			NameLocalizations: commandLocalizations(uiKeyChoiceSourceTypeWebhook),
+			Value:             string(SourceTypeWebhook),
+		},
 	}
 }
 
-func glossaryAttributeSuggestions(query string, limit int) []string {
+func glossaryAttributeSuggestions(language, query string, limit int) []string {
 	query = strings.ToLower(strings.TrimSpace(query))
-	result := make([]string, 0, len(glossaryAttributeDefaults))
-	for _, attribute := range glossaryAttributeDefaults {
+	result := make([]string, 0, len(glossaryAttributeKeys))
+	for _, key := range glossaryAttributeKeys {
+		attribute := localizedUIString(language, key)
 		if query == "" || strings.Contains(strings.ToLower(attribute), query) {
 			result = append(result, attribute)
 			if len(result) == limit {
@@ -41,144 +240,16 @@ func glossaryAttributeSuggestions(query string, limit int) []string {
 }
 
 func Commands() []*discordgo.ApplicationCommand {
-	channelTypes := []discordgo.ChannelType{
-		discordgo.ChannelTypeGuildText,
-		discordgo.ChannelTypeGuildNews,
-		discordgo.ChannelTypeGuildForum,
-		discordgo.ChannelTypeGuildMedia,
+	commands := make([]*discordgo.ApplicationCommand, 0, len(guildCommandSpecs)+1)
+	for _, spec := range guildCommandSpecs {
+		command := spec.discordgo()
+		command.DefaultMemberPermissions = &defaultAdminCommandPermissions
+		commands = append(commands, command)
 	}
-	cmds := []*discordgo.ApplicationCommand{
-		{
-			Name:        "new-channel",
-			Description: "Create a translation group from this channel or another channel",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "language", Description: "BCP-47 language code", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "channel", Description: "Channel or forum to register", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
-				{Name: "group", Description: "Short group identifier", Type: discordgo.ApplicationCommandOptionString, Required: false},
-			},
-		},
-		{
-			Name:        "join-channel",
-			Description: "Join this channel or another channel to a translation group",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "language", Description: "BCP-47 language code", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "channel", Description: "Channel or forum to join", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
-				{Name: "backfill", Description: "Also translate the group's past messages into this channel (shows an estimate first)", Type: discordgo.ApplicationCommandOptionBoolean, Required: false},
-			},
-		},
-		{
-			Name:        "backfill",
-			Description: "Manage the history backfill of a channel in a translation group",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Name:        "stop",
-					Description: "Stop the backfill into a channel",
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Options: []*discordgo.ApplicationCommandOption{
-						{Name: "channel", Description: "Channel to stop backfilling into", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
-					},
-				},
-			},
-		},
-		{
-			Name:        "leave-channel",
-			Description: "Remove this channel or another channel from a translation group",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "channel", Description: "Channel or forum to remove", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: channelTypes},
-			},
-		},
-		{
-			Name:        "delete-group",
-			Description: "Delete a translation group",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-			},
-		},
-		{
-			Name:        "add-glossary",
-			Description: "Register a preferred translation for a term in this server",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "term", Description: "Source term to match", Type: discordgo.ApplicationCommandOptionString, Required: true},
-				{Name: "translation", Description: "Preferred translation", Type: discordgo.ApplicationCommandOptionString, Required: true},
-				{Name: "attribute", Description: "Term type, such as person name, slang, or a custom value", Type: discordgo.ApplicationCommandOptionString, Required: false, Autocomplete: true},
-				{Name: "always_include", Description: "Always include this term in translation instructions", Type: discordgo.ApplicationCommandOptionBoolean, Required: false},
-			},
-		},
-		{
-			Name:        "list-groups",
-			Description: "List translation groups and channels for this server",
-		},
-		{
-			Name:        "list-glossary",
-			Description: "List glossary entries for this server",
-		},
-		{
-			Name:        "remove-glossary",
-			Description: "Remove a glossary entry from this server",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "term", Description: "Source term to remove", Type: discordgo.ApplicationCommandOptionString, Required: true},
-			},
-		},
-		{
-			Name:        "set-style",
-			Description: "Set translation style for a group (preset or custom instruction)",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "preset", Description: "Style preset", Type: discordgo.ApplicationCommandOptionString, Required: false, Choices: StylePresetChoices()},
-				{Name: "custom", Description: "Custom style instruction in natural language", Type: discordgo.ApplicationCommandOptionString, Required: false},
-			},
-		},
-		{
-			Name:        editForumTagsCommand,
-			Description: "Edit forum/media tag mappings for a channel in a translation group",
-			Options: []*discordgo.ApplicationCommandOption{
-				{Name: "group", Description: "Existing translation group", Type: discordgo.ApplicationCommandOptionString, Required: true, Autocomplete: true},
-				{Name: "channel", Description: "Forum or media channel to edit", Type: discordgo.ApplicationCommandOptionChannel, Required: false, ChannelTypes: []discordgo.ChannelType{
-					discordgo.ChannelTypeGuildForum,
-					discordgo.ChannelTypeGuildMedia,
-				}},
-			},
-		},
-		{
-			Name:        botWhitelistCommandName,
-			Description: "Manage allowed bot and webhook sources for this server",
-			Options: []*discordgo.ApplicationCommandOption{
-				{
-					Name:        "add",
-					Description: "Allow a bot or webhook source in this server",
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Options: []*discordgo.ApplicationCommandOption{
-						{Name: "source_type", Description: "Automated message source type", Type: discordgo.ApplicationCommandOptionString, Required: true, Choices: sourceTypeChoices()},
-						{Name: "source_id", Description: "Discord bot user ID or webhook ID", Type: discordgo.ApplicationCommandOptionString, Required: true},
-					},
-				},
-				{
-					Name:        "remove",
-					Description: "Remove a bot or webhook source from this server",
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-					Options: []*discordgo.ApplicationCommandOption{
-						{Name: "source_type", Description: "Automated message source type", Type: discordgo.ApplicationCommandOptionString, Required: true, Choices: sourceTypeChoices()},
-						{Name: "source_id", Description: "Discord bot user ID or webhook ID", Type: discordgo.ApplicationCommandOptionString, Required: true},
-					},
-				},
-				{
-					Name:        "list",
-					Description: "List allowed bot and webhook sources for this server",
-					Type:        discordgo.ApplicationCommandOptionSubCommand,
-				},
-			},
-		},
-	}
-	for _, cmd := range cmds {
-		cmd.DefaultMemberPermissions = &defaultAdminCommandPermissions
-	}
-	cmds = append(cmds, &discordgo.ApplicationCommand{
+	return append(commands, &discordgo.ApplicationCommand{
 		Name: viewOriginalCommandName,
 		Type: discordgo.MessageApplicationCommand,
 	})
-	return cmds
 }
 
 func RegisterGuildCommands(s *discordgo.Session, appID string) {

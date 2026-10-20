@@ -1,6 +1,7 @@
 package translatorbot
 
 import (
+	"strings"
 	"time"
 )
 
@@ -148,6 +149,12 @@ type DiscordMessage struct {
 	// history; backfill applies them to the new mirror.
 	Pinned    bool
 	Reactions []string // emoji API names
+}
+
+// hasNoPayload reports whether the message carries nothing worth mirroring.
+func (m DiscordMessage) hasNoPayload() bool {
+	return strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 &&
+		m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil && m.PollResult == nil
 }
 
 type DiscordFetchedMessage struct {

@@ -339,9 +339,9 @@ type openaiChatCompletionRequest struct {
 	Messages           []openaiChatMessage       `json:"messages"`
 	MaxTokens          int                       `json:"max_tokens"`
 	ReasoningEffort    string                    `json:"reasoning_effort,omitempty"`
-	PromptCacheKey     string                    `json:"prompt_cache_key,omitempty"`
-	PromptCacheOptions *openaiPromptCacheOptions `json:"prompt_cache_options,omitempty"`
-	ResponseFormat     openaiResponseFormat      `json:"response_format"`
+	PromptCacheKey     string                `json:"prompt_cache_key,omitempty"`
+	PromptCacheOptions *openaiPromptCacheMode `json:"prompt_cache_options,omitempty"`
+	ResponseFormat     openaiResponseFormat  `json:"response_format"`
 }
 
 type openaiResponseFormat struct {
@@ -370,17 +370,19 @@ type openaiImagePart struct {
 }
 
 type openaiTextPart struct {
-	Type                  string                       `json:"type"`
-	Text                  string                       `json:"text"`
-	PromptCacheBreakpoint *openaiPromptCacheBreakpoint `json:"prompt_cache_breakpoint,omitempty"`
+	Type                  string                `json:"type"`
+	Text                  string                `json:"text"`
+	PromptCacheBreakpoint *openaiPromptCacheMode `json:"prompt_cache_breakpoint,omitempty"`
 }
 
-type openaiPromptCacheBreakpoint struct {
+type openaiPromptCacheMode struct {
 	Mode string `json:"mode"`
 }
 
-type openaiPromptCacheOptions struct {
-	Mode string `json:"mode"`
+// openaiExplicitPromptCache marks a cache boundary. The request-level options
+// and the per-part breakpoint carry the same single mode.
+func openaiExplicitPromptCache() *openaiPromptCacheMode {
+	return &openaiPromptCacheMode{Mode: "explicit"}
 }
 
 type openaiChatCompletionResponse struct {
@@ -414,7 +416,7 @@ func openaiCachedTextPart(text string) openaiTextPart {
 	return openaiTextPart{
 		Type:                  "text",
 		Text:                  text,
-		PromptCacheBreakpoint: &openaiPromptCacheBreakpoint{Mode: "explicit"},
+		PromptCacheBreakpoint: openaiExplicitPromptCache(),
 	}
 }
 
@@ -456,7 +458,7 @@ func (t *OpenAITranslator) invokePrepared(ctx context.Context, prepared prepared
 		MaxTokens:          openaiMaxTokens,
 		ReasoningEffort:    t.reasoningEffort,
 		PromptCacheKey:     prepared.promptCacheKey,
-		PromptCacheOptions: &openaiPromptCacheOptions{Mode: "explicit"},
+		PromptCacheOptions: openaiExplicitPromptCache(),
 		ResponseFormat: openaiResponseFormat{
 			Type: "json_schema",
 			JSONSchema: openaiJSONSchema{

@@ -15,19 +15,12 @@ func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, thre
 		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, result.MessageID, threadID)
 		return WebhookSendResult{}, err
 	}
-	_, _ = s.store.MarkProcessed(ctx, messageLinkProcessedKey(link.SourceChannelID, link.SourceMessageID, link.TargetChannelID))
 	return result, nil
 }
 
 // targetAlreadySynced reports whether a source message already has a mirror
-// in the target channel, checking both processed-event markers and links.
+// in the target channel.
 func (s *Service) targetAlreadySynced(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string) (bool, error) {
-	key := messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID)
-	if processed, err := s.store.IsEventProcessed(ctx, key); err != nil {
-		return false, err
-	} else if processed {
-		return true, nil
-	}
 	links, err := s.store.MessageTargets(ctx, sourceChannelID, sourceMessageID)
 	if err != nil {
 		return false, err
@@ -38,10 +31,6 @@ func (s *Service) targetAlreadySynced(ctx context.Context, sourceChannelID, sour
 		}
 	}
 	return false, nil
-}
-
-func messageLinkProcessedKey(sourceChannelID, sourceMessageID, targetChannelID string) string {
-	return "msglink:" + sourceChannelID + ":" + sourceMessageID + ":" + targetChannelID
 }
 
 func findChannel(channels []GroupChannel, id string) *GroupChannel {

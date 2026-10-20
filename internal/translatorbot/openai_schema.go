@@ -3,6 +3,7 @@ package translatorbot
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 )
 
@@ -53,6 +54,27 @@ func openaiMessageTranslationSchema(targetLanguages []string) (json.RawMessage, 
 			"description": "The <final_message> translated into this language. Empty when <final_message> is empty.",
 		},
 	}))
+}
+
+// openaiBatchTranslationSchema keys one translated_text per <message> id in
+// <batch>, so a response can only answer the messages that were sent.
+func openaiBatchTranslationSchema(count int) (json.RawMessage, error) {
+	if count <= 0 {
+		return nil, errors.New("batch translation JSON schema requires messages")
+	}
+	properties := make(map[string]any, count)
+	required := make([]string, count)
+	for i := range count {
+		id := batchMessageID(i)
+		required[i] = id
+		properties[id] = openaiObjectSchema([]string{"translated_text"}, map[string]any{
+			"translated_text": map[string]any{
+				"type":        "string",
+				"description": fmt.Sprintf(`<message id="%s"> translated into the target language. Empty when that <message> is empty.`, id),
+			},
+		})
+	}
+	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
 }
 
 func openaiAttachmentAltTranslationSchema(targetLanguages []string, altCount int) (json.RawMessage, error) {

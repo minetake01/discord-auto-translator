@@ -200,9 +200,13 @@ func TestAddGlossaryAttributeOptionAndSuggestions(t *testing.T) {
 		t.Fatal("add-glossary is missing attribute option")
 	}
 
-	got := glossaryAttributeSuggestions("略", 25)
+	got := glossaryAttributeSuggestions("ja", "略", 25)
 	if len(got) != 1 || got[0] != "略語" {
 		t.Fatalf("suggestions = %#v", got)
+	}
+	got = glossaryAttributeSuggestions("en", "abbrev", 25)
+	if len(got) != 1 || got[0] != "abbreviation" {
+		t.Fatalf("english suggestions = %#v", got)
 	}
 }
 

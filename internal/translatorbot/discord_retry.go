@@ -23,14 +23,7 @@ func isDiscordRetryable(err error) bool {
 }
 
 func withDiscordRetry(fn func() error) error {
-	var err error
-	for attempt := range discordRetryAttempts {
-		err = fn()
-		if err == nil || !isDiscordRetryable(err) || attempt == discordRetryAttempts-1 {
-			return err
-		}
-		time.Sleep(discordRetryBackoff * time.Duration(1<<attempt))
-	}
+	_, err := withDiscordRetryValue(func() (struct{}, error) { return struct{}{}, fn() })
 	return err
 }
 

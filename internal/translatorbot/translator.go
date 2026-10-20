@@ -38,14 +38,26 @@ type TranslationContext struct {
 	MentionedUsers        map[string]string // userID → display name
 	MentionedChannels     map[string]string // channelID → channel name (source)
 	MentionedRoles        map[string]string // roleID → role name
-	SiteTitles            map[string]string // rawURL → page title
-	SiteDescriptions      map[string]string // rawURL → page description
-	SiteImages            map[string]string // rawURL → og:image URL
 	Sites                 []SiteContextEntry
 	Attachments           []TranslationAttachment
 	TopicSummary          string
 	PromptCacheLocation   string
 	PromptCacheGeneration string
+}
+
+// attachmentScope keeps only what an attachment translation needs: alt texts
+// are translated without the conversation surrounding the message.
+func (tc TranslationContext) attachmentScope(attachments []TranslationAttachment) TranslationContext {
+	return TranslationContext{
+		GuildID:               tc.GuildID,
+		MessageID:             tc.MessageID,
+		MentionedUsers:        tc.MentionedUsers,
+		MentionedChannels:     tc.MentionedChannels,
+		MentionedRoles:        tc.MentionedRoles,
+		Attachments:           attachments,
+		PromptCacheLocation:   tc.PromptCacheLocation,
+		PromptCacheGeneration: tc.PromptCacheGeneration,
+	}
 }
 
 type MultiTranslationResult struct {
@@ -172,25 +184,9 @@ func beginPreparedTranslation(targetLanguages []string, translationContext *Tran
 		Users:    translationContext.MentionedUsers,
 		Channels: translationContext.MentionedChannels,
 		Roles:    translationContext.MentionedRoles,
-		Sites:    translationContext.SiteTitles,
 	})
-	p.SetSiteDescriptions(translationContext.SiteDescriptions)
-	p.SetSiteImages(translationContext.SiteImages)
+	p.SetSites(translationContext.Sites)
 	return normalized, p, nil
-}
-
-func assignSiteContext(p *Protector, translationContext *TranslationContext) {
-	incoming := translationContext.Sites
-	translationContext.Sites = p.SiteContext()
-	flags := make(map[string]bool, len(incoming))
-	for _, site := range incoming {
-		if site.HasVisionImage {
-			flags[site.ID] = true
-		}
-	}
-	for i := range translationContext.Sites {
-		translationContext.Sites[i].HasVisionImage = flags[translationContext.Sites[i].ID]
-	}
 }
 
 func prepareMultiTranslation(targetLanguages []string, content string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -202,7 +198,7 @@ func prepareMultiTranslation(targetLanguages []string, content string, translati
 	protected := p.Protect(content)
 	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
 	translationContext.Attachments = attachments
-	assignSiteContext(p, &translationContext)
+	translationContext.Sites = p.SiteContext()
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(content, glossary)
 	prepared := preparedTranslation{
 		targetLanguages:    normalized,
@@ -299,19 +295,6 @@ func parseMultiTranslationResponse(raw string, targetLanguages []string, protect
 
 func prepareAttachmentAltTranslation(targetLanguages []string, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
 	attachments := append([]TranslationAttachment(nil), translationContext.Attachments...)
-	translationContext.History = nil
-	translationContext.ReplyChain = nil
-	translationContext.Sites = nil
-	translationContext.StyleInstructions = ""
-	translationContext.TopicSummary = ""
-	translationContext.ServerName = ""
-	translationContext.ServerDescription = ""
-	translationContext.ChannelName = ""
-	translationContext.ChannelTopic = ""
-	translationContext.ThreadName = ""
-	translationContext.SiteTitles = nil
-	translationContext.SiteDescriptions = nil
-	translationContext.SiteImages = nil
 	translationContext.Attachments = attachments
 
 	normalized, p, err := beginPreparedTranslation(targetLanguages, &translationContext)
@@ -407,7 +390,7 @@ func preparePollTranslation(targetLanguages []string, question string, answers [
 	for i, answer := range answers {
 		protectedAnswers[i] = p.Protect(answer)
 	}
-	assignSiteContext(p, &translationContext)
+	translationContext.Sites = p.SiteContext()
 	glossaryContent := strings.Join(append([]string{question}, answers...), "\n")
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(glossaryContent, glossary)
 	prepared := preparedTranslation{
@@ -487,7 +470,7 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 	if messageRequired {
 		protectedMessage = p.Protect(message)
 	}
-	assignSiteContext(p, &translationContext)
+	translationContext.Sites = p.SiteContext()
 	glossaryContent := name
 	if messageRequired {
 		glossaryContent += "\n" + message

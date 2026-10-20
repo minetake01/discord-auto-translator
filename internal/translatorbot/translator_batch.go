@@ -55,10 +55,6 @@ var errBatchContent = fmt.Errorf("%w: batch contract violated", errTranslationCo
 
 func batchMessageID(i int) string { return strconv.Itoa(i + 1) }
 
-func buildBatchTranslationSystemInstruction() string {
-	return buildTranslationSystemInstructionWithReplies(batchTranslationTaskIntro, "each <message> in <batch>", batchReplyContextDescription) + messageTranslationFewShotExamples
-}
-
 // prepareBatchTranslation protects every message with one shared Protector
 // so placeholder tokens and [SITE:N] ids are unique across the batch.
 func prepareBatchTranslation(targetLanguage string, messages []BatchMessage, translationContext TranslationContext, glossary []GlossaryEntry) (preparedTranslation, error) {
@@ -81,7 +77,7 @@ func prepareBatchTranslation(targetLanguage string, messages []BatchMessage, tra
 		protected[i] = p.Protect(m.Content)
 		sources[i] = m.Content
 	}
-	assignSiteContext(p, &translationContext)
+	translationContext.Sites = p.SiteContext()
 	alwaysGlossary, matchedGlossary := splitGlossaryEntries(strings.Join(sources, "\n"), glossary)
 	items := append([]BatchMessage(nil), messages...)
 	prepared := preparedTranslation{
@@ -144,25 +140,6 @@ func writeBatchSection(b *strings.Builder, messages []BatchMessage, protected []
 		b.WriteString("</message>")
 	}
 	b.WriteString("</batch>")
-}
-
-func openaiBatchTranslationSchema(count int) (json.RawMessage, error) {
-	if count <= 0 {
-		return nil, errors.New("batch translation JSON schema requires messages")
-	}
-	properties := make(map[string]any, count)
-	required := make([]string, count)
-	for i := range count {
-		id := batchMessageID(i)
-		required[i] = id
-		properties[id] = openaiObjectSchema([]string{"translated_text"}, map[string]any{
-			"translated_text": map[string]any{
-				"type":        "string",
-				"description": fmt.Sprintf(`<message id="%s"> translated into the target language. Empty when that <message> is empty.`, id),
-			},
-		})
-	}
-	return marshalOpenAIJSONSchema(openaiObjectSchema(required, properties))
 }
 
 // structuredOutputPadding finds whitespace runs between JSON tokens. Some
@@ -228,14 +205,6 @@ func parseBatchTranslationResponse(raw string, sources, protected []string, prot
 		out[i] = protector.Restore(text)
 	}
 	return out, nil
-}
-
-func estimateBatchOutputTokens(contents []string) int {
-	total := 0
-	for _, content := range contents {
-		total += estimateMessageOutputTokens(content)
-	}
-	return total
 }
 
 // estimateMessageOutputTokens over-approximates one translated_text entry

@@ -75,6 +75,8 @@ type backfillBatch struct {
 	imageBytes   int
 }
 
+// fits reports whether item may join the batch. A batch never mixes
+// destinations: the last item's destination is the batch destination.
 func (b *backfillBatch) fits(item backfillItem) bool {
 	if len(b.items) == 0 {
 		return true

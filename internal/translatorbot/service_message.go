@@ -102,7 +102,7 @@ func (s *Service) HandleMessageCreate(ctx context.Context, m DiscordMessage) err
 		_, err := s.ensureThreadSynced(ctx, m)
 		return err
 	}
-	if m.ThreadSystemMessage || (strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 && m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil && m.PollResult == nil) {
+	if m.ThreadSystemMessage || m.hasNoPayload() {
 		return nil
 	}
 	threadCreatedWithInitialMessage, err := s.ensureThreadSynced(ctx, m)
@@ -244,7 +244,7 @@ func (s *Service) mirrorContent(ctx context.Context, m DiscordMessage, targetID,
 // sendMirror posts the prepared content to one destination and records the
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content mirrorText, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) (WebhookSendResult, error) {
-	avatar := AvatarWithLanguageBadge(ctx, s.publicBaseURL, m.AuthorAvatarURL, dest.channel.Language, m.AuthorRoleColor)
+	avatar := avatarProxyURL(s.publicBaseURL, m.AuthorAvatarURL, m.AuthorRoleColor)
 	ref := MessageReference{MessageID: m.ReferencedMessageID, ChannelID: m.ReferencedMessageChannelID}
 	if ref.MessageID != "" && ref.ChannelID == "" {
 		ref.ChannelID = m.ChannelID
@@ -263,14 +263,7 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 	languages := destinationLanguages(dests)
 	question := strings.TrimSpace(m.Poll.Question)
 	answers := pollAnswerTexts(m.Poll)
-	snapshot := formatPollSnapshot(m.Poll)
-	if c := strings.TrimSpace(m.Content); c != "" {
-		if snapshot != "" {
-			snapshot = c + "\n\n" + snapshot
-		} else {
-			snapshot = c
-		}
-	}
+	snapshot := pollMessageSnapshot(m.Content, m.Poll)
 
 	contentTranslations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn, scope)
 	if err != nil {
@@ -288,30 +281,12 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
-		poll := pollTranslations[dest.channel.Language]
-		translatedQuestion := s.postProcessContent(ctx, m.GuildID, poll.Question, dest.channel.Language)
-		translatedAnswers := make([]string, len(poll.Answers))
-		for i, answer := range poll.Answers {
-			translatedAnswers[i] = s.postProcessContent(ctx, m.GuildID, answer, dest.channel.Language)
-		}
-		embed := buildPollEmbed(translatedQuestion, formatTranslatedPollAnswers(m.Poll, translatedAnswers), m.AuthorRoleColor)
-		var embeds []*discordgo.MessageEmbed
-		if embed != nil {
-			embeds = []*discordgo.MessageEmbed{embed}
-		}
+		embeds := s.translatedPollEmbeds(ctx, m.GuildID, m.Poll, pollTranslations[dest.channel.Language], dest.channel.Language, m.AuthorRoleColor)
 		if _, err := s.sendMirror(ctx, m, groupID, dest, content, embeds, nil, snapshot); err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 		}
 	}
-	if m.Poll.Expiry != nil && !m.Poll.Expiry.IsZero() {
-		for language, poll := range pollTranslations {
-			answers := make([]string, len(poll.Answers))
-			copy(answers, poll.Answers)
-			if err := s.store.SavePollTranslationCache(ctx, m.ChannelID, m.ID, language, answers, *m.Poll.Expiry); err != nil {
-				errs = append(errs, fmt.Errorf("poll translation cache %s: %w", language, err))
-			}
-		}
-	}
+	errs = append(errs, s.saveTranslatedPolls(ctx, m.ChannelID, m.ID, m.Poll.Expiry, pollTranslations))
 	return errors.Join(errs...)
 }
 

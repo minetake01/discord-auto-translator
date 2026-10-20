@@ -165,34 +165,22 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	return result, nil
 }
 
+// translateAttachmentAltsWithLimit translates image alt texts. Alt texts carry
+// no conversation, so the context is reduced to the identifiers the request
+// still needs before it enters the shared preparation pipeline.
 func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID string, loaded []loadedImageAttachment, languages []string, contextFn func() TranslationContext, scope translationScope) (map[string][]string, error) {
 	attachments := translationAttachmentsFromLoaded(loaded)
 	if translatableAttachmentCount(attachments) == 0 {
 		return nil, nil
 	}
-	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
+	prepared, err := s.prepareTranslation(ctx, guildID, "", languages, func() TranslationContext {
+		tc := TranslationContext{GuildID: guildID}
+		if contextFn != nil {
+			tc = contextFn()
+		}
+		return tc.attachmentScope(attachments)
+	}, prepareAttachmentAltTranslation, visionFromLoaded(loaded), scope)
 	if err != nil {
-		return nil, err
-	}
-	tc := TranslationContext{GuildID: guildID, Attachments: attachments}
-	if contextFn != nil {
-		base := contextFn()
-		tc.MessageID = base.MessageID
-		tc.MentionedUsers = base.MentionedUsers
-		tc.MentionedChannels = base.MentionedChannels
-		tc.MentionedRoles = base.MentionedRoles
-		tc.PromptCacheLocation = base.PromptCacheLocation
-		tc.PromptCacheGeneration = base.PromptCacheGeneration
-	}
-	prepared, err := prepareAttachmentAltTranslation(languages, tc, glossary)
-	if err != nil {
-		return nil, err
-	}
-	if prepared.altCount == 0 {
-		return nil, nil
-	}
-	prepared.visionImages = visionFromLoaded(loaded)
-	if err := s.checkPreparedTranslationRateLimit(guildID, prepared, scope); err != nil {
 		return nil, err
 	}
 	result, err := s.translator.TranslateAttachmentAlts(ctx, prepared)

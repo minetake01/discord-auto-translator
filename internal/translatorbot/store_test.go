@@ -945,32 +945,6 @@ func TestMessageHistoryBeforeAggregatesAcrossChannels(t *testing.T) {
 	}
 }
 
-func TestMarkProcessedIdempotent(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-	first, err := s.MarkProcessed(ctx, "event-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !first {
-		t.Fatal("expected first mark to succeed")
-	}
-	second, err := s.MarkProcessed(ctx, "event-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second {
-		t.Fatal("expected second mark to be ignored")
-	}
-	processed, err := s.IsEventProcessed(ctx, "event-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !processed {
-		t.Fatal("expected event to be recorded")
-	}
-}
-
 func TestGlossaryCRUDAndLimit(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

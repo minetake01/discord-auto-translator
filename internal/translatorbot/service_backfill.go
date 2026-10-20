@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log"
-	"strings"
 	"sync"
 	"time"
 )
@@ -391,7 +390,7 @@ func (r *backfillRunner) contextFn(ctx context.Context, m DiscordMessage) func()
 // backfillEligible applies the same source policy as live mirroring and
 // excludes the bot's own mirrors.
 func (s *Service) backfillEligible(ctx context.Context, m DiscordMessage) (bool, error) {
-	if m.ThreadSystemMessage || m.ThreadStarterMessage || messageHasNoPayload(m) {
+	if m.ThreadSystemMessage || m.ThreadStarterMessage || m.hasNoPayload() {
 		return false, nil
 	}
 	allowed, err := s.shouldProcessMessage(ctx, m)
@@ -403,11 +402,6 @@ func (s *Service) backfillEligible(ctx context.Context, m DiscordMessage) (bool,
 		return false, err
 	}
 	return !mirror, nil
-}
-
-func messageHasNoPayload(m DiscordMessage) bool {
-	return strings.TrimSpace(m.Content) == "" && len(m.Attachments) == 0 && len(m.Stickers) == 0 &&
-		m.ReferencedMessageID == "" && m.ForwardedMessage == nil && m.Poll == nil && m.PollResult == nil
 }
 
 // backfillTranslatesAlone lists the messages that keep their dedicated

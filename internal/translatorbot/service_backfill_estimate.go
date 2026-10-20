@@ -84,7 +84,9 @@ func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string)
 				requests++
 				continue
 			}
-			item := backfillItem{m: m, dest: mirrorDestination{targetID: m.ChannelID}}
+			// An estimate batches into one destination: which channel each
+			// message goes to does not change how many requests are sent.
+			item := backfillItem{m: m}
 			if !batch.fits(item) {
 				closeBatch()
 			}
@@ -125,8 +127,7 @@ func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string)
 	}
 	est.InputTokens += requests * backfillRequestOverheadTokens
 	seconds := float64(requests*backfillRequestSeconds + est.Messages*backfillPostSeconds)
-	if s.rateLimiter != nil && s.rateLimiter.limit > 0 {
-		perMinute := float64(s.rateLimiter.limit) * backfillRateLimitShare
+	if perMinute := s.rateLimiter.SharePerMinute(backfillRateLimitShare); perMinute > 0 {
 		seconds = math.Max(seconds, float64(est.InputTokens+est.OutputTokens)/perMinute*60)
 	}
 	est.Duration = time.Duration(seconds) * time.Second

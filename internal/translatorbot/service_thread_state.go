@@ -109,10 +109,22 @@ func (s *Service) setThreadState(threadID string, from, to threadState) error {
 	return nil
 }
 
+// restoreThreadFully puts the thread back into the state it had before it was
+// opened for the operation.
+func restoreThreadFully(prev threadState) threadState {
+	return prev
+}
+
+// keepThreadOpen restores only the lock. Discord unarchives a thread when a
+// message is posted to it, and archiving it again would hide that message.
+func keepThreadOpen(prev threadState) threadState {
+	return threadState{locked: prev.locked}
+}
+
 // withOpenThread runs op on a message or thread in channelID. When Discord
 // rejects it because the thread is archived or locked, the thread is opened,
-// op is retried, and the previous state is restored.
-func (s *Service) withOpenThread(channelID string, op func() error) error {
+// op is retried, and the thread is put back into the state after(prev) selects.
+func (s *Service) withOpenThread(channelID string, after func(threadState) threadState, op func() error) error {
 	err := op()
 	if err == nil || !isThreadClosedError(err) {
 		return err
@@ -124,59 +136,48 @@ func (s *Service) withOpenThread(channelID string, op func() error) error {
 		return errors.Join(err, stateErr)
 	}
 	open := threadState{}
-	if err := s.setThreadState(channelID, prev, open); err != nil {
-		return err
+	if setErr := s.setThreadState(channelID, prev, open); setErr != nil {
+		return setErr
 	}
 	opErr := op()
-	if err := s.setThreadState(channelID, open, prev); err != nil {
-		return errors.Join(opErr, err)
+	if setErr := s.setThreadState(channelID, open, after(prev)); setErr != nil {
+		return errors.Join(opErr, setErr)
 	}
 	return opErr
 }
 
-// sendWebhookMessage posts a webhook message. Discord unarchives the thread on
-// send by itself but rejects a locked thread, so a locked thread is unlocked
-// for the send and locked again afterwards.
+// sendWebhookMessage posts a webhook message, opening a closed thread for the
+// send and locking it again afterwards.
 func (s *Service) sendWebhookMessage(target GroupChannel, send WebhookSend) (WebhookSendResult, error) {
-	result, err := s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
-	if err == nil || send.ThreadID == "" || !isThreadClosedError(err) {
-		return result, err
+	var result WebhookSendResult
+	op := func() error {
+		var err error
+		result, err = s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
+		return err
 	}
-	unlock := s.threadStates.lock(send.ThreadID)
-	defer unlock()
-	prev, stateErr := s.currentThreadState(send.ThreadID)
-	if stateErr != nil {
-		return WebhookSendResult{}, errors.Join(err, stateErr)
+	if send.ThreadID == "" {
+		return result, op()
 	}
-	if err := s.setThreadState(send.ThreadID, prev, threadState{}); err != nil {
-		return WebhookSendResult{}, err
-	}
-	result, err = s.discord.SendWebhook(target.WebhookID, target.WebhookToken, send)
-	if prev.locked {
-		if lockErr := s.setThreadState(send.ThreadID, threadState{}, threadState{locked: true}); lockErr != nil {
-			return result, errors.Join(err, lockErr)
-		}
-	}
-	return result, err
+	return result, s.withOpenThread(send.ThreadID, keepThreadOpen, op)
 }
 
 func (s *Service) editWebhookMessage(_ context.Context, target GroupChannel, link MessageLink, content mirrorText) error {
 	threadID := threadIDForWebhook(link, &target)
-	return s.withOpenThread(link.TargetChannelID, func() error {
+	return s.withOpenThread(link.TargetChannelID, restoreThreadFully, func() error {
 		return s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadID, string(content))
 	})
 }
 
 func (s *Service) addReaction(channelID, messageID, emoji string) error {
-	return s.withOpenThread(channelID, func() error { return s.discord.AddReaction(channelID, messageID, emoji) })
+	return s.withOpenThread(channelID, restoreThreadFully, func() error { return s.discord.AddReaction(channelID, messageID, emoji) })
 }
 
 func (s *Service) removeOwnReaction(channelID, messageID, emoji string) error {
-	return s.withOpenThread(channelID, func() error { return s.discord.RemoveOwnReaction(channelID, messageID, emoji) })
+	return s.withOpenThread(channelID, restoreThreadFully, func() error { return s.discord.RemoveOwnReaction(channelID, messageID, emoji) })
 }
 
 func (s *Service) setPinned(channelID, messageID string, pinned bool) error {
-	return s.withOpenThread(channelID, func() error {
+	return s.withOpenThread(channelID, restoreThreadFully, func() error {
 		if pinned {
 			return s.discord.PinMessage(channelID, messageID)
 		}
@@ -185,7 +186,7 @@ func (s *Service) setPinned(channelID, messageID string, pinned bool) error {
 }
 
 func (s *Service) editThread(threadID, name string, appliedTags *[]string) error {
-	return s.withOpenThread(threadID, func() error { return s.discord.EditThread(threadID, name, appliedTags) })
+	return s.withOpenThread(threadID, restoreThreadFully, func() error { return s.discord.EditThread(threadID, name, appliedTags) })
 }
 
 // SyncThreadState mirrors an archive or lock change of a thread to every

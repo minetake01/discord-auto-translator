@@ -197,20 +197,11 @@ func TestProtectorSeparatesBareURLFromFollowingText(t *testing.T) {
 }
 
 func TestProtectorSiteTitleAndContext(t *testing.T) {
-	p := NewProtector(NameMaps{
-		Sites: map[string]string{
-			"https://example.com/a": "Example Article",
-			"https://example.com/b": "Example Article",
-			"https://other.com/c":   "Other",
-		},
-	})
-	p.SetSiteDescriptions(map[string]string{
-		"https://example.com/a": "First page",
-		"https://example.com/b": "Second page",
-		"https://other.com/c":   "Other page",
-	})
-	p.SetSiteImages(map[string]string{
-		"https://example.com/a": "https://example.com/a.jpg",
+	p := NewProtector(NameMaps{})
+	p.SetSites([]SiteContextEntry{
+		{URL: "https://example.com/a", Title: "Example Article", Description: "First page", ImageURL: "https://example.com/a.jpg"},
+		{URL: "https://example.com/b", Title: "Example Article", Description: "Second page"},
+		{URL: "https://other.com/c", Title: "Other", Description: "Other page"},
 	})
 	in := "see https://example.com/a and https://example.com/b and https://other.com/c"
 	protected := p.Protect(in)
@@ -222,13 +213,13 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 	if len(sites) != 3 {
 		t.Fatalf("sites = %+v", sites)
 	}
-	if sites[0] != (SiteContextEntry{ID: "1", Title: "Example Article", Description: "First page", ImageURL: "https://example.com/a.jpg"}) {
+	if sites[0] != (SiteContextEntry{URL: "https://example.com/a", ID: "1", Title: "Example Article", Description: "First page", ImageURL: "https://example.com/a.jpg"}) {
 		t.Fatalf("sites[0] = %+v", sites[0])
 	}
-	if sites[1] != (SiteContextEntry{ID: "2", Title: "Example Article", Description: "Second page"}) {
+	if sites[1] != (SiteContextEntry{URL: "https://example.com/b", ID: "2", Title: "Example Article", Description: "Second page"}) {
 		t.Fatalf("sites[1] = %+v", sites[1])
 	}
-	if sites[2] != (SiteContextEntry{ID: "3", Title: "Other", Description: "Other page"}) {
+	if sites[2] != (SiteContextEntry{URL: "https://other.com/c", ID: "3", Title: "Other", Description: "Other page"}) {
 		t.Fatalf("sites[2] = %+v", sites[2])
 	}
 	if got := p.Restore(protected); got != in {
@@ -238,13 +229,9 @@ func TestProtectorSiteTitleAndContext(t *testing.T) {
 
 func TestProtectorOpaqueSiteIgnoresMessyTitle(t *testing.T) {
 	messy := "시노 on Instagram: \"셀프 커버는 언제나 옳다\n\n나토리 LIVE\""
-	p := NewProtector(NameMaps{
-		Sites: map[string]string{
-			"https://www.instagram.com/p/abc/": messy,
-		},
-	})
-	p.SetSiteDescriptions(map[string]string{
-		"https://www.instagram.com/p/abc/": "caption body",
+	p := NewProtector(NameMaps{})
+	p.SetSites([]SiteContextEntry{
+		{URL: "https://www.instagram.com/p/abc/", Title: messy, Description: "caption body"},
 	})
 	in := "good!! https://www.instagram.com/p/abc/"
 	protected := p.Protect(in)

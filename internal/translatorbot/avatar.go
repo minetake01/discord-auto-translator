@@ -27,9 +27,10 @@ var avatarDefaultRingColor = color.RGBA{R: 114, G: 118, B: 125, A: 255}
 
 var avatarHexColorPattern = regexp.MustCompile(`(?i)^[0-9a-f]{6}$`)
 
-func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, language string, roleColor int) string {
-	_ = ctx
-	_ = language
+// avatarProxyURL routes an avatar through this service so the ring is drawn
+// with the author's role color. Without a public base URL the CDN URL is
+// returned untouched.
+func avatarProxyURL(publicBaseURL, avatarURL string, roleColor int) string {
 	publicBaseURL = strings.TrimRight(strings.TrimSpace(publicBaseURL), "/")
 	if publicBaseURL == "" || sanitizeWebhookAvatarURL(avatarURL) == "" {
 		return avatarURL
@@ -42,12 +43,12 @@ func AvatarWithLanguageBadge(ctx context.Context, publicBaseURL, avatarURL, lang
 	return publicBaseURL + "/avatar?" + v.Encode()
 }
 
-func NewAvatarHandler(client *http.Client, limiter *RequestRateLimiter) http.Handler {
+func NewAvatarHandler(client *http.Client, limiter *RateLimiter) http.Handler {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !limiter.Allow(clientIP(r)) {
+		if !limiter.Take(clientIP(r), 1) {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}

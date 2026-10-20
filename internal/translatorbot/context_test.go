@@ -108,11 +108,11 @@ func TestHandleMessageCreateIncludesSiteMetaInTranslationContext(t *testing.T) {
 		t.Fatalf("contexts: %#v", translator.contexts)
 	}
 	tc := translator.contexts[0]
-	if got := tc.SiteTitles[page.URL]; got != "Example Article" {
-		t.Fatalf("SiteTitles[%q] = %q", page.URL, got)
+	if len(tc.Sites) != 1 {
+		t.Fatalf("Sites = %+v", tc.Sites)
 	}
-	if got := tc.SiteDescriptions[page.URL]; got != "About the article" {
-		t.Fatalf("SiteDescriptions[%q] = %q", page.URL, got)
+	if site := tc.Sites[0]; site.URL != page.URL || site.Title != "Example Article" || site.Description != "About the article" {
+		t.Fatalf("Sites[0] = %+v", site)
 	}
 	if len(discord.sent) != 1 || discord.sent[0].Content != "[en] これ見て https://example.com/en" {
 		t.Fatalf("sent: %#v", discord.sent)

@@ -102,11 +102,11 @@ func main() {
 	service := translatorbot.NewService(store, api, translator)
 	service.SetSelfBotUserID(selfBotUserID)
 	service.SetPublicBaseURL(cfg.PublicBaseURL)
-	service.SetRateLimiter(translatorbot.NewTokenRateLimiter(cfg.TranslationRateLimitTokensPerMin))
+	service.SetRateLimiter(translatorbot.NewRateLimiter(cfg.TranslationRateLimitTokensPerMin))
 	commands := translatorbot.NewCommandHandler(store, api)
 	commands.SetBackfill(service)
 	httpMux := http.NewServeMux()
-	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRequestRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
+	httpMux.Handle("/avatar", translatorbot.NewAvatarHandler(http.DefaultClient, translatorbot.NewRateLimiter(cfg.AvatarRateLimitRequestsPerMin)))
 	httpServer := &http.Server{Addr: cfg.HTTPAddr, Handler: httpMux}
 	go func() {
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

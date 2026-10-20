@@ -3,6 +3,8 @@ package translatorbot
 import (
 	"fmt"
 	"strings"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 // uiKey identifies one user-facing string in the localization catalog.
@@ -106,6 +108,64 @@ const (
 	uiKeyBackfillSkipped     uiKey = "backfillSkipped"
 	uiKeyBackfillStopped     uiKey = "backfillStopped"
 	uiKeyBackfillNotRunning  uiKey = "backfillNotRunning"
+
+	// Command surface strings. Discord stores these when the commands are
+	// registered, so the catalog also feeds their per-locale variants.
+	uiKeyGroupBlockHeader      uiKey = "groupBlockHeader"
+	uiKeyStyleCustomPreview    uiKey = "styleCustomPreview"
+	uiKeyCmdNewChannelDesc     uiKey = "cmdNewChannelDesc"
+	uiKeyCmdJoinChannelDesc    uiKey = "cmdJoinChannelDesc"
+	uiKeyCmdBackfillDesc       uiKey = "cmdBackfillDesc"
+	uiKeyCmdBackfillStopDesc   uiKey = "cmdBackfillStopDesc"
+	uiKeyCmdLeaveChannelDesc   uiKey = "cmdLeaveChannelDesc"
+	uiKeyCmdDeleteGroupDesc    uiKey = "cmdDeleteGroupDesc"
+	uiKeyCmdAddGlossaryDesc    uiKey = "cmdAddGlossaryDesc"
+	uiKeyCmdListGroupsDesc     uiKey = "cmdListGroupsDesc"
+	uiKeyCmdListGlossaryDesc   uiKey = "cmdListGlossaryDesc"
+	uiKeyCmdRemoveGlossaryDesc uiKey = "cmdRemoveGlossaryDesc"
+	uiKeyCmdSetStyleDesc       uiKey = "cmdSetStyleDesc"
+	uiKeyCmdEditForumTagsDesc  uiKey = "cmdEditForumTagsDesc"
+	uiKeyCmdBotWhitelistDesc   uiKey = "cmdBotWhitelistDesc"
+	uiKeyCmdWhitelistAddDesc   uiKey = "cmdWhitelistAddDesc"
+	uiKeyCmdWhitelistRmDesc    uiKey = "cmdWhitelistRemoveDesc"
+	uiKeyCmdWhitelistListDesc  uiKey = "cmdWhitelistListDesc"
+
+	uiKeyOptLanguageDesc            uiKey = "optLanguageDesc"
+	uiKeyOptChannelRegisterDesc     uiKey = "optChannelRegisterDesc"
+	uiKeyOptGroupIDDesc             uiKey = "optGroupIDDesc"
+	uiKeyOptExistingGroupDesc       uiKey = "optExistingGroupDesc"
+	uiKeyOptChannelJoinDesc         uiKey = "optChannelJoinDesc"
+	uiKeyOptBackfillToggleDesc      uiKey = "optBackfillToggleDesc"
+	uiKeyOptChannelBackfillStopDesc uiKey = "optChannelBackfillStopDesc"
+	uiKeyOptChannelRemoveDesc       uiKey = "optChannelRemoveDesc"
+	uiKeyOptTermMatchDesc           uiKey = "optTermMatchDesc"
+	uiKeyOptTranslationDesc         uiKey = "optTranslationDesc"
+	uiKeyOptAttributeDesc           uiKey = "optAttributeDesc"
+	uiKeyOptAlwaysIncludeDesc       uiKey = "optAlwaysIncludeDesc"
+	uiKeyOptTermRemoveDesc          uiKey = "optTermRemoveDesc"
+	uiKeyOptStylePresetDesc         uiKey = "optStylePresetDesc"
+	uiKeyOptStyleCustomDesc         uiKey = "optStyleCustomDesc"
+	uiKeyOptForumChannelDesc        uiKey = "optForumChannelDesc"
+	uiKeyOptSourceTypeDesc          uiKey = "optSourceTypeDesc"
+	uiKeyOptSourceIDDesc            uiKey = "optSourceIDDesc"
+
+	uiKeyChoiceSourceTypeBot      uiKey = "choiceSourceTypeBot"
+	uiKeyChoiceSourceTypeWebhook  uiKey = "choiceSourceTypeWebhook"
+	uiKeyStylePresetDefaultLabel  uiKey = "stylePresetDefaultLabel"
+	uiKeyStylePresetFormalLabel   uiKey = "stylePresetFormalLabel"
+	uiKeyStylePresetCasualLabel   uiKey = "stylePresetCasualLabel"
+	uiKeyStylePresetBusinessLabel uiKey = "stylePresetBusinessLabel"
+	uiKeyStylePresetLiteralLabel  uiKey = "stylePresetLiteralLabel"
+	uiKeyStylePresetGamingLabel   uiKey = "stylePresetGamingLabel"
+	uiKeyStylePresetFriendlyLabel uiKey = "stylePresetFriendlyLabel"
+	uiKeyStylePresetNetslangLabel uiKey = "stylePresetNetslangLabel"
+	uiKeyStylePresetTweetLabel    uiKey = "stylePresetTweetLabel"
+
+	uiKeyGlossaryAttributePersonName    uiKey = "glossaryAttributePersonName"
+	uiKeyGlossaryAttributePlaceName     uiKey = "glossaryAttributePlaceName"
+	uiKeyGlossaryAttributeSlang         uiKey = "glossaryAttributeSlang"
+	uiKeyGlossaryAttributeAbbreviation  uiKey = "glossaryAttributeAbbreviation"
+	uiKeyGlossaryAttributeTechnicalTerm uiKey = "glossaryAttributeTechnicalTerm"
 )
 
 // uiStrings maps a supported UI language to its full message catalog.
@@ -113,6 +173,67 @@ const (
 // enforces this together with matching format verbs.
 var uiStrings = map[string]map[uiKey]string{
 	"en": {
+		// Command surface. Discord stores these texts when the commands are
+		// registered, so each entry doubles as the canonical English text and,
+		// for other languages, as the per-locale variant.
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (style: %[2]s)\n",
+		uiKeyStyleCustomPreview: "custom: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Create a translation group from this channel or another channel",
+		uiKeyCmdJoinChannelDesc:    "Join this channel or another channel to a translation group",
+		uiKeyCmdBackfillDesc:       "Manage the history backfill of a channel in a translation group",
+		uiKeyCmdBackfillStopDesc:   "Stop the backfill into a channel",
+		uiKeyCmdLeaveChannelDesc:   "Remove this channel or another channel from a translation group",
+		uiKeyCmdDeleteGroupDesc:    "Delete a translation group",
+		uiKeyCmdAddGlossaryDesc:    "Register a preferred translation for a term in this server",
+		uiKeyCmdListGroupsDesc:     "List translation groups and channels for this server",
+		uiKeyCmdListGlossaryDesc:   "List glossary entries for this server",
+		uiKeyCmdRemoveGlossaryDesc: "Remove a glossary entry from this server",
+		uiKeyCmdSetStyleDesc:       "Set translation style for a group (preset or custom instruction)",
+		uiKeyCmdEditForumTagsDesc:  "Edit forum/media tag mappings for a channel in a translation group",
+		uiKeyCmdBotWhitelistDesc:   "Manage allowed bot and webhook sources for this server",
+		uiKeyCmdWhitelistAddDesc:   "Allow a bot or webhook source in this server",
+		uiKeyCmdWhitelistRmDesc:    "Remove a bot or webhook source from this server",
+		uiKeyCmdWhitelistListDesc:  "List allowed bot and webhook sources for this server",
+
+		uiKeyOptLanguageDesc:            "BCP-47 language code",
+		uiKeyOptChannelRegisterDesc:     "Channel or forum to register",
+		uiKeyOptGroupIDDesc:             "Short group identifier",
+		uiKeyOptExistingGroupDesc:       "Existing translation group",
+		uiKeyOptChannelJoinDesc:         "Channel or forum to join",
+		uiKeyOptBackfillToggleDesc:      "Also translate the group's past messages into this channel (shows an estimate first)",
+		uiKeyOptChannelBackfillStopDesc: "Channel to stop backfilling into",
+		uiKeyOptChannelRemoveDesc:       "Channel or forum to remove",
+		uiKeyOptTermMatchDesc:           "Source term to match",
+		uiKeyOptTranslationDesc:         "Preferred translation",
+		uiKeyOptAttributeDesc:           "Term type, such as person name, slang, or a custom value",
+		uiKeyOptAlwaysIncludeDesc:       "Always include this term in translation instructions",
+		uiKeyOptTermRemoveDesc:          "Source term to remove",
+		uiKeyOptStylePresetDesc:         "Style preset",
+		uiKeyOptStyleCustomDesc:         "Custom style instruction in natural language",
+		uiKeyOptForumChannelDesc:        "Forum or media channel to edit",
+		uiKeyOptSourceTypeDesc:          "Automated message source type",
+		uiKeyOptSourceIDDesc:            "Discord bot user ID or webhook ID",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Default (natural chat)",
+		uiKeyStylePresetFormalLabel:   "Formal",
+		uiKeyStylePresetCasualLabel:   "Casual",
+		uiKeyStylePresetBusinessLabel: "Business",
+		uiKeyStylePresetLiteralLabel:  "Literal",
+		uiKeyStylePresetGamingLabel:   "Gaming",
+		uiKeyStylePresetFriendlyLabel: "Friendly",
+		uiKeyStylePresetNetslangLabel: "Internet slang",
+		uiKeyStylePresetTweetLabel:    "Tweet style",
+
+		uiKeyGlossaryAttributePersonName:    "person name",
+		uiKeyGlossaryAttributePlaceName:     "place name",
+		uiKeyGlossaryAttributeSlang:         "slang",
+		uiKeyGlossaryAttributeAbbreviation:  "abbreviation",
+		uiKeyGlossaryAttributeTechnicalTerm: "technical term",
+
 		uiKeyViewOriginalLink:       "Go to original message",
 		uiKeyOriginalMessage:        "Source",
 		uiKeyOriginalMessageDeleted: "The original message was deleted",
@@ -212,6 +333,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "There is no backfill into <#%[1]s>.",
 	},
 	"ja": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s**（スタイル: %[2]s）\n",
+		uiKeyStyleCustomPreview: "カスタム: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "このチャンネルまたは別のチャンネルから翻訳グループを作成します",
+		uiKeyCmdJoinChannelDesc:    "このチャンネルまたは別のチャンネルを翻訳グループに参加させます",
+		uiKeyCmdBackfillDesc:       "翻訳グループ内のチャンネルの履歴翻訳を管理します",
+		uiKeyCmdBackfillStopDesc:   "チャンネルへの履歴翻訳を停止します",
+		uiKeyCmdLeaveChannelDesc:   "このチャンネルまたは別のチャンネルを翻訳グループから外します",
+		uiKeyCmdDeleteGroupDesc:    "翻訳グループを削除します",
+		uiKeyCmdAddGlossaryDesc:    "このサーバー用に用語の訳語を登録します",
+		uiKeyCmdListGroupsDesc:     "このサーバーの翻訳グループとチャンネルを一覧表示します",
+		uiKeyCmdListGlossaryDesc:   "このサーバーの用語集を一覧表示します",
+		uiKeyCmdRemoveGlossaryDesc: "このサーバーの用語集から項目を削除します",
+		uiKeyCmdSetStyleDesc:       "グループの翻訳スタイルを設定します（プリセットまたはカスタム指示）",
+		uiKeyCmdEditForumTagsDesc:  "翻訳グループ内のチャンネルのフォーラムタグ対応を編集します",
+		uiKeyCmdBotWhitelistDesc:   "このサーバーで許可するボットとWebhookの送信元を管理します",
+		uiKeyCmdWhitelistAddDesc:   "このサーバーでボットまたはWebhookの送信元を許可します",
+		uiKeyCmdWhitelistRmDesc:    "このサーバーからボットまたはWebhookの送信元を削除します",
+		uiKeyCmdWhitelistListDesc:  "このサーバーで許可されているボットとWebhookの送信元を一覧表示します",
+
+		uiKeyOptLanguageDesc:            "BCP-47 言語コード",
+		uiKeyOptChannelRegisterDesc:     "登録するチャンネルまたはフォーラム",
+		uiKeyOptGroupIDDesc:             "短いグループ識別子",
+		uiKeyOptExistingGroupDesc:       "既存の翻訳グループ",
+		uiKeyOptChannelJoinDesc:         "参加させるチャンネルまたはフォーラム",
+		uiKeyOptBackfillToggleDesc:      "グループの過去のメッセージもこのチャンネルに翻訳します（先に見積もりを表示）",
+		uiKeyOptChannelBackfillStopDesc: "履歴翻訳を停止するチャンネル",
+		uiKeyOptChannelRemoveDesc:       "削除するチャンネルまたはフォーラム",
+		uiKeyOptTermMatchDesc:           "一致させる元の用語",
+		uiKeyOptTranslationDesc:         "優先する訳語",
+		uiKeyOptAttributeDesc:           "用語の種類（人名、スラング、任意の値など）",
+		uiKeyOptAlwaysIncludeDesc:       "この用語を常に翻訳指示に含める",
+		uiKeyOptTermRemoveDesc:          "削除する元の用語",
+		uiKeyOptStylePresetDesc:         "スタイルのプリセット",
+		uiKeyOptStyleCustomDesc:         "自然言語によるカスタムスタイル指示",
+		uiKeyOptForumChannelDesc:        "編集するフォーラムまたはメディアチャンネル",
+		uiKeyOptSourceTypeDesc:          "自動メッセージの送信元の種類",
+		uiKeyOptSourceIDDesc:            "Discord のボットユーザーID または Webhook ID",
+
+		uiKeyChoiceSourceTypeBot:     "ボット",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "標準（自然なチャット）",
+		uiKeyStylePresetFormalLabel:   "丁寧・格式",
+		uiKeyStylePresetCasualLabel:   "カジュアル",
+		uiKeyStylePresetBusinessLabel: "ビジネス",
+		uiKeyStylePresetLiteralLabel:  "直訳",
+		uiKeyStylePresetGamingLabel:   "ゲーム",
+		uiKeyStylePresetFriendlyLabel: "親しみやすい",
+		uiKeyStylePresetNetslangLabel: "ネットスレ風",
+		uiKeyStylePresetTweetLabel:    "つぶやき風",
+
+		uiKeyGlossaryAttributePersonName:    "人名",
+		uiKeyGlossaryAttributePlaceName:     "地名",
+		uiKeyGlossaryAttributeSlang:         "スラング",
+		uiKeyGlossaryAttributeAbbreviation:  "略語",
+		uiKeyGlossaryAttributeTechnicalTerm: "専門用語",
+
 		uiKeyViewOriginalLink:       "原文メッセージへ移動",
 		uiKeyOriginalMessage:        "引用元を見る",
 		uiKeyOriginalMessageDeleted: "元のメッセージが削除されました",
@@ -311,6 +490,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "<#%[1]s> への過去メッセージの翻訳は動いていません。",
 	},
 	"zh-CN": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s**（风格：%[2]s）\n",
+		uiKeyStyleCustomPreview: "自定义：%[1]s",
+
+		uiKeyCmdNewChannelDesc:     "从此频道或其他频道创建翻译组",
+		uiKeyCmdJoinChannelDesc:    "将此频道或其他频道加入翻译组",
+		uiKeyCmdBackfillDesc:       "管理翻译组中频道的历史翻译",
+		uiKeyCmdBackfillStopDesc:   "停止向频道进行历史翻译",
+		uiKeyCmdLeaveChannelDesc:   "将此频道或其他频道移出翻译组",
+		uiKeyCmdDeleteGroupDesc:    "删除翻译组",
+		uiKeyCmdAddGlossaryDesc:    "为此服务器登记术语的首选译法",
+		uiKeyCmdListGroupsDesc:     "列出此服务器的翻译组和频道",
+		uiKeyCmdListGlossaryDesc:   "列出此服务器的术语表",
+		uiKeyCmdRemoveGlossaryDesc: "从此服务器的术语表中移除条目",
+		uiKeyCmdSetStyleDesc:       "设置翻译组的翻译风格（预设或自定义指令）",
+		uiKeyCmdEditForumTagsDesc:  "编辑翻译组中频道的论坛标签对应关系",
+		uiKeyCmdBotWhitelistDesc:   "管理此服务器允许的机器人和 Webhook 来源",
+		uiKeyCmdWhitelistAddDesc:   "允许此服务器中的机器人或 Webhook 来源",
+		uiKeyCmdWhitelistRmDesc:    "从此服务器移除机器人或 Webhook 来源",
+		uiKeyCmdWhitelistListDesc:  "列出此服务器允许的机器人和 Webhook 来源",
+
+		uiKeyOptLanguageDesc:            "BCP-47 语言代码",
+		uiKeyOptChannelRegisterDesc:     "要登记的频道或论坛",
+		uiKeyOptGroupIDDesc:             "简短的组标识符",
+		uiKeyOptExistingGroupDesc:       "现有的翻译组",
+		uiKeyOptChannelJoinDesc:         "要加入的频道或论坛",
+		uiKeyOptBackfillToggleDesc:      "同时将组内的历史消息翻译到该频道（先显示估算）",
+		uiKeyOptChannelBackfillStopDesc: "要停止历史翻译的频道",
+		uiKeyOptChannelRemoveDesc:       "要移除的频道或论坛",
+		uiKeyOptTermMatchDesc:           "要匹配的源术语",
+		uiKeyOptTranslationDesc:         "首选译法",
+		uiKeyOptAttributeDesc:           "术语类型，例如人名、俚语或自定义值",
+		uiKeyOptAlwaysIncludeDesc:       "始终在翻译指令中包含此术语",
+		uiKeyOptTermRemoveDesc:          "要移除的源术语",
+		uiKeyOptStylePresetDesc:         "风格预设",
+		uiKeyOptStyleCustomDesc:         "用自然语言描述的自定义风格指令",
+		uiKeyOptForumChannelDesc:        "要编辑的论坛或媒体频道",
+		uiKeyOptSourceTypeDesc:          "自动消息来源类型",
+		uiKeyOptSourceIDDesc:            "Discord 机器人用户 ID 或 Webhook ID",
+
+		uiKeyChoiceSourceTypeBot:     "机器人",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "默认（自然聊天）",
+		uiKeyStylePresetFormalLabel:   "正式",
+		uiKeyStylePresetCasualLabel:   "轻松",
+		uiKeyStylePresetBusinessLabel: "商务",
+		uiKeyStylePresetLiteralLabel:  "直译",
+		uiKeyStylePresetGamingLabel:   "游戏",
+		uiKeyStylePresetFriendlyLabel: "亲切",
+		uiKeyStylePresetNetslangLabel: "网络论坛风",
+		uiKeyStylePresetTweetLabel:    "推文风",
+
+		uiKeyGlossaryAttributePersonName:    "人名",
+		uiKeyGlossaryAttributePlaceName:     "地名",
+		uiKeyGlossaryAttributeSlang:         "俚语",
+		uiKeyGlossaryAttributeAbbreviation:  "缩写",
+		uiKeyGlossaryAttributeTechnicalTerm: "专业术语",
+
 		uiKeyViewOriginalLink:       "前往原文消息",
 		uiKeyOriginalMessage:        "查看来源",
 		uiKeyOriginalMessageDeleted: "原消息已被删除",
@@ -410,6 +647,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "没有正在进行的、翻译到 <#%[1]s> 的历史消息任务。",
 	},
 	"zh-TW": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s**（風格：%[2]s）\n",
+		uiKeyStyleCustomPreview: "自訂：%[1]s",
+
+		uiKeyCmdNewChannelDesc:     "從此頻道或其他頻道建立翻譯群組",
+		uiKeyCmdJoinChannelDesc:    "將此頻道或其他頻道加入翻譯群組",
+		uiKeyCmdBackfillDesc:       "管理翻譯群組中頻道的歷史翻譯",
+		uiKeyCmdBackfillStopDesc:   "停止對頻道進行歷史翻譯",
+		uiKeyCmdLeaveChannelDesc:   "將此頻道或其他頻道移出翻譯群組",
+		uiKeyCmdDeleteGroupDesc:    "刪除翻譯群組",
+		uiKeyCmdAddGlossaryDesc:    "為此伺服器登錄術語的首選譯法",
+		uiKeyCmdListGroupsDesc:     "列出此伺服器的翻譯群組與頻道",
+		uiKeyCmdListGlossaryDesc:   "列出此伺服器的詞彙表",
+		uiKeyCmdRemoveGlossaryDesc: "從此伺服器的詞彙表中移除項目",
+		uiKeyCmdSetStyleDesc:       "設定翻譯群組的翻譯風格（預設或自訂指示）",
+		uiKeyCmdEditForumTagsDesc:  "編輯翻譯群組中頻道的論壇標籤對應",
+		uiKeyCmdBotWhitelistDesc:   "管理此伺服器允許的機器人與 Webhook 來源",
+		uiKeyCmdWhitelistAddDesc:   "允許此伺服器中的機器人或 Webhook 來源",
+		uiKeyCmdWhitelistRmDesc:    "從此伺服器移除機器人或 Webhook 來源",
+		uiKeyCmdWhitelistListDesc:  "列出此伺服器允許的機器人與 Webhook 來源",
+
+		uiKeyOptLanguageDesc:            "BCP-47 語言代碼",
+		uiKeyOptChannelRegisterDesc:     "要登錄的頻道或論壇",
+		uiKeyOptGroupIDDesc:             "簡短的群組識別碼",
+		uiKeyOptExistingGroupDesc:       "現有的翻譯群組",
+		uiKeyOptChannelJoinDesc:         "要加入的頻道或論壇",
+		uiKeyOptBackfillToggleDesc:      "同時將群組的歷史訊息翻譯到此頻道（先顯示估算）",
+		uiKeyOptChannelBackfillStopDesc: "要停止歷史翻譯的頻道",
+		uiKeyOptChannelRemoveDesc:       "要移除的頻道或論壇",
+		uiKeyOptTermMatchDesc:           "要比對的來源術語",
+		uiKeyOptTranslationDesc:         "首選譯法",
+		uiKeyOptAttributeDesc:           "術語類型，例如人名、俚語或自訂值",
+		uiKeyOptAlwaysIncludeDesc:       "一律在翻譯指示中包含此術語",
+		uiKeyOptTermRemoveDesc:          "要移除的來源術語",
+		uiKeyOptStylePresetDesc:         "風格預設",
+		uiKeyOptStyleCustomDesc:         "以自然語言描述的自訂風格指示",
+		uiKeyOptForumChannelDesc:        "要編輯的論壇或媒體頻道",
+		uiKeyOptSourceTypeDesc:          "自動訊息來源類型",
+		uiKeyOptSourceIDDesc:            "Discord 機器人使用者 ID 或 Webhook ID",
+
+		uiKeyChoiceSourceTypeBot:     "機器人",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "預設（自然聊天）",
+		uiKeyStylePresetFormalLabel:   "正式",
+		uiKeyStylePresetCasualLabel:   "輕鬆",
+		uiKeyStylePresetBusinessLabel: "商務",
+		uiKeyStylePresetLiteralLabel:  "直譯",
+		uiKeyStylePresetGamingLabel:   "遊戲",
+		uiKeyStylePresetFriendlyLabel: "親切",
+		uiKeyStylePresetNetslangLabel: "網路論壇風",
+		uiKeyStylePresetTweetLabel:    "推文風",
+
+		uiKeyGlossaryAttributePersonName:    "人名",
+		uiKeyGlossaryAttributePlaceName:     "地名",
+		uiKeyGlossaryAttributeSlang:         "俚語",
+		uiKeyGlossaryAttributeAbbreviation:  "縮寫",
+		uiKeyGlossaryAttributeTechnicalTerm: "專業術語",
+
 		uiKeyViewOriginalLink:       "前往原文訊息",
 		uiKeyOriginalMessage:        "查看來源",
 		uiKeyOriginalMessageDeleted: "原訊息已被刪除",
@@ -509,6 +804,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "沒有正在進行的、翻譯到 <#%[1]s> 的歷史訊息任務。",
 	},
 	"ko": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (스타일: %[2]s)\n",
+		uiKeyStyleCustomPreview: "사용자 지정: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "이 채널 또는 다른 채널에서 번역 그룹을 만듭니다",
+		uiKeyCmdJoinChannelDesc:    "이 채널 또는 다른 채널을 번역 그룹에 추가합니다",
+		uiKeyCmdBackfillDesc:       "번역 그룹에 속한 채널의 과거 메시지 번역을 관리합니다",
+		uiKeyCmdBackfillStopDesc:   "채널로의 과거 메시지 번역을 중지합니다",
+		uiKeyCmdLeaveChannelDesc:   "이 채널 또는 다른 채널을 번역 그룹에서 제거합니다",
+		uiKeyCmdDeleteGroupDesc:    "번역 그룹을 삭제합니다",
+		uiKeyCmdAddGlossaryDesc:    "이 서버에서 용어의 선호 번역을 등록합니다",
+		uiKeyCmdListGroupsDesc:     "이 서버의 번역 그룹과 채널을 나열합니다",
+		uiKeyCmdListGlossaryDesc:   "이 서버의 용어집을 나열합니다",
+		uiKeyCmdRemoveGlossaryDesc: "이 서버의 용어집에서 항목을 제거합니다",
+		uiKeyCmdSetStyleDesc:       "그룹의 번역 스타일을 설정합니다(프리셋 또는 사용자 지정 지시)",
+		uiKeyCmdEditForumTagsDesc:  "번역 그룹에 속한 채널의 포럼 태그 매핑을 편집합니다",
+		uiKeyCmdBotWhitelistDesc:   "이 서버에서 허용할 봇 및 웹훅 소스를 관리합니다",
+		uiKeyCmdWhitelistAddDesc:   "이 서버에서 봇 또는 웹훅 소스를 허용합니다",
+		uiKeyCmdWhitelistRmDesc:    "이 서버에서 봇 또는 웹훅 소스를 제거합니다",
+		uiKeyCmdWhitelistListDesc:  "이 서버에서 허용된 봇 및 웹훅 소스를 나열합니다",
+
+		uiKeyOptLanguageDesc:            "BCP-47 언어 코드",
+		uiKeyOptChannelRegisterDesc:     "등록할 채널 또는 포럼",
+		uiKeyOptGroupIDDesc:             "짧은 그룹 식별자",
+		uiKeyOptExistingGroupDesc:       "기존 번역 그룹",
+		uiKeyOptChannelJoinDesc:         "추가할 채널 또는 포럼",
+		uiKeyOptBackfillToggleDesc:      "그룹의 과거 메시지도 이 채널로 번역합니다(먼저 예상치 표시)",
+		uiKeyOptChannelBackfillStopDesc: "과거 번역을 중지할 채널",
+		uiKeyOptChannelRemoveDesc:       "제거할 채널 또는 포럼",
+		uiKeyOptTermMatchDesc:           "일치시킬 원본 용어",
+		uiKeyOptTranslationDesc:         "선호 번역",
+		uiKeyOptAttributeDesc:           "용어 유형(인명, 속어, 임의 값 등)",
+		uiKeyOptAlwaysIncludeDesc:       "번역 지시에 이 용어를 항상 포함",
+		uiKeyOptTermRemoveDesc:          "제거할 원본 용어",
+		uiKeyOptStylePresetDesc:         "스타일 프리셋",
+		uiKeyOptStyleCustomDesc:         "자연어로 작성한 사용자 지정 스타일 지시",
+		uiKeyOptForumChannelDesc:        "편집할 포럼 또는 미디어 채널",
+		uiKeyOptSourceTypeDesc:          "자동 메시지 소스 유형",
+		uiKeyOptSourceIDDesc:            "Discord 봇 사용자 ID 또는 웹훅 ID",
+
+		uiKeyChoiceSourceTypeBot:     "봇",
+		uiKeyChoiceSourceTypeWebhook: "웹훅",
+
+		uiKeyStylePresetDefaultLabel:  "기본(자연스러운 채팅)",
+		uiKeyStylePresetFormalLabel:   "격식",
+		uiKeyStylePresetCasualLabel:   "캐주얼",
+		uiKeyStylePresetBusinessLabel: "비즈니스",
+		uiKeyStylePresetLiteralLabel:  "직역",
+		uiKeyStylePresetGamingLabel:   "게임",
+		uiKeyStylePresetFriendlyLabel: "친근함",
+		uiKeyStylePresetNetslangLabel: "인터넷 게시판풍",
+		uiKeyStylePresetTweetLabel:    "트윗풍",
+
+		uiKeyGlossaryAttributePersonName:    "인명",
+		uiKeyGlossaryAttributePlaceName:     "지명",
+		uiKeyGlossaryAttributeSlang:         "속어",
+		uiKeyGlossaryAttributeAbbreviation:  "약어",
+		uiKeyGlossaryAttributeTechnicalTerm: "전문 용어",
+
 		uiKeyViewOriginalLink:       "원문 메시지로 이동",
 		uiKeyOriginalMessage:        "출처 보기",
 		uiKeyOriginalMessageDeleted: "원본 메시지가 삭제되었습니다",
@@ -608,6 +961,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "<#%[1]s>에 이전 메시지를 번역하는 작업이 없습니다.",
 	},
 	"fr": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (style : %[2]s)\n",
+		uiKeyStyleCustomPreview: "personnalisé : %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Crée un groupe de traduction à partir de ce salon ou d'un autre salon",
+		uiKeyCmdJoinChannelDesc:    "Ajoute ce salon ou un autre salon à un groupe de traduction",
+		uiKeyCmdBackfillDesc:       "Gère la traduction de l'historique d'un salon d'un groupe de traduction",
+		uiKeyCmdBackfillStopDesc:   "Arrête la traduction de l'historique vers un salon",
+		uiKeyCmdLeaveChannelDesc:   "Retire ce salon ou un autre salon d'un groupe de traduction",
+		uiKeyCmdDeleteGroupDesc:    "Supprime un groupe de traduction",
+		uiKeyCmdAddGlossaryDesc:    "Enregistre une traduction préférée pour un terme sur ce serveur",
+		uiKeyCmdListGroupsDesc:     "Liste les groupes de traduction et les salons de ce serveur",
+		uiKeyCmdListGlossaryDesc:   "Liste les entrées du glossaire de ce serveur",
+		uiKeyCmdRemoveGlossaryDesc: "Supprime une entrée du glossaire de ce serveur",
+		uiKeyCmdSetStyleDesc:       "Définit le style de traduction d'un groupe (préréglage ou consigne personnalisée)",
+		uiKeyCmdEditForumTagsDesc:  "Modifie les correspondances d'étiquettes de forum d'un salon d'un groupe de traduction",
+		uiKeyCmdBotWhitelistDesc:   "Gère les sources de bots et de webhooks autorisées sur ce serveur",
+		uiKeyCmdWhitelistAddDesc:   "Autorise une source de bot ou de webhook sur ce serveur",
+		uiKeyCmdWhitelistRmDesc:    "Supprime une source de bot ou de webhook de ce serveur",
+		uiKeyCmdWhitelistListDesc:  "Liste les sources de bots et de webhooks autorisées sur ce serveur",
+
+		uiKeyOptLanguageDesc:            "Code de langue BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Salon ou forum à enregistrer",
+		uiKeyOptGroupIDDesc:             "Identifiant court du groupe",
+		uiKeyOptExistingGroupDesc:       "Groupe de traduction existant",
+		uiKeyOptChannelJoinDesc:         "Salon ou forum à ajouter",
+		uiKeyOptBackfillToggleDesc:      "Traduit aussi les anciens messages du groupe vers ce salon (affiche d'abord une estimation)",
+		uiKeyOptChannelBackfillStopDesc: "Salon dont la traduction de l'historique doit s'arrêter",
+		uiKeyOptChannelRemoveDesc:       "Salon ou forum à retirer",
+		uiKeyOptTermMatchDesc:           "Terme source à faire correspondre",
+		uiKeyOptTranslationDesc:         "Traduction préférée",
+		uiKeyOptAttributeDesc:           "Type de terme, par exemple nom de personne, argot ou valeur libre",
+		uiKeyOptAlwaysIncludeDesc:       "Toujours inclure ce terme dans les consignes de traduction",
+		uiKeyOptTermRemoveDesc:          "Terme source à supprimer",
+		uiKeyOptStylePresetDesc:         "Préréglage de style",
+		uiKeyOptStyleCustomDesc:         "Consigne de style personnalisée en langage naturel",
+		uiKeyOptForumChannelDesc:        "Salon forum ou média à modifier",
+		uiKeyOptSourceTypeDesc:          "Type de source de message automatisé",
+		uiKeyOptSourceIDDesc:            "ID d'utilisateur de bot ou ID de webhook Discord",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Par défaut (discussion naturelle)",
+		uiKeyStylePresetFormalLabel:   "Soutenu",
+		uiKeyStylePresetCasualLabel:   "Décontracté",
+		uiKeyStylePresetBusinessLabel: "Professionnel",
+		uiKeyStylePresetLiteralLabel:  "Littéral",
+		uiKeyStylePresetGamingLabel:   "Jeu vidéo",
+		uiKeyStylePresetFriendlyLabel: "Chaleureux",
+		uiKeyStylePresetNetslangLabel: "Style forum Internet",
+		uiKeyStylePresetTweetLabel:    "Style tweet",
+
+		uiKeyGlossaryAttributePersonName:    "nom de personne",
+		uiKeyGlossaryAttributePlaceName:     "nom de lieu",
+		uiKeyGlossaryAttributeSlang:         "argot",
+		uiKeyGlossaryAttributeAbbreviation:  "abréviation",
+		uiKeyGlossaryAttributeTechnicalTerm: "terme technique",
+
 		uiKeyViewOriginalLink:       "Aller au message original",
 		uiKeyOriginalMessage:        "Source",
 		uiKeyOriginalMessageDeleted: "Le message d’origine a été supprimé",
@@ -707,6 +1118,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "Aucune traduction de l'historique vers <#%[1]s> n'est en cours.",
 	},
 	"de": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (Stil: %[2]s)\n",
+		uiKeyStyleCustomPreview: "eigener Stil: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Erstellt eine Übersetzungsgruppe aus diesem oder einem anderen Kanal",
+		uiKeyCmdJoinChannelDesc:    "Fügt diesen oder einen anderen Kanal einer Übersetzungsgruppe hinzu",
+		uiKeyCmdBackfillDesc:       "Verwaltet die Verlaufsübersetzung eines Kanals in einer Übersetzungsgruppe",
+		uiKeyCmdBackfillStopDesc:   "Beendet die Verlaufsübersetzung in einen Kanal",
+		uiKeyCmdLeaveChannelDesc:   "Entfernt diesen oder einen anderen Kanal aus einer Übersetzungsgruppe",
+		uiKeyCmdDeleteGroupDesc:    "Löscht eine Übersetzungsgruppe",
+		uiKeyCmdAddGlossaryDesc:    "Hinterlegt eine bevorzugte Übersetzung für einen Begriff auf diesem Server",
+		uiKeyCmdListGroupsDesc:     "Listet die Übersetzungsgruppen und Kanäle dieses Servers auf",
+		uiKeyCmdListGlossaryDesc:   "Listet die Glossareinträge dieses Servers auf",
+		uiKeyCmdRemoveGlossaryDesc: "Entfernt einen Glossareintrag von diesem Server",
+		uiKeyCmdSetStyleDesc:       "Legt den Übersetzungsstil einer Gruppe fest (Voreinstellung oder eigene Anweisung)",
+		uiKeyCmdEditForumTagsDesc:  "Bearbeitet Forum-Tag-Zuordnungen für einen Kanal einer Übersetzungsgruppe",
+		uiKeyCmdBotWhitelistDesc:   "Verwaltet erlaubte Bot- und Webhook-Quellen auf diesem Server",
+		uiKeyCmdWhitelistAddDesc:   "Erlaubt eine Bot- oder Webhook-Quelle auf diesem Server",
+		uiKeyCmdWhitelistRmDesc:    "Entfernt eine Bot- oder Webhook-Quelle von diesem Server",
+		uiKeyCmdWhitelistListDesc:  "Listet die erlaubten Bot- und Webhook-Quellen dieses Servers auf",
+
+		uiKeyOptLanguageDesc:            "BCP-47-Sprachcode",
+		uiKeyOptChannelRegisterDesc:     "Kanal oder Forum zum Registrieren",
+		uiKeyOptGroupIDDesc:             "Kurze Gruppenkennung",
+		uiKeyOptExistingGroupDesc:       "Bestehende Übersetzungsgruppe",
+		uiKeyOptChannelJoinDesc:         "Kanal oder Forum zum Hinzufügen",
+		uiKeyOptBackfillToggleDesc:      "Übersetzt auch frühere Nachrichten der Gruppe in diesen Kanal (zeigt zuerst eine Schätzung)",
+		uiKeyOptChannelBackfillStopDesc: "Kanal, dessen Verlaufsübersetzung beendet wird",
+		uiKeyOptChannelRemoveDesc:       "Kanal oder Forum zum Entfernen",
+		uiKeyOptTermMatchDesc:           "Quellbegriff zum Abgleich",
+		uiKeyOptTranslationDesc:         "Bevorzugte Übersetzung",
+		uiKeyOptAttributeDesc:           "Begriffsart, etwa Personenname, Slang oder ein eigener Wert",
+		uiKeyOptAlwaysIncludeDesc:       "Diesen Begriff immer in die Übersetzungsanweisung aufnehmen",
+		uiKeyOptTermRemoveDesc:          "Quellbegriff zum Entfernen",
+		uiKeyOptStylePresetDesc:         "Stil-Voreinstellung",
+		uiKeyOptStyleCustomDesc:         "Eigene Stil-Anweisung in natürlicher Sprache",
+		uiKeyOptForumChannelDesc:        "Forum- oder Medienkanal zum Bearbeiten",
+		uiKeyOptSourceTypeDesc:          "Art der automatisierten Nachrichtenquelle",
+		uiKeyOptSourceIDDesc:            "Discord-Bot-Benutzer-ID oder Webhook-ID",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Standard (natürlicher Chat)",
+		uiKeyStylePresetFormalLabel:   "Formell",
+		uiKeyStylePresetCasualLabel:   "Locker",
+		uiKeyStylePresetBusinessLabel: "Geschäftlich",
+		uiKeyStylePresetLiteralLabel:  "Wörtlich",
+		uiKeyStylePresetGamingLabel:   "Gaming",
+		uiKeyStylePresetFriendlyLabel: "Freundlich",
+		uiKeyStylePresetNetslangLabel: "Internetforum-Stil",
+		uiKeyStylePresetTweetLabel:    "Tweet-Stil",
+
+		uiKeyGlossaryAttributePersonName:    "Personenname",
+		uiKeyGlossaryAttributePlaceName:     "Ortsname",
+		uiKeyGlossaryAttributeSlang:         "Slang",
+		uiKeyGlossaryAttributeAbbreviation:  "Abkürzung",
+		uiKeyGlossaryAttributeTechnicalTerm: "Fachbegriff",
+
 		uiKeyViewOriginalLink:       "Zur Originalnachricht",
 		uiKeyOriginalMessage:        "Quelle",
 		uiKeyOriginalMessageDeleted: "Die ursprüngliche Nachricht wurde gelöscht",
@@ -806,6 +1275,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "Es läuft keine Übersetzung des Verlaufs nach <#%[1]s>.",
 	},
 	"es": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (estilo: %[2]s)\n",
+		uiKeyStyleCustomPreview: "personalizado: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Crea un grupo de traducción a partir de este canal u otro canal",
+		uiKeyCmdJoinChannelDesc:    "Añade este canal u otro canal a un grupo de traducción",
+		uiKeyCmdBackfillDesc:       "Gestiona la traducción del historial de un canal de un grupo de traducción",
+		uiKeyCmdBackfillStopDesc:   "Detiene la traducción del historial hacia un canal",
+		uiKeyCmdLeaveChannelDesc:   "Quita este canal u otro canal de un grupo de traducción",
+		uiKeyCmdDeleteGroupDesc:    "Elimina un grupo de traducción",
+		uiKeyCmdAddGlossaryDesc:    "Registra una traducción preferida para un término en este servidor",
+		uiKeyCmdListGroupsDesc:     "Muestra los grupos de traducción y los canales de este servidor",
+		uiKeyCmdListGlossaryDesc:   "Muestra las entradas del glosario de este servidor",
+		uiKeyCmdRemoveGlossaryDesc: "Elimina una entrada del glosario de este servidor",
+		uiKeyCmdSetStyleDesc:       "Define el estilo de traducción de un grupo (preajuste o instrucción personalizada)",
+		uiKeyCmdEditForumTagsDesc:  "Edita la correspondencia de etiquetas de foro de un canal de un grupo de traducción",
+		uiKeyCmdBotWhitelistDesc:   "Gestiona las fuentes de bots y webhooks permitidas en este servidor",
+		uiKeyCmdWhitelistAddDesc:   "Permite una fuente de bot o webhook en este servidor",
+		uiKeyCmdWhitelistRmDesc:    "Elimina una fuente de bot o webhook de este servidor",
+		uiKeyCmdWhitelistListDesc:  "Muestra las fuentes de bots y webhooks permitidas en este servidor",
+
+		uiKeyOptLanguageDesc:            "Código de idioma BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Canal o foro que se va a registrar",
+		uiKeyOptGroupIDDesc:             "Identificador corto del grupo",
+		uiKeyOptExistingGroupDesc:       "Grupo de traducción existente",
+		uiKeyOptChannelJoinDesc:         "Canal o foro al que unirse",
+		uiKeyOptBackfillToggleDesc:      "Traduce también los mensajes anteriores del grupo a este canal (muestra antes una estimación)",
+		uiKeyOptChannelBackfillStopDesc: "Canal en el que se detiene la traducción del historial",
+		uiKeyOptChannelRemoveDesc:       "Canal o foro que se va a quitar",
+		uiKeyOptTermMatchDesc:           "Término de origen que se va a buscar",
+		uiKeyOptTranslationDesc:         "Traducción preferida",
+		uiKeyOptAttributeDesc:           "Tipo de término, como nombre de persona, jerga o un valor libre",
+		uiKeyOptAlwaysIncludeDesc:       "Incluir siempre este término en las instrucciones de traducción",
+		uiKeyOptTermRemoveDesc:          "Término de origen que se va a eliminar",
+		uiKeyOptStylePresetDesc:         "Preajuste de estilo",
+		uiKeyOptStyleCustomDesc:         "Instrucción de estilo personalizada en lenguaje natural",
+		uiKeyOptForumChannelDesc:        "Canal de foro o de medios que se va a editar",
+		uiKeyOptSourceTypeDesc:          "Tipo de fuente de mensajes automatizados",
+		uiKeyOptSourceIDDesc:            "ID de usuario de bot o ID de webhook de Discord",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Predeterminado (charla natural)",
+		uiKeyStylePresetFormalLabel:   "Formal",
+		uiKeyStylePresetCasualLabel:   "Informal",
+		uiKeyStylePresetBusinessLabel: "Profesional",
+		uiKeyStylePresetLiteralLabel:  "Literal",
+		uiKeyStylePresetGamingLabel:   "Videojuegos",
+		uiKeyStylePresetFriendlyLabel: "Cercano",
+		uiKeyStylePresetNetslangLabel: "Estilo foro de Internet",
+		uiKeyStylePresetTweetLabel:    "Estilo tuit",
+
+		uiKeyGlossaryAttributePersonName:    "nombre de persona",
+		uiKeyGlossaryAttributePlaceName:     "nombre de lugar",
+		uiKeyGlossaryAttributeSlang:         "jerga",
+		uiKeyGlossaryAttributeAbbreviation:  "abreviatura",
+		uiKeyGlossaryAttributeTechnicalTerm: "término técnico",
+
 		uiKeyViewOriginalLink:       "Ir al mensaje original",
 		uiKeyOriginalMessage:        "Ver fuente",
 		uiKeyOriginalMessageDeleted: "El mensaje original fue eliminado",
@@ -905,6 +1432,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "No hay ninguna traducción del historial a <#%[1]s> en curso.",
 	},
 	"pt-BR": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (estilo: %[2]s)\n",
+		uiKeyStyleCustomPreview: "personalizado: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Cria um grupo de tradução a partir deste canal ou de outro canal",
+		uiKeyCmdJoinChannelDesc:    "Adiciona este canal ou outro canal a um grupo de tradução",
+		uiKeyCmdBackfillDesc:       "Gerencia a tradução do histórico de um canal de um grupo de tradução",
+		uiKeyCmdBackfillStopDesc:   "Interrompe a tradução do histórico para um canal",
+		uiKeyCmdLeaveChannelDesc:   "Remove este canal ou outro canal de um grupo de tradução",
+		uiKeyCmdDeleteGroupDesc:    "Exclui um grupo de tradução",
+		uiKeyCmdAddGlossaryDesc:    "Registra uma tradução preferida para um termo neste servidor",
+		uiKeyCmdListGroupsDesc:     "Lista os grupos de tradução e os canais deste servidor",
+		uiKeyCmdListGlossaryDesc:   "Lista as entradas do glossário deste servidor",
+		uiKeyCmdRemoveGlossaryDesc: "Remove uma entrada do glossário deste servidor",
+		uiKeyCmdSetStyleDesc:       "Define o estilo de tradução de um grupo (predefinição ou instrução personalizada)",
+		uiKeyCmdEditForumTagsDesc:  "Edita o mapeamento de tags de fórum de um canal de um grupo de tradução",
+		uiKeyCmdBotWhitelistDesc:   "Gerencia as fontes de bots e webhooks permitidas neste servidor",
+		uiKeyCmdWhitelistAddDesc:   "Permite uma fonte de bot ou webhook neste servidor",
+		uiKeyCmdWhitelistRmDesc:    "Remove uma fonte de bot ou webhook deste servidor",
+		uiKeyCmdWhitelistListDesc:  "Lista as fontes de bots e webhooks permitidas neste servidor",
+
+		uiKeyOptLanguageDesc:            "Código de idioma BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Canal ou fórum a registrar",
+		uiKeyOptGroupIDDesc:             "Identificador curto do grupo",
+		uiKeyOptExistingGroupDesc:       "Grupo de tradução existente",
+		uiKeyOptChannelJoinDesc:         "Canal ou fórum para entrar",
+		uiKeyOptBackfillToggleDesc:      "Também traduz as mensagens anteriores do grupo para este canal (mostra antes uma estimativa)",
+		uiKeyOptChannelBackfillStopDesc: "Canal que terá a tradução do histórico interrompida",
+		uiKeyOptChannelRemoveDesc:       "Canal ou fórum a remover",
+		uiKeyOptTermMatchDesc:           "Termo de origem a corresponder",
+		uiKeyOptTranslationDesc:         "Tradução preferida",
+		uiKeyOptAttributeDesc:           "Tipo de termo, como nome de pessoa, gíria ou um valor livre",
+		uiKeyOptAlwaysIncludeDesc:       "Incluir sempre este termo nas instruções de tradução",
+		uiKeyOptTermRemoveDesc:          "Termo de origem a remover",
+		uiKeyOptStylePresetDesc:         "Predefinição de estilo",
+		uiKeyOptStyleCustomDesc:         "Instrução de estilo personalizada em linguagem natural",
+		uiKeyOptForumChannelDesc:        "Canal de fórum ou de mídia a editar",
+		uiKeyOptSourceTypeDesc:          "Tipo de fonte de mensagens automatizadas",
+		uiKeyOptSourceIDDesc:            "ID de usuário de bot ou ID de webhook do Discord",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Padrão (conversa natural)",
+		uiKeyStylePresetFormalLabel:   "Formal",
+		uiKeyStylePresetCasualLabel:   "Descontraído",
+		uiKeyStylePresetBusinessLabel: "Profissional",
+		uiKeyStylePresetLiteralLabel:  "Literal",
+		uiKeyStylePresetGamingLabel:   "Jogos",
+		uiKeyStylePresetFriendlyLabel: "Acolhedor",
+		uiKeyStylePresetNetslangLabel: "Estilo fórum da internet",
+		uiKeyStylePresetTweetLabel:    "Estilo tweet",
+
+		uiKeyGlossaryAttributePersonName:    "nome de pessoa",
+		uiKeyGlossaryAttributePlaceName:     "nome de lugar",
+		uiKeyGlossaryAttributeSlang:         "gíria",
+		uiKeyGlossaryAttributeAbbreviation:  "abreviação",
+		uiKeyGlossaryAttributeTechnicalTerm: "termo técnico",
+
 		uiKeyViewOriginalLink:       "Ir para a mensagem original",
 		uiKeyOriginalMessage:        "Ver fonte",
 		uiKeyOriginalMessageDeleted: "A mensagem original foi excluída",
@@ -1004,6 +1589,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "Não há tradução do histórico para <#%[1]s> em andamento.",
 	},
 	"it": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (stile: %[2]s)\n",
+		uiKeyStyleCustomPreview: "personalizzato: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Crea un gruppo di traduzione da questo canale o da un altro canale",
+		uiKeyCmdJoinChannelDesc:    "Aggiunge questo canale o un altro canale a un gruppo di traduzione",
+		uiKeyCmdBackfillDesc:       "Gestisce la traduzione della cronologia di un canale in un gruppo di traduzione",
+		uiKeyCmdBackfillStopDesc:   "Interrompe la traduzione della cronologia verso un canale",
+		uiKeyCmdLeaveChannelDesc:   "Rimuove questo canale o un altro canale da un gruppo di traduzione",
+		uiKeyCmdDeleteGroupDesc:    "Elimina un gruppo di traduzione",
+		uiKeyCmdAddGlossaryDesc:    "Registra una traduzione preferita per un termine su questo server",
+		uiKeyCmdListGroupsDesc:     "Elenca i gruppi di traduzione e i canali di questo server",
+		uiKeyCmdListGlossaryDesc:   "Elenca le voci del glossario di questo server",
+		uiKeyCmdRemoveGlossaryDesc: "Rimuove una voce dal glossario di questo server",
+		uiKeyCmdSetStyleDesc:       "Imposta lo stile di traduzione di un gruppo (preset o istruzione personalizzata)",
+		uiKeyCmdEditForumTagsDesc:  "Modifica le associazioni dei tag forum di un canale in un gruppo di traduzione",
+		uiKeyCmdBotWhitelistDesc:   "Gestisce le origini bot e webhook consentite su questo server",
+		uiKeyCmdWhitelistAddDesc:   "Consente un'origine bot o webhook su questo server",
+		uiKeyCmdWhitelistRmDesc:    "Rimuove un'origine bot o webhook da questo server",
+		uiKeyCmdWhitelistListDesc:  "Elenca le origini bot e webhook consentite su questo server",
+
+		uiKeyOptLanguageDesc:            "Codice lingua BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Canale o forum da registrare",
+		uiKeyOptGroupIDDesc:             "Identificatore breve del gruppo",
+		uiKeyOptExistingGroupDesc:       "Gruppo di traduzione esistente",
+		uiKeyOptChannelJoinDesc:         "Canale o forum a cui unirsi",
+		uiKeyOptBackfillToggleDesc:      "Traduce anche i messaggi passati del gruppo in questo canale (mostra prima una stima)",
+		uiKeyOptChannelBackfillStopDesc: "Canale di cui interrompere la traduzione della cronologia",
+		uiKeyOptChannelRemoveDesc:       "Canale o forum da rimuovere",
+		uiKeyOptTermMatchDesc:           "Termine di origine da cercare",
+		uiKeyOptTranslationDesc:         "Traduzione preferita",
+		uiKeyOptAttributeDesc:           "Tipo di termine, ad esempio nome di persona, slang o un valore libero",
+		uiKeyOptAlwaysIncludeDesc:       "Includi sempre questo termine nelle istruzioni di traduzione",
+		uiKeyOptTermRemoveDesc:          "Termine di origine da rimuovere",
+		uiKeyOptStylePresetDesc:         "Preset di stile",
+		uiKeyOptStyleCustomDesc:         "Istruzione di stile personalizzata in linguaggio naturale",
+		uiKeyOptForumChannelDesc:        "Canale forum o media da modificare",
+		uiKeyOptSourceTypeDesc:          "Tipo di origine dei messaggi automatizzati",
+		uiKeyOptSourceIDDesc:            "ID utente bot o ID webhook di Discord",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Predefinito (chat naturale)",
+		uiKeyStylePresetFormalLabel:   "Formale",
+		uiKeyStylePresetCasualLabel:   "Informale",
+		uiKeyStylePresetBusinessLabel: "Professionale",
+		uiKeyStylePresetLiteralLabel:  "Letterale",
+		uiKeyStylePresetGamingLabel:   "Videogiochi",
+		uiKeyStylePresetFriendlyLabel: "Amichevole",
+		uiKeyStylePresetNetslangLabel: "Stile forum di Internet",
+		uiKeyStylePresetTweetLabel:    "Stile tweet",
+
+		uiKeyGlossaryAttributePersonName:    "nome di persona",
+		uiKeyGlossaryAttributePlaceName:     "nome di luogo",
+		uiKeyGlossaryAttributeSlang:         "slang",
+		uiKeyGlossaryAttributeAbbreviation:  "abbreviazione",
+		uiKeyGlossaryAttributeTechnicalTerm: "termine tecnico",
+
 		uiKeyViewOriginalLink:       "Vai al messaggio originale",
 		uiKeyOriginalMessage:        "Fonte",
 		uiKeyOriginalMessageDeleted: "Il messaggio originale è stato eliminato",
@@ -1103,6 +1746,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "Non è in corso alcuna traduzione della cronologia in <#%[1]s>.",
 	},
 	"id": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (gaya: %[2]s)\n",
+		uiKeyStyleCustomPreview: "khusus: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Membuat grup terjemahan dari kanal ini atau kanal lain",
+		uiKeyCmdJoinChannelDesc:    "Menambahkan kanal ini atau kanal lain ke grup terjemahan",
+		uiKeyCmdBackfillDesc:       "Mengelola terjemahan riwayat kanal dalam grup terjemahan",
+		uiKeyCmdBackfillStopDesc:   "Menghentikan terjemahan riwayat ke sebuah kanal",
+		uiKeyCmdLeaveChannelDesc:   "Mengeluarkan kanal ini atau kanal lain dari grup terjemahan",
+		uiKeyCmdDeleteGroupDesc:    "Menghapus grup terjemahan",
+		uiKeyCmdAddGlossaryDesc:    "Mendaftarkan terjemahan pilihan untuk sebuah istilah di server ini",
+		uiKeyCmdListGroupsDesc:     "Menampilkan daftar grup terjemahan dan kanal di server ini",
+		uiKeyCmdListGlossaryDesc:   "Menampilkan daftar entri glosarium di server ini",
+		uiKeyCmdRemoveGlossaryDesc: "Menghapus entri glosarium dari server ini",
+		uiKeyCmdSetStyleDesc:       "Mengatur gaya terjemahan sebuah grup (preset atau instruksi khusus)",
+		uiKeyCmdEditForumTagsDesc:  "Mengedit pemetaan tag forum untuk kanal dalam grup terjemahan",
+		uiKeyCmdBotWhitelistDesc:   "Mengelola sumber bot dan webhook yang diizinkan di server ini",
+		uiKeyCmdWhitelistAddDesc:   "Mengizinkan sumber bot atau webhook di server ini",
+		uiKeyCmdWhitelistRmDesc:    "Menghapus sumber bot atau webhook dari server ini",
+		uiKeyCmdWhitelistListDesc:  "Menampilkan daftar sumber bot dan webhook yang diizinkan di server ini",
+
+		uiKeyOptLanguageDesc:            "Kode bahasa BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Kanal atau forum yang didaftarkan",
+		uiKeyOptGroupIDDesc:             "Pengenal grup yang singkat",
+		uiKeyOptExistingGroupDesc:       "Grup terjemahan yang sudah ada",
+		uiKeyOptChannelJoinDesc:         "Kanal atau forum yang akan diikuti",
+		uiKeyOptBackfillToggleDesc:      "Ikut menerjemahkan pesan lama grup ke kanal ini (menampilkan perkiraan lebih dulu)",
+		uiKeyOptChannelBackfillStopDesc: "Kanal yang terjemahan riwayatnya dihentikan",
+		uiKeyOptChannelRemoveDesc:       "Kanal atau forum yang akan dikeluarkan",
+		uiKeyOptTermMatchDesc:           "Istilah sumber yang dicocokkan",
+		uiKeyOptTranslationDesc:         "Terjemahan pilihan",
+		uiKeyOptAttributeDesc:           "Jenis istilah, misalnya nama orang, slang, atau nilai bebas",
+		uiKeyOptAlwaysIncludeDesc:       "Selalu sertakan istilah ini dalam instruksi terjemahan",
+		uiKeyOptTermRemoveDesc:          "Istilah sumber yang akan dihapus",
+		uiKeyOptStylePresetDesc:         "Preset gaya",
+		uiKeyOptStyleCustomDesc:         "Instruksi gaya khusus dalam bahasa alami",
+		uiKeyOptForumChannelDesc:        "Kanal forum atau media yang akan diedit",
+		uiKeyOptSourceTypeDesc:          "Jenis sumber pesan otomatis",
+		uiKeyOptSourceIDDesc:            "ID pengguna bot Discord atau ID webhook",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Bawaan (obrolan alami)",
+		uiKeyStylePresetFormalLabel:   "Formal",
+		uiKeyStylePresetCasualLabel:   "Santai",
+		uiKeyStylePresetBusinessLabel: "Bisnis",
+		uiKeyStylePresetLiteralLabel:  "Harfiah",
+		uiKeyStylePresetGamingLabel:   "Gim",
+		uiKeyStylePresetFriendlyLabel: "Ramah",
+		uiKeyStylePresetNetslangLabel: "Gaya forum internet",
+		uiKeyStylePresetTweetLabel:    "Gaya tweet",
+
+		uiKeyGlossaryAttributePersonName:    "nama orang",
+		uiKeyGlossaryAttributePlaceName:     "nama tempat",
+		uiKeyGlossaryAttributeSlang:         "slang",
+		uiKeyGlossaryAttributeAbbreviation:  "singkatan",
+		uiKeyGlossaryAttributeTechnicalTerm: "istilah teknis",
+
 		uiKeyViewOriginalLink:       "Buka pesan asli",
 		uiKeyOriginalMessage:        "Lihat sumber",
 		uiKeyOriginalMessageDeleted: "Pesan asli telah dihapus",
@@ -1202,6 +1903,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "Tidak ada terjemahan riwayat ke <#%[1]s> yang berjalan.",
 	},
 	"th": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (สไตล์: %[2]s)\n",
+		uiKeyStyleCustomPreview: "กำหนดเอง: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "สร้างกลุ่มการแปลจากช่องนี้หรือช่องอื่น",
+		uiKeyCmdJoinChannelDesc:    "เพิ่มช่องนี้หรือช่องอื่นเข้ากลุ่มการแปล",
+		uiKeyCmdBackfillDesc:       "จัดการการแปลย้อนหลังของช่องในกลุ่มการแปล",
+		uiKeyCmdBackfillStopDesc:   "หยุดการแปลย้อนหลังไปยังช่อง",
+		uiKeyCmdLeaveChannelDesc:   "นำช่องนี้หรือช่องอื่นออกจากกลุ่มการแปล",
+		uiKeyCmdDeleteGroupDesc:    "ลบกลุ่มการแปล",
+		uiKeyCmdAddGlossaryDesc:    "ลงทะเบียนคำแปลที่ต้องการสำหรับคำศัพท์ในเซิร์ฟเวอร์นี้",
+		uiKeyCmdListGroupsDesc:     "แสดงรายการกลุ่มการแปลและช่องของเซิร์ฟเวอร์นี้",
+		uiKeyCmdListGlossaryDesc:   "แสดงรายการอภิธานศัพท์ของเซิร์ฟเวอร์นี้",
+		uiKeyCmdRemoveGlossaryDesc: "ลบรายการออกจากอภิธานศัพท์ของเซิร์ฟเวอร์นี้",
+		uiKeyCmdSetStyleDesc:       "กำหนดสไตล์การแปลของกลุ่ม (พรีเซ็ตหรือคำสั่งกำหนดเอง)",
+		uiKeyCmdEditForumTagsDesc:  "แก้ไขการจับคู่แท็กฟอรัมสำหรับช่องในกลุ่มการแปล",
+		uiKeyCmdBotWhitelistDesc:   "จัดการแหล่งบอตและเว็บฮุกที่อนุญาตในเซิร์ฟเวอร์นี้",
+		uiKeyCmdWhitelistAddDesc:   "อนุญาตแหล่งบอตหรือเว็บฮุกในเซิร์ฟเวอร์นี้",
+		uiKeyCmdWhitelistRmDesc:    "ลบแหล่งบอตหรือเว็บฮุกออกจากเซิร์ฟเวอร์นี้",
+		uiKeyCmdWhitelistListDesc:  "แสดงรายการแหล่งบอตและเว็บฮุกที่อนุญาตในเซิร์ฟเวอร์นี้",
+
+		uiKeyOptLanguageDesc:            "รหัสภาษา BCP-47",
+		uiKeyOptChannelRegisterDesc:     "ช่องหรือฟอรัมที่ต้องการลงทะเบียน",
+		uiKeyOptGroupIDDesc:             "ตัวระบุกลุ่มแบบสั้น",
+		uiKeyOptExistingGroupDesc:       "กลุ่มการแปลที่มีอยู่",
+		uiKeyOptChannelJoinDesc:         "ช่องหรือฟอรัมที่ต้องการเข้าร่วม",
+		uiKeyOptBackfillToggleDesc:      "แปลข้อความเก่าของกลุ่มไปยังช่องนี้ด้วย (แสดงการประมาณการก่อน)",
+		uiKeyOptChannelBackfillStopDesc: "ช่องที่ต้องการหยุดการแปลย้อนหลัง",
+		uiKeyOptChannelRemoveDesc:       "ช่องหรือฟอรัมที่ต้องการนำออก",
+		uiKeyOptTermMatchDesc:           "คำศัพท์ต้นทางที่ต้องการจับคู่",
+		uiKeyOptTranslationDesc:         "คำแปลที่ต้องการ",
+		uiKeyOptAttributeDesc:           "ประเภทของคำศัพท์ เช่น ชื่อบุคคล คำสแลง หรือค่าที่กำหนดเอง",
+		uiKeyOptAlwaysIncludeDesc:       "ใส่คำศัพท์นี้ในคำสั่งการแปลเสมอ",
+		uiKeyOptTermRemoveDesc:          "คำศัพท์ต้นทางที่ต้องการลบ",
+		uiKeyOptStylePresetDesc:         "พรีเซ็ตสไตล์",
+		uiKeyOptStyleCustomDesc:         "คำสั่งกำหนดสไตล์ด้วยภาษาธรรมชาติ",
+		uiKeyOptForumChannelDesc:        "ช่องฟอรัมหรือสื่อที่ต้องการแก้ไข",
+		uiKeyOptSourceTypeDesc:          "ประเภทแหล่งข้อความอัตโนมัติ",
+		uiKeyOptSourceIDDesc:            "ID ผู้ใช้บอตหรือ ID เว็บฮุกของ Discord",
+
+		uiKeyChoiceSourceTypeBot:     "บอต",
+		uiKeyChoiceSourceTypeWebhook: "เว็บฮุก",
+
+		uiKeyStylePresetDefaultLabel:  "ค่าเริ่มต้น (แชตธรรมชาติ)",
+		uiKeyStylePresetFormalLabel:   "ทางการ",
+		uiKeyStylePresetCasualLabel:   "ลำลอง",
+		uiKeyStylePresetBusinessLabel: "ธุรกิจ",
+		uiKeyStylePresetLiteralLabel:  "แปลตรงตัว",
+		uiKeyStylePresetGamingLabel:   "เกม",
+		uiKeyStylePresetFriendlyLabel: "เป็นกันเอง",
+		uiKeyStylePresetNetslangLabel: "สไตล์กระดานเว็บ",
+		uiKeyStylePresetTweetLabel:    "สไตล์ทวีต",
+
+		uiKeyGlossaryAttributePersonName:    "ชื่อบุคคล",
+		uiKeyGlossaryAttributePlaceName:     "ชื่อสถานที่",
+		uiKeyGlossaryAttributeSlang:         "คำสแลง",
+		uiKeyGlossaryAttributeAbbreviation:  "คำย่อ",
+		uiKeyGlossaryAttributeTechnicalTerm: "ศัพท์เทคนิค",
+
 		uiKeyViewOriginalLink:       "ไปยังข้อความต้นฉบับ",
 		uiKeyOriginalMessage:        "ดูต้นฉบับ",
 		uiKeyOriginalMessageDeleted: "ข้อความต้นฉบับถูกลบแล้ว",
@@ -1301,6 +2060,64 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyBackfillNotRunning:  "ไม่มีการแปลข้อความเก่าไปยัง <#%[1]s> อยู่",
 	},
 	"vi": {
+		uiKeyGroupBlockHeader:   "\n**%[1]s** (kiểu: %[2]s)\n",
+		uiKeyStyleCustomPreview: "tùy chỉnh: %[1]s",
+
+		uiKeyCmdNewChannelDesc:     "Tạo nhóm dịch từ kênh này hoặc kênh khác",
+		uiKeyCmdJoinChannelDesc:    "Thêm kênh này hoặc kênh khác vào nhóm dịch",
+		uiKeyCmdBackfillDesc:       "Quản lý việc dịch lịch sử của một kênh trong nhóm dịch",
+		uiKeyCmdBackfillStopDesc:   "Dừng dịch lịch sử sang một kênh",
+		uiKeyCmdLeaveChannelDesc:   "Gỡ kênh này hoặc kênh khác khỏi nhóm dịch",
+		uiKeyCmdDeleteGroupDesc:    "Xóa nhóm dịch",
+		uiKeyCmdAddGlossaryDesc:    "Đăng ký bản dịch ưu tiên cho một thuật ngữ trên máy chủ này",
+		uiKeyCmdListGroupsDesc:     "Liệt kê các nhóm dịch và kênh của máy chủ này",
+		uiKeyCmdListGlossaryDesc:   "Liệt kê các mục thuật ngữ của máy chủ này",
+		uiKeyCmdRemoveGlossaryDesc: "Xóa một mục thuật ngữ khỏi máy chủ này",
+		uiKeyCmdSetStyleDesc:       "Đặt kiểu dịch cho một nhóm (bản đặt sẵn hoặc chỉ dẫn tùy chỉnh)",
+		uiKeyCmdEditForumTagsDesc:  "Sửa ánh xạ thẻ diễn đàn cho một kênh trong nhóm dịch",
+		uiKeyCmdBotWhitelistDesc:   "Quản lý nguồn bot và webhook được phép trên máy chủ này",
+		uiKeyCmdWhitelistAddDesc:   "Cho phép nguồn bot hoặc webhook trên máy chủ này",
+		uiKeyCmdWhitelistRmDesc:    "Xóa nguồn bot hoặc webhook khỏi máy chủ này",
+		uiKeyCmdWhitelistListDesc:  "Liệt kê nguồn bot và webhook được phép trên máy chủ này",
+
+		uiKeyOptLanguageDesc:            "Mã ngôn ngữ BCP-47",
+		uiKeyOptChannelRegisterDesc:     "Kênh hoặc diễn đàn cần đăng ký",
+		uiKeyOptGroupIDDesc:             "Mã nhận diện nhóm ngắn",
+		uiKeyOptExistingGroupDesc:       "Nhóm dịch hiện có",
+		uiKeyOptChannelJoinDesc:         "Kênh hoặc diễn đàn cần tham gia",
+		uiKeyOptBackfillToggleDesc:      "Dịch cả tin nhắn cũ của nhóm sang kênh này (hiển thị ước tính trước)",
+		uiKeyOptChannelBackfillStopDesc: "Kênh cần dừng dịch lịch sử",
+		uiKeyOptChannelRemoveDesc:       "Kênh hoặc diễn đàn cần gỡ",
+		uiKeyOptTermMatchDesc:           "Thuật ngữ nguồn cần khớp",
+		uiKeyOptTranslationDesc:         "Bản dịch ưu tiên",
+		uiKeyOptAttributeDesc:           "Loại thuật ngữ, ví dụ tên người, tiếng lóng hoặc giá trị tùy ý",
+		uiKeyOptAlwaysIncludeDesc:       "Luôn đưa thuật ngữ này vào chỉ dẫn dịch",
+		uiKeyOptTermRemoveDesc:          "Thuật ngữ nguồn cần xóa",
+		uiKeyOptStylePresetDesc:         "Bản đặt sẵn kiểu",
+		uiKeyOptStyleCustomDesc:         "Chỉ dẫn kiểu tùy chỉnh bằng ngôn ngữ tự nhiên",
+		uiKeyOptForumChannelDesc:        "Kênh diễn đàn hoặc kênh media cần sửa",
+		uiKeyOptSourceTypeDesc:          "Loại nguồn tin nhắn tự động",
+		uiKeyOptSourceIDDesc:            "ID người dùng bot hoặc ID webhook của Discord",
+
+		uiKeyChoiceSourceTypeBot:     "Bot",
+		uiKeyChoiceSourceTypeWebhook: "Webhook",
+
+		uiKeyStylePresetDefaultLabel:  "Mặc định (trò chuyện tự nhiên)",
+		uiKeyStylePresetFormalLabel:   "Trang trọng",
+		uiKeyStylePresetCasualLabel:   "Thân mật",
+		uiKeyStylePresetBusinessLabel: "Công sở",
+		uiKeyStylePresetLiteralLabel:  "Dịch sát nghĩa",
+		uiKeyStylePresetGamingLabel:   "Trò chơi",
+		uiKeyStylePresetFriendlyLabel: "Gần gũi",
+		uiKeyStylePresetNetslangLabel: "Kiểu diễn đàn Internet",
+		uiKeyStylePresetTweetLabel:    "Kiểu tweet",
+
+		uiKeyGlossaryAttributePersonName:    "tên người",
+		uiKeyGlossaryAttributePlaceName:     "tên địa danh",
+		uiKeyGlossaryAttributeSlang:         "tiếng lóng",
+		uiKeyGlossaryAttributeAbbreviation:  "từ viết tắt",
+		uiKeyGlossaryAttributeTechnicalTerm: "thuật ngữ chuyên ngành",
+
 		uiKeyViewOriginalLink:       "Đi tới tin nhắn gốc",
 		uiKeyOriginalMessage:        "Xem nguồn",
 		uiKeyOriginalMessageDeleted: "Tin nhắn gốc đã bị xóa",
@@ -1401,12 +2218,63 @@ var uiStrings = map[string]map[uiKey]string{
 	},
 }
 
+// canonicalUILanguage is the language whose text Discord stores directly in a
+// command's or option's description. Every other catalog language travels as a
+// per-locale variant of that same text.
+const canonicalUILanguage = "en"
+
+// discordLocalesByLanguage lists the Discord client locales each catalog
+// language serves. Discord matches a client against an exact locale, so a
+// language that spans several client locales needs an entry for each of them.
+var discordLocalesByLanguage = map[string][]discordgo.Locale{
+	"en":    {discordgo.EnglishUS, discordgo.EnglishGB},
+	"ja":    {discordgo.Japanese},
+	"zh-CN": {discordgo.ChineseCN},
+	"zh-TW": {discordgo.ChineseTW},
+	"ko":    {discordgo.Korean},
+	"fr":    {discordgo.French},
+	"de":    {discordgo.German},
+	"es":    {discordgo.SpanishES, discordgo.SpanishLATAM},
+	"pt-BR": {discordgo.PortugueseBR},
+	"it":    {discordgo.Italian},
+	"id":    {discordgo.Locale("id")},
+	"th":    {discordgo.Thai},
+	"vi":    {discordgo.Vietnamese},
+}
+
+// commandText returns the canonical text of a command surface key.
+func commandText(key uiKey) string {
+	return uiStrings[canonicalUILanguage][key]
+}
+
+// commandLocalizations resolves a command surface key for every locale beyond
+// the canonical language, which Discord keeps in the plain description.
+func commandLocalizations(key uiKey) map[discordgo.Locale]string {
+	localizations := make(map[discordgo.Locale]string, len(discordLocalesByLanguage))
+	for language, locales := range discordLocalesByLanguage {
+		if language == canonicalUILanguage {
+			continue
+		}
+		for _, locale := range locales {
+			localizations[locale] = uiStrings[language][key]
+		}
+	}
+	return localizations
+}
+
+// commandDescriptionLocalizations is commandLocalizations for the fields
+// Discord models as a nullable map.
+func commandDescriptionLocalizations(key uiKey) *map[discordgo.Locale]string {
+	localizations := commandLocalizations(key)
+	return &localizations
+}
+
 // resolveUILanguage maps any BCP-47 code (including Discord locales such as
 // "en-US") to a supported catalog language, falling back to English.
 func resolveUILanguage(language string) string {
 	language = normalizeLanguage(language)
 	if language == "" {
-		return "en"
+		return canonicalUILanguage
 	}
 	for code := range uiStrings {
 		if strings.EqualFold(language, code) {
@@ -1420,7 +2288,7 @@ func resolveUILanguage(language string) string {
 			return code
 		}
 	}
-	return "en"
+	return canonicalUILanguage
 }
 
 func localizedUIString(language string, key uiKey) string {
@@ -1430,7 +2298,7 @@ func localizedUIString(language string, key uiKey) string {
 			return s
 		}
 	}
-	return uiStrings["en"][key]
+	return uiStrings[canonicalUILanguage][key]
 }
 
 func localizedUIStringf(language string, key uiKey, args ...any) string {

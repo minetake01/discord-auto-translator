@@ -18,7 +18,7 @@ type CommandHandler struct {
 	respond func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
 
 	tagUIMu sync.Mutex
-	tagUI   map[string]*forumTagUISession
+	tagUI   map[string]forumTagUIEntry
 
 	backfill         BackfillService
 	pendingBackfills pendingBackfills
@@ -29,7 +29,7 @@ func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
 		store:   store,
 		api:     api,
 		respond: respondInteraction,
-		tagUI:   make(map[string]*forumTagUISession),
+		tagUI:   make(map[string]forumTagUIEntry),
 	}
 }
 
@@ -173,7 +173,7 @@ func (h *CommandHandler) handleAutocomplete(s *discordgo.Session, i *discordgo.I
 		}
 	}
 	if focused != nil && focused.Name == "attribute" {
-		for _, attribute := range glossaryAttributeSuggestions(focused.StringValue(), 25) {
+		for _, attribute := range glossaryAttributeSuggestions(commandLocale(i), focused.StringValue(), 25) {
 			choices = append(choices, &discordgo.ApplicationCommandOptionChoice{Name: attribute, Value: attribute})
 		}
 	}
@@ -385,7 +385,7 @@ func formatListGroupsMessage(ctx context.Context, store *Store, guildID, lang st
 
 func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n**%s** (style: %s)\n", g.DisplayName, FormatGroupStyle(g))
+	fmt.Fprintf(&b, localizedUIString(lang, uiKeyGroupBlockHeader), g.DisplayName, FormatGroupStyle(lang, g))
 	if len(channels) == 0 {
 		b.WriteString(localizedUIString(lang, uiKeyGroupNoChannels))
 		b.WriteString("\n")

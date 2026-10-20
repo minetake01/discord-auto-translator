@@ -166,22 +166,6 @@ func (s *Store) UpsertBackfillTopicSummary(ctx context.Context, jobID int64, loc
 	return err
 }
 
-// SourceMessageMirroredTo reports whether a source message already has a
-// mirror in the target channel or thread.
-func (s *Store) SourceMessageMirroredTo(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string) (bool, error) {
-	messageID, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
-	if err != nil {
-		return false, err
-	}
-	var one int
-	err = s.db.QueryRowContext(ctx, `SELECT 1 FROM message_links WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=? LIMIT 1`,
-		sourceChannelID, messageID, targetChannelID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	}
-	return err == nil, err
-}
-
 // IsMirrorMessage reports whether channel/message is a mirror written by the
 // bot (it must not be translated again as a source).
 func (s *Store) IsMirrorMessage(ctx context.Context, channelID, messageID string) (bool, error) {

@@ -5,6 +5,9 @@ import (
 	"regexp"
 	"sort"
 	"testing"
+	"unicode/utf8"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 var formatVerbPattern = regexp.MustCompile(`%\[\d+\][a-z]|%[a-z]`)
@@ -73,5 +76,90 @@ func TestLocalizedUIStringFallbackToEnglish(t *testing.T) {
 	want := uiStrings["en"][uiKeyAlreadyOriginal]
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestDiscordLocalesCoverCatalogLanguages verifies that every catalog language
+// declares the Discord client locales it serves, so a new language cannot ship
+// without localized command metadata.
+func TestDiscordLocalesCoverCatalogLanguages(t *testing.T) {
+	for lang := range uiStrings {
+		if len(discordLocalesByLanguage[lang]) == 0 {
+			t.Errorf("lang %s has no Discord locales", lang)
+		}
+	}
+	for lang := range discordLocalesByLanguage {
+		if _, ok := uiStrings[lang]; !ok {
+			t.Errorf("Discord locales declared for unknown lang %s", lang)
+		}
+	}
+}
+
+// TestCommandMetadataCoversCatalogLanguages verifies that a client in any
+// non-canonical catalog language receives localized command text instead of the
+// canonical description.
+func TestCommandMetadataCoversCatalogLanguages(t *testing.T) {
+	for _, command := range Commands() {
+		if command.Type != discordgo.ChatApplicationCommand {
+			continue
+		}
+		if command.DescriptionLocalizations == nil {
+			t.Fatalf("command %s has no localized description", command.Name)
+		}
+		for lang, locales := range discordLocalesByLanguage {
+			if lang == canonicalUILanguage {
+				continue
+			}
+			for _, locale := range locales {
+				if (*command.DescriptionLocalizations)[locale] == "" {
+					t.Errorf("command %s has no %s description", command.Name, locale)
+				}
+			}
+		}
+	}
+}
+
+// TestCommandMetadataFitsDiscordLimits verifies that every registered
+// description and choice label is non-empty and within the 100 character limit
+// Discord enforces for each locale.
+func TestCommandMetadataFitsDiscordLimits(t *testing.T) {
+	check := func(where, language, text string) {
+		if text == "" {
+			t.Errorf("%s in %s is empty", where, language)
+			return
+		}
+		if n := utf8.RuneCountInString(text); n > 100 {
+			t.Errorf("%s in %s is %d characters, want at most 100", where, language, n)
+		}
+	}
+	var walk func(where string, option *discordgo.ApplicationCommandOption)
+	walk = func(where string, option *discordgo.ApplicationCommandOption) {
+		check(where, canonicalUILanguage, option.Description)
+		for locale, text := range option.DescriptionLocalizations {
+			check(where, string(locale), text)
+		}
+		for _, choice := range option.Choices {
+			check(where+" choice", canonicalUILanguage, choice.Name)
+			for locale, text := range choice.NameLocalizations {
+				check(where+" choice", string(locale), text)
+			}
+		}
+		for _, child := range option.Options {
+			walk(where+" "+child.Name, child)
+		}
+	}
+	for _, command := range Commands() {
+		if command.Type != discordgo.ChatApplicationCommand {
+			continue
+		}
+		check(command.Name, canonicalUILanguage, command.Description)
+		if command.DescriptionLocalizations != nil {
+			for locale, text := range *command.DescriptionLocalizations {
+				check(command.Name, string(locale), text)
+			}
+		}
+		for _, option := range command.Options {
+			walk(command.Name+" "+option.Name, option)
+		}
 	}
 }

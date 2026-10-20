@@ -56,17 +56,6 @@ func messageContentWithLoadedImages(content string, attachments []DiscordAttachm
 	return messageContentWithAllAssetURLs(content, imagesNotReuploaded(attachments, loaded), nil)
 }
 
-func attachmentsFromLoaded(loaded []loadedImageAttachment) []DiscordAttachment {
-	if len(loaded) == 0 {
-		return nil
-	}
-	out := make([]DiscordAttachment, len(loaded))
-	for i, item := range loaded {
-		out[i] = item.Attachment
-	}
-	return out
-}
-
 func webhookFilesForImages(loaded []loadedImageAttachment, descriptions []string) []WebhookFile {
 	if len(loaded) == 0 {
 		return nil

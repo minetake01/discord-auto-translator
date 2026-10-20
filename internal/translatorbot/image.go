@@ -78,16 +78,6 @@ func imageAttachmentsOnly(attachments []DiscordAttachment) []DiscordAttachment {
 	return out
 }
 
-func nonImageAttachments(attachments []DiscordAttachment) []DiscordAttachment {
-	out := make([]DiscordAttachment, 0, len(attachments))
-	for _, attachment := range attachments {
-		if !isImageAttachment(attachment) {
-			out = append(out, attachment)
-		}
-	}
-	return out
-}
-
 func sourceImageAttachments(m DiscordMessage) []DiscordAttachment {
 	if m.ForwardedMessage != nil {
 		return imageAttachmentsOnly(m.ForwardedMessage.Attachments)

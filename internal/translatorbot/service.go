@@ -18,7 +18,7 @@ type Service struct {
 	store                *Store
 	discord              DiscordAPI
 	translator           Translator
-	rateLimiter          *TokenRateLimiter
+	rateLimiter          *RateLimiter
 	urlPages             *urlPageCache
 	httpClient           *http.Client
 	publicBaseURL        string
@@ -38,13 +38,13 @@ func NewService(store *Store, discord DiscordAPI, translator Translator) *Servic
 		store:        store,
 		discord:      discord,
 		translator:   translator,
-		rateLimiter:  NewTokenRateLimiter(defaultRateLimitTokensPerMinute),
+		rateLimiter:  NewRateLimiter(defaultRateLimitTokensPerMinute),
 		urlPages:     newURLPageCache(http.DefaultClient, urlPageCacheTTL, time.Now),
 		editDebounce: newEditDebouncer(defaultAutomatedEditDebounce),
 	}
 }
 
-func (s *Service) SetRateLimiter(limiter *TokenRateLimiter) {
+func (s *Service) SetRateLimiter(limiter *RateLimiter) {
 	s.rateLimiter = limiter
 }
 

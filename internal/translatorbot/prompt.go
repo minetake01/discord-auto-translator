@@ -186,6 +186,12 @@ func buildMessageTranslationSystemInstruction() string {
 	return buildTranslationSystemInstruction(messageTranslationTaskIntro, "<final_message>") + messageTranslationFewShotExamples
 }
 
+// buildBatchTranslationSystemInstruction is the cached system instruction for
+// a backfill batch request; every <message> in <batch> is translated.
+func buildBatchTranslationSystemInstruction() string {
+	return buildTranslationSystemInstructionWithReplies(batchTranslationTaskIntro, "each <message> in <batch>", batchReplyContextDescription) + messageTranslationFewShotExamples
+}
+
 func buildAttachmentAltTranslationSystemInstruction() string {
 	var b strings.Builder
 	b.WriteString(attachmentAltTranslationTaskIntro)
@@ -344,11 +350,6 @@ func buildTranslationUserPromptParts(targetLanguages []string, translationContex
 	writeSource(&variableB)
 	variableB.WriteString("</translation_request>")
 	return stableB.String(), historyB.String(), variableB.String()
-}
-
-func buildTranslationUserPrompt(targetLanguages []string, translationContext TranslationContext, writeSource func(*strings.Builder)) string {
-	stable, history, variable := buildTranslationUserPromptParts(targetLanguages, translationContext, nil, nil, writeSource)
-	return stable + history + variable
 }
 
 type TopicSummaryRequest struct {

@@ -1,7 +1,6 @@
 package translatorbot
 
 import (
-	"context"
 	"image"
 	"image/color"
 	"image/png"
@@ -11,8 +10,8 @@ import (
 	"testing"
 )
 
-func TestAvatarWithLanguageBadgeBuildsEndpointURL(t *testing.T) {
-	got := AvatarWithLanguageBadge(context.Background(), "https://bot.example.com/", "https://cdn.example.com/avatar.png?x=1", "ja", 0)
+func TestAvatarProxyURLBuildsEndpointURL(t *testing.T) {
+	got := avatarProxyURL("https://bot.example.com/", "https://cdn.example.com/avatar.png?x=1", 0)
 	if !strings.HasPrefix(got, "https://bot.example.com/avatar?url=") {
 		t.Fatalf("got %q", got)
 	}
@@ -24,16 +23,16 @@ func TestAvatarWithLanguageBadgeBuildsEndpointURL(t *testing.T) {
 	}
 }
 
-func TestAvatarWithLanguageBadgeIncludesRoleColor(t *testing.T) {
-	got := AvatarWithLanguageBadge(context.Background(), "https://bot.example.com/", "https://cdn.example.com/avatar.png", "ja", 0x5865F2)
+func TestAvatarProxyURLIncludesRoleColor(t *testing.T) {
+	got := avatarProxyURL("https://bot.example.com/", "https://cdn.example.com/avatar.png", 0x5865F2)
 	if !strings.Contains(got, "color=5865F2") {
 		t.Fatalf("got %q, want color query", got)
 	}
 }
 
-func TestAvatarWithLanguageBadgeFallsBackWithoutPublicBaseURL(t *testing.T) {
+func TestAvatarProxyURLFallsBackWithoutPublicBaseURL(t *testing.T) {
 	const avatarURL = "https://cdn.example.com/avatar.png"
-	got := AvatarWithLanguageBadge(context.Background(), "", avatarURL, "ja", 0x5865F2)
+	got := avatarProxyURL("", avatarURL, 0x5865F2)
 	if got != avatarURL {
 		t.Fatalf("got %q, want %q", got, avatarURL)
 	}
@@ -76,7 +75,7 @@ func TestAvatarHandlerReturns429WhenRateLimited(t *testing.T) {
 	source := newAvatarSourceServer(t)
 	defer source.Close()
 
-	limiter := NewRequestRateLimiter(1)
+	limiter := NewRateLimiter(1)
 	handler := NewAvatarHandler(source.Client(), limiter)
 
 	req := httptest.NewRequest(http.MethodGet, "/avatar?url="+source.URL, nil)
