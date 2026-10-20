@@ -153,7 +153,7 @@ func (r *backfillRunner) processFamily(ctx context.Context, family *threadFamily
 	touched := false
 	if len(ids) > 0 {
 		reader := newTimelineReader(r.s.discord, r.run.job.GuildID, ids, r.cursors)
-		n, err := r.processTimeline(ctx, reader, func(ctx context.Context, m DiscordMessage) (mirrorDestination, bool, error) {
+		n, err := processBackfillTimeline(ctx, r.s, reader, func(ctx context.Context, m DiscordMessage) (mirrorDestination, bool, error) {
 			if family.targetThreadID == "" {
 				consumed, err := r.threads.create(ctx, family, &m)
 				if err != nil || consumed || family.targetThreadID == "" {
@@ -169,7 +169,7 @@ func (r *backfillRunner) processFamily(ctx context.Context, family *threadFamily
 				touched = true
 			}
 			return mirrorDestination{channel: r.run.target, targetID: family.targetThreadID, timestamp: true}, true, nil
-		})
+		}, r, func() error { return r.retry.active(ctx) })
 		seen += n
 		if err != nil {
 			return seen, err

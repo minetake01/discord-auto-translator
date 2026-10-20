@@ -298,9 +298,9 @@ func (r *backfillRunner) pass(ctx context.Context) (int, error) {
 	if len(parentIDs) > 0 {
 		reader := newTimelineReader(r.s.discord, r.run.job.GuildID, parentIDs, r.cursors)
 		timeline := newBackfillTimeline(reader, pendingThreadCreations(families, parentIDs))
-		n, err := r.processTimeline(ctx, timeline, func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
+		n, err := processBackfillTimeline(ctx, r.s, timeline, func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
 			return mirrorDestination{channel: r.run.target, targetID: r.run.target.ChannelID, timestamp: true}, true, nil
-		})
+		}, r, func() error { return r.retry.active(ctx) })
 		seen += n
 		if err != nil {
 			return seen, err
@@ -320,21 +320,44 @@ func (r *backfillRunner) pass(ctx context.Context) (int, error) {
 // false when the message was consumed or cannot be posted.
 type destinationFunc func(context.Context, DiscordMessage) (mirrorDestination, bool, error)
 
-// processTimeline reads a timeline in posting order, mirrors every eligible
-// message and creates every thread where the timeline reaches it. Consecutive
-// normal messages share one translation request.
-func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineSource, destFor destinationFunc) (int, error) {
+// backfillWorkSink receives the work a timeline traversal finds. The real
+// run posts and records what it passes; an estimate only counts.
+type backfillWorkSink interface {
+	// count receives every message the source policy accepts.
+	count(m DiscordMessage)
+	// skipped reports whether the job already recorded the message as
+	// undeliverable, before any destination is resolved.
+	skipped(ctx context.Context, m DiscordMessage) (bool, error)
+	// synced reports whether the message already reached the destination.
+	synced(ctx context.Context, m DiscordMessage, dest mirrorDestination) (bool, error)
+	// load gathers a batch item's image attachments.
+	load(ctx context.Context, m DiscordMessage) []loadedImageAttachment
+	// alone handles a message that cannot join a batch. The traversal has
+	// flushed the batch gathered so far first.
+	alone(ctx context.Context, m DiscordMessage, dest mirrorDestination) error
+	// flush handles the batch gathered so far, if any.
+	flush(ctx context.Context, items []backfillItem) error
+	// family handles a thread-family step of the timeline and reports
+	// whether a target thread exists afterwards.
+	family(ctx context.Context, family *threadFamily) (bool, error)
+}
+
+// processBackfillTimeline reads a timeline in posting order, mirrors every
+// eligible message and creates every thread where the timeline reaches it.
+// Consecutive normal messages share one translation request. live is
+// consulted before every step, so a canceled job or an expired scan stops
+// between messages rather than at the end of a channel that may hold
+// thousands of them.
+func processBackfillTimeline(ctx context.Context, s *Service, timeline timelineSource, destFor destinationFunc, sink backfillWorkSink, live func() error) (int, error) {
 	seen := 0
 	var batch backfillBatch
 	flush := func() error {
 		items := batch.items
 		batch = backfillBatch{}
-		return r.flushBatch(ctx, items)
+		return sink.flush(ctx, items)
 	}
 	for {
-		// A canceled job stops before the next message, not at the end of a
-		// channel that may hold thousands of them.
-		if err := r.retry.active(ctx); err != nil {
+		if err := live(); err != nil {
 			return seen, err
 		}
 		step, ok, err := timeline.nextStep()
@@ -350,7 +373,7 @@ func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineS
 			if err := flush(); err != nil {
 				return seen, err
 			}
-			created, err := r.createThread(ctx, step.family)
+			created, err := sink.family(ctx, step.family)
 			if err != nil {
 				return seen, err
 			}
@@ -361,14 +384,14 @@ func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineS
 		}
 		m := step.message
 		seen++
-		eligible, err := r.s.backfillEligible(ctx, m)
+		eligible, err := s.backfillEligible(ctx, m)
 		if err != nil {
 			return seen, err
 		}
 		if !eligible {
 			continue
 		}
-		if skipped, err := r.s.store.BackfillSkipped(ctx, r.run.job.ID, m.ChannelID, m.ID); err != nil {
+		if skipped, err := sink.skipped(ctx, m); err != nil {
 			return seen, err
 		} else if skipped {
 			continue
@@ -380,23 +403,22 @@ func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineS
 		if !ok {
 			continue
 		}
-		synced, err := r.s.targetAlreadySynced(ctx, m.ChannelID, m.ID, dest.targetID)
-		if err != nil {
+		if synced, err := sink.synced(ctx, m, dest); err != nil {
 			return seen, err
-		}
-		if synced {
+		} else if synced {
 			continue
 		}
+		sink.count(m)
 		if backfillTranslatesAlone(m) {
 			if err := flush(); err != nil {
 				return seen, err
 			}
-			if err := r.poster.single(ctx, m, dest, languageForChannel(r.channels, m.ChannelID), r.contextFn(ctx, m)); err != nil {
+			if err := sink.alone(ctx, m, dest); err != nil {
 				return seen, err
 			}
 			continue
 		}
-		item := backfillItem{m: m, dest: dest, loaded: r.s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))}
+		item := backfillItem{m: m, dest: dest, loaded: sink.load(ctx, m)}
 		if !batch.fits(item) {
 			if err := flush(); err != nil {
 				return seen, err
@@ -405,6 +427,35 @@ func (r *backfillRunner) processTimeline(ctx context.Context, timeline timelineS
 		batch.add(item)
 	}
 	return seen, flush()
+}
+
+// The runner is the real backfillWorkSink: it posts what the traversal finds
+// and records it for its job.
+
+func (r *backfillRunner) count(DiscordMessage) {}
+
+func (r *backfillRunner) skipped(ctx context.Context, m DiscordMessage) (bool, error) {
+	return r.s.store.BackfillSkipped(ctx, r.run.job.ID, m.ChannelID, m.ID)
+}
+
+func (r *backfillRunner) synced(ctx context.Context, m DiscordMessage, dest mirrorDestination) (bool, error) {
+	return r.s.targetAlreadySynced(ctx, m.ChannelID, m.ID, dest.targetID)
+}
+
+func (r *backfillRunner) load(ctx context.Context, m DiscordMessage) []loadedImageAttachment {
+	return r.s.loadImageAttachments(ctx, imageAttachmentsOnly(m.Attachments))
+}
+
+func (r *backfillRunner) alone(ctx context.Context, m DiscordMessage, dest mirrorDestination) error {
+	return r.poster.single(ctx, m, dest, languageForChannel(r.channels, m.ChannelID), r.contextFn(ctx, m))
+}
+
+func (r *backfillRunner) flush(ctx context.Context, items []backfillItem) error {
+	return r.flushBatch(ctx, items)
+}
+
+func (r *backfillRunner) family(ctx context.Context, family *threadFamily) (bool, error) {
+	return r.createThread(ctx, family)
 }
 
 func (r *backfillRunner) contextFn(ctx context.Context, m DiscordMessage) func() TranslationContext {

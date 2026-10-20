@@ -32,66 +32,64 @@ type BackfillEstimate struct {
 	Truncated bool
 }
 
+// backfillEstimateSink counts the work a traversal finds instead of doing
+// it. It loads no images and has no job row, so skipped and synced find
+// nothing: the estimate counts what live mirroring has not carried over
+// yet.
+type backfillEstimateSink struct {
+	est      *BackfillEstimate
+	requests *int
+}
+
+func (e *backfillEstimateSink) count(m DiscordMessage) {
+	e.est.Messages++
+	images := len(imageAttachmentsOnly(m.Attachments))
+	e.est.Images += images
+	if !needsTranslation(m.Content) {
+		return
+	}
+	e.est.InputTokens += EstimateTranslationTokens(m.Content, "") + visionTokenOverheadPerImage*min(images, visionMaxImages)
+	e.est.OutputTokens += estimateMessageOutputTokens(m.Content)
+}
+
+func (e *backfillEstimateSink) skipped(context.Context, DiscordMessage) (bool, error) {
+	return false, nil
+}
+
+func (e *backfillEstimateSink) synced(context.Context, DiscordMessage, mirrorDestination) (bool, error) {
+	return false, nil
+}
+
+func (e *backfillEstimateSink) load(context.Context, DiscordMessage) []loadedImageAttachment {
+	return nil
+}
+
+func (e *backfillEstimateSink) alone(context.Context, DiscordMessage, mirrorDestination) error {
+	// The traversal flushed the batch gathered so far; the message itself
+	// takes a dedicated request.
+	*e.requests++
+	return nil
+}
+
+func (e *backfillEstimateSink) flush(_ context.Context, items []backfillItem) error {
+	if len(items) > 0 {
+		*e.requests++
+	}
+	return nil
+}
+
+func (e *backfillEstimateSink) family(context.Context, *threadFamily) (bool, error) {
+	return false, nil
+}
+
 // EstimateBackfill scans every source of the group (parent channels and
 // their public threads, archived included) and estimates the work of
-// backfilling them into a channel that is about to join.
+// backfilling them into a channel that is about to join. It walks the same
+// traversal a run walks, with a sink that counts instead of posting.
 func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string) (BackfillEstimate, error) {
 	channels, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
 	if err != nil {
 		return BackfillEstimate{}, err
-	}
-	var est BackfillEstimate
-	requests := 0
-	var batch backfillBatch
-	closeBatch := func() {
-		if len(batch.items) > 0 {
-			requests++
-			batch = backfillBatch{}
-		}
-	}
-	count := func(channelIDs []string) error {
-		reader := newTimelineReader(s.discord, guildID, channelIDs, map[string]string{})
-		for {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			m, ok, err := reader.next()
-			if err != nil {
-				return err
-			}
-			if !ok {
-				closeBatch()
-				return nil
-			}
-			eligible, err := s.backfillEligible(ctx, m)
-			if err != nil {
-				return err
-			}
-			if !eligible {
-				continue
-			}
-			est.Messages++
-			images := len(imageAttachmentsOnly(m.Attachments))
-			est.Images += images
-			if !needsTranslation(m.Content) {
-				continue
-			}
-			tokens := EstimateTranslationTokens(m.Content, "")
-			est.InputTokens += tokens + visionTokenOverheadPerImage*min(images, visionMaxImages)
-			est.OutputTokens += estimateMessageOutputTokens(m.Content)
-			if backfillTranslatesAlone(m) {
-				closeBatch()
-				requests++
-				continue
-			}
-			// An estimate batches into one destination: which channel each
-			// message goes to does not change how many requests are sent.
-			item := backfillItem{m: m}
-			if !batch.fits(item) {
-				closeBatch()
-			}
-			batch.add(item)
-		}
 	}
 	var parentIDs, allIDs []string
 	for _, ch := range channels {
@@ -100,29 +98,48 @@ func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string)
 			parentIDs = append(parentIDs, ch.ChannelID)
 		}
 	}
-	if len(parentIDs) > 0 {
-		if err := count(parentIDs); err != nil {
-			return BackfillEstimate{}, err
-		}
-	}
+	var est BackfillEstimate
+	var families []*threadFamily
 	if len(allIDs) > 0 {
 		listing, err := s.discord.PublicThreads(guildID, allIDs, true, backfillEstimateArchivedThreadLimit)
 		if err != nil {
 			return BackfillEstimate{}, err
 		}
 		est.Truncated = listing.Truncated
-		families, err := groupThreadFamilies(ctx, s.store, groupID, "", listing.Threads)
+		families, err = groupThreadFamilies(ctx, s.store, groupID, "", listing.Threads)
 		if err != nil {
 			return BackfillEstimate{}, err
 		}
-		for _, family := range families {
-			ids := make([]string, len(family.threads))
-			for i, thread := range family.threads {
-				ids[i] = thread.ID
-			}
-			if err := count(ids); err != nil {
-				return BackfillEstimate{}, err
-			}
+	}
+	requests := 0
+	sink := &backfillEstimateSink{est: &est, requests: &requests}
+	scan := func(timeline timelineSource, destFor destinationFunc) error {
+		_, err := processBackfillTimeline(ctx, s, timeline, destFor, sink, func() error { return ctx.Err() })
+		return err
+	}
+	// The parent timeline carries the pending thread creations, so a family
+	// step bounds the batch in front of it exactly where a run's request
+	// would end.
+	if len(parentIDs) > 0 {
+		reader := newTimelineReader(s.discord, guildID, parentIDs, map[string]string{})
+		err := scan(newBackfillTimeline(reader, pendingThreadCreations(families, parentIDs)), func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
+			return mirrorDestination{targetID: groupID}, true, nil
+		})
+		if err != nil {
+			return BackfillEstimate{}, err
+		}
+	}
+	for _, family := range families {
+		ids := make([]string, len(family.threads))
+		for i, thread := range family.threads {
+			ids[i] = thread.ID
+		}
+		reader := newTimelineReader(s.discord, guildID, ids, map[string]string{})
+		err := scan(reader, func(context.Context, DiscordMessage) (mirrorDestination, bool, error) {
+			return mirrorDestination{targetID: family.threads[0].ID}, true, nil
+		})
+		if err != nil {
+			return BackfillEstimate{}, err
 		}
 	}
 	est.InputTokens += requests * backfillRequestOverheadTokens
