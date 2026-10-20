@@ -290,7 +290,7 @@ func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, prepared prepared
 	}
 	summary, err := parseTopicSummaryResponse(text)
 	if err != nil {
-		return TopicSummaryResult{}, err
+		return TopicSummaryResult{}, contentError(err)
 	}
 	return TopicSummaryResult{Summary: summary, InputTokens: inputTokens, OutputTokens: outputTokens}, nil
 }

@@ -1403,8 +1403,8 @@ func TestOpenAITranslatorSummarizeTopic(t *testing.T) {
 			t.Fatal(err)
 		}
 		requireJSONSchemaResponseFormat(t, input, openaiTopicSummarySchemaName, mustTopicSummarySchema(t))
-		if input.PromptCacheKey != "" {
-			t.Fatalf("topic summary should not share translation prompt cache keys: %q", input.PromptCacheKey)
+		if !strings.HasSuffix(input.PromptCacheKey, ":topic_summary") {
+			t.Fatalf("topic summary should carry its own prompt cache key scope, got %q", input.PromptCacheKey)
 		}
 		system := openaiContentText(t, input.Messages[0].Content)
 		user := openaiContentText(t, input.Messages[1].Content)

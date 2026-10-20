@@ -373,14 +373,36 @@ func buildTranslationUserPromptParts(targetLanguages []string, translationContex
 type TopicSummaryRequest struct {
 	PreviousSummary string
 	Discarded       []ChatContextMessage
-	GuildID         string
-	MessageID       string
+	// LocationKey scopes the request's prompt cache key to its conversation;
+	// a summary never shares a translation request's cache scope.
+	LocationKey string
+	GuildID     string
+	MessageID   string
 }
 
+// prepareTopicSummary prepares the rolling summary request on the shared
+// prepared-translation contract: the summary's volatile XML belongs in the
+// variable prompt slot, and the request carries its own cache-key scope.
 func prepareTopicSummary(req TopicSummaryRequest) (preparedTranslation, error) {
 	if len(req.Discarded) == 0 {
 		return preparedTranslation{}, errors.New("topic summary requires discarded messages")
 	}
+	translationContext := TranslationContext{
+		GuildID:             req.GuildID,
+		MessageID:           req.MessageID,
+		PromptCacheLocation: req.LocationKey,
+	}
+	return preparedTranslation{
+		systemInstruction:  buildTopicSummarySystemInstruction(),
+		userPromptVariable: buildTopicSummaryUserPrompt(req),
+		guildID:            req.GuildID,
+		messageID:          req.MessageID,
+		translationContext: translationContext,
+		promptCacheKey:     translationPromptCacheKey(translationContext, "topic_summary"),
+	}, nil
+}
+
+func buildTopicSummaryUserPrompt(req TopicSummaryRequest) string {
 	var user strings.Builder
 	user.WriteString("<topic_summary_request>")
 	if previous := strings.TrimSpace(req.PreviousSummary); previous != "" {
@@ -391,12 +413,7 @@ func prepareTopicSummary(req TopicSummaryRequest) (preparedTranslation, error) {
 		writeContextMessage(&user, ChatContextMessage{Author: msg.Author, Content: msg.Content})
 	}
 	user.WriteString("</discarded_context></topic_summary_request>")
-	return preparedTranslation{
-		systemInstruction: buildTopicSummarySystemInstruction(),
-		userPromptStable:  user.String(),
-		guildID:           req.GuildID,
-		messageID:         req.MessageID,
-	}, nil
+	return user.String()
 }
 
 func parseTopicSummaryResponse(raw string) (string, error) {

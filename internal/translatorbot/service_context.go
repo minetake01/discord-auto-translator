@@ -330,6 +330,7 @@ func (s *Service) generateAndStoreTopicSummary(ctx context.Context, summaries to
 	req := TopicSummaryRequest{
 		PreviousSummary: previous,
 		Discarded:       capDiscardedForSummary(discarded),
+		LocationKey:     locationKey,
 		GuildID:         guildID,
 		MessageID:       messageID,
 	}
