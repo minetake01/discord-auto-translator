@@ -12,10 +12,13 @@ func (s *Store) TopicSummary(ctx context.Context, locationKey, generationID stri
 	locationKey = strings.TrimSpace(locationKey)
 	generationID = strings.TrimSpace(generationID)
 	if locationKey == "" || generationID == "" {
-		return "", sql.ErrNoRows
+		return "", ErrTopicSummaryNotFound
 	}
 	var summary string
 	err := s.db.QueryRowContext(ctx, `SELECT summary FROM topic_summaries WHERE location_key=? AND generation_id=?`, locationKey, generationID).Scan(&summary)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrTopicSummaryNotFound
+	}
 	if err != nil {
 		return "", err
 	}
@@ -25,9 +28,12 @@ func (s *Store) TopicSummary(ctx context.Context, locationKey, generationID stri
 func (s *Store) TopicSummaryForLocation(ctx context.Context, locationKey string) (generationID, summary string, err error) {
 	locationKey = strings.TrimSpace(locationKey)
 	if locationKey == "" {
-		return "", "", sql.ErrNoRows
+		return "", "", ErrTopicSummaryNotFound
 	}
 	err = s.db.QueryRowContext(ctx, `SELECT generation_id, summary FROM topic_summaries WHERE location_key=?`, locationKey).Scan(&generationID, &summary)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrTopicSummaryNotFound
+	}
 	if err != nil {
 		return "", "", err
 	}

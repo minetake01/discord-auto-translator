@@ -31,6 +31,7 @@ var (
 	ErrInvalidSourceType    = errors.New("message source type must be bot or webhook")
 	ErrInvalidSnowflake     = errors.New("source ID must be a canonical nonzero uint64 snowflake")
 	ErrManagedWebhook       = errors.New(managedWebhookDenyMessage)
+	ErrTopicSummaryNotFound = errors.New("topic summary not found for this location and generation")
 )
 
 type Store struct {
