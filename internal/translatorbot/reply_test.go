@@ -165,6 +165,129 @@ func TestReplyQuoteConvertsMarkdownHeaderSnippet(t *testing.T) {
 	}
 }
 
+func TestHandleMessageUpdateKeepsReplyQuote(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "元メッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || !strings.HasPrefix(discord.sent[0].Content, "> -# 元メッセージ本文") {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+
+	// A gateway edit carries no reply reference, so the edit must restore it.
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "返信を直しました",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 1 {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+	want := "> -# 元メッセージ本文 · [Source](https://discord.com/channels/guild/ja/100000000000000002)\n\n[en] 返信を直しました"
+	if discord.webhookEdits[0].content != want {
+		t.Fatalf("edit content = %q, want %q", discord.webhookEdits[0].content, want)
+	}
+}
+
+func TestHandleMessageUpdateKeepsTransferredReplyQuote(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{messageContents: map[string]string{
+		"en\x00700000000000000019": "> -# 古い引用 · [Source](https://discord.com/channels/guild/ja/old)\n\nStable translated body",
+	}}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
+		SourceContentSnapshot: "元のメッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "元メッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.sent) != 1 || !strings.HasPrefix(discord.sent[0].Content, "> -# Stable translated body") {
+		t.Fatalf("sent: %#v", discord.sent)
+	}
+
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "返信を直しました",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 1 {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+	want := "> -# Stable translated body · [Source](https://discord.com/channels/guild/en/700000000000000019)\n\n[en] 返信を直しました"
+	if discord.webhookEdits[0].content != want {
+		t.Fatalf("edit content = %q, want %q", discord.webhookEdits[0].content, want)
+	}
+}
+
+func TestHandleMessageUpdateKeepsDeletedOriginalNotice(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{messageContents: map[string]string{
+		"en\x00700000000000000019": "Stable translated body",
+	}}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000002", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "700000000000000019", TargetLanguage: "en",
+		SourceContentSnapshot: "元のメッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "u", Content: "返信です",
+		ReferencedMessageID: "100000000000000002", ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: "元のメッセージ本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The referenced message is deleted: the reply mirror's quote is replaced
+	// by the deletion notice.
+	if err := service.HandleMessageDelete(ctx, "guild", "ja", "100000000000000002"); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 1 || discord.webhookEdits[0].content != "> -# The original message was deleted\n\n[en] 返信です" {
+		t.Fatalf("deletion edits: %#v", discord.webhookEdits)
+	}
+
+	// Editing the reply afterwards must not drop that notice.
+	if err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000008", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "返信を直しました",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(discord.webhookEdits) != 2 {
+		t.Fatalf("edits: %#v", discord.webhookEdits)
+	}
+	if got := discord.webhookEdits[1].content; got != "> -# The original message was deleted\n\n[en] 返信を直しました" {
+		t.Fatalf("edit content = %q", got)
+	}
+}
+
 func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

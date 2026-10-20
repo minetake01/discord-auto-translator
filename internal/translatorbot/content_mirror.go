@@ -57,11 +57,17 @@ func dropTimestampLine(lines []string) []string {
 	return lines
 }
 
+// mirrorContentLines splits mirror text into lines with CRLF normalized, the
+// form every bot-generated header is matched in.
+func mirrorContentLines(content string) []string {
+	return strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+}
+
 // mirroredMessageBody strips the bot-generated timestamp line, pseudo-reply
 // quotes, and forwarded headers from the top of a mirrored message, leaving
 // only the body.
 func mirroredMessageBody(content string) string {
-	lines := dropTimestampLine(strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n"))
+	lines := dropTimestampLine(mirrorContentLines(content))
 	for len(lines) > 0 && (isPseudoReplyLine(lines[0]) || isForwardedHeaderLine(lines[0])) {
 		lines = lines[1:]
 		for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
@@ -91,7 +97,7 @@ func isPseudoReplyLine(line string) bool {
 // firstLineWithoutPseudoReply returns the first non-empty line of a mirrored
 // message, skipping a leading timestamp line and pseudo-reply quote line.
 func firstLineWithoutPseudoReply(content string) string {
-	lines := dropTimestampLine(strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n"))
+	lines := dropTimestampLine(mirrorContentLines(content))
 	start := 0
 	if len(lines) >= 1 && isPseudoReplyLine(lines[0]) {
 		start = 1

@@ -222,16 +222,24 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 
 // mirrorContent builds the finished text of a mirrored message from its
 // translation: poll header, reply quote, body, asset URLs, then the timestamp
-// line and content limit. Sending and editing share it, so an edit keeps every
-// header the original send had and can never lose the timestamp line.
-// inlineImages are image attachments linked by URL instead of reuploaded.
+// line and content limit. Sending and editing share the assembly, so an edit
+// keeps every header the original send had and can never lose the timestamp
+// line. inlineImages are image attachments linked by URL instead of reuploaded.
 func (s *Service) mirrorContent(ctx context.Context, m DiscordMessage, targetID, language, translated string, inlineImages []DiscordAttachment, timestamp bool) (mirrorText, error) {
-	content := s.postProcessContent(ctx, m.GuildID, translated, language)
 	quote, err := s.replyQuote(ctx, m, targetID, language)
 	if err != nil {
 		return "", err
 	}
+	return s.assembleMirrorContent(ctx, m, language, translated, quote, inlineImages, timestamp)
+}
+
+// assembleMirrorContent applies a resolved reply quote and the fixed headers
+// to a translated body: asset URLs, poll header, timestamp line, and the
+// Discord content limit.
+func (s *Service) assembleMirrorContent(ctx context.Context, m DiscordMessage, language, translated, quote string, inlineImages []DiscordAttachment, timestamp bool) (mirrorText, error) {
+	content := s.postProcessContent(ctx, m.GuildID, translated, language)
 	content = withQuote(quote, content)
+	var err error
 	if content, err = messageContentWithAssetURLs(content, m.Attachments, m.Stickers); err != nil {
 		return "", err
 	}
@@ -424,7 +432,7 @@ func (s *Service) editMessageMirrors(ctx context.Context, m DiscordMessage, grou
 		return err
 	}
 	for _, p := range pending {
-		content, err := s.mirrorContent(ctx, m, p.link.TargetChannelID, p.target.Language, translations.Translations[p.target.Language], nil, p.link.TimestampLine)
+		content, err := s.editMirrorContent(ctx, m, p.link, p.target, translations.Translations[p.target.Language])
 		if err != nil {
 			return err
 		}
@@ -436,6 +444,48 @@ func (s *Service) editMessageMirrors(ctx context.Context, m DiscordMessage, grou
 		}
 	}
 	return nil
+}
+
+// editMirrorContent rebuilds a mirror's text for an edit. The reply quote is
+// rebuilt from the reply target; when the target no longer yields one — the
+// referenced message is gone or was never mirrored — the quote header already
+// rendered on the mirror is kept, so an edit never drops the pseudo-reply the
+// original send had.
+func (s *Service) editMirrorContent(ctx context.Context, m DiscordMessage, link MessageLink, target GroupChannel, translated string) (mirrorText, error) {
+	quote, err := s.replyQuote(ctx, m, link.TargetChannelID, target.Language)
+	if err != nil {
+		return "", err
+	}
+	if quote == "" {
+		quote = s.renderedQuoteHeader(link)
+	}
+	return s.assembleMirrorContent(ctx, m, target.Language, translated, quote, nil, link.TimestampLine)
+}
+
+// renderedQuoteHeader returns the bot-generated quote header the mirror
+// renders — a pseudo-reply line or the deleted-original notice — or "" when
+// it renders none or cannot be fetched. The mirror is the last record of what
+// the original send looked like.
+func (s *Service) renderedQuoteHeader(link MessageLink) string {
+	message, err := s.discord.Message(link.TargetChannelID, link.TargetMessageID)
+	if err != nil {
+		return ""
+	}
+	lines := dropTimestampLine(mirrorContentLines(message.Content))
+	if len(lines) == 0 {
+		return ""
+	}
+	line := strings.TrimSpace(lines[0])
+	if isPseudoReplyLine(line) || line == deletedReplyQuoteLine(link.TargetLanguage) {
+		return line
+	}
+	return ""
+}
+
+// deletedReplyQuoteLine is the pseudo-reply header that replaces the quote
+// when the referenced message has been deleted.
+func deletedReplyQuoteLine(language string) string {
+	return fmt.Sprintf("> -# %s", localizedUIString(language, uiKeyOriginalMessageDeleted))
 }
 
 // restoreReplyReference fills the reply target of an edited message from
@@ -520,7 +570,7 @@ func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string,
 					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
 				}
 				content, err := finishMirrorContent(p.link.SourceMessageID, withQuote(
-					fmt.Sprintf("> -# %s", localizedUIString(p.link.TargetLanguage, uiKeyOriginalMessageDeleted)),
+					deletedReplyQuoteLine(p.link.TargetLanguage),
 					mirroredMessageBody(message.Content),
 				), p.link.TimestampLine)
 				if err != nil {

@@ -38,6 +38,7 @@ func stubImageHTTP(service *Service) {
 type fakeDiscordAPI struct {
 	mu                     sync.Mutex
 	sent                   []WebhookSend
+	sentContents           map[string]string // webhook message ID → posted content
 	channelMessages        []channelMessageCall
 	reactions              []reactionCall
 	removedReactions       []reactionCall
@@ -163,11 +164,15 @@ func (f *fakeDiscordAPI) Message(channelID, messageID string) (DiscordFetchedMes
 	if msg, ok := f.messages[key]; ok {
 		return msg, nil
 	}
-	content, ok := f.messageContents[key]
-	if !ok {
-		return DiscordFetchedMessage{}, errors.New("message not found")
+	if content, ok := f.messageContents[key]; ok {
+		return DiscordFetchedMessage{Content: content}, nil
 	}
-	return DiscordFetchedMessage{Content: content}, nil
+	// A webhook message the fake posted is fetchable like any Discord
+	// message, so edit paths can read back what was rendered.
+	if content, ok := f.sentContents[messageID]; ok {
+		return DiscordFetchedMessage{Content: content}, nil
+	}
+	return DiscordFetchedMessage{}, errors.New("message not found")
 }
 func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string, err error) {
 	return "webhook-" + channelID, "token-" + channelID, nil
@@ -192,13 +197,18 @@ func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (
 		}
 	}
 	f.nextID++
+	messageID := fakeSentID(f.nextID)
+	if f.sentContents == nil {
+		f.sentContents = map[string]string{}
+	}
+	f.sentContents[messageID] = msg.Content
 	f.sent = append(f.sent, msg)
 	f.events = append(f.events, "message")
 	ids := make([]string, len(msg.Files))
 	for i := range msg.Files {
 		ids[i] = fmt.Sprintf("att-%d-%d", f.nextID, i)
 	}
-	return WebhookSendResult{MessageID: fakeSentID(f.nextID), AttachmentIDs: ids}, nil
+	return WebhookSendResult{MessageID: messageID, AttachmentIDs: ids}, nil
 }
 func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, threadID, content string) error {
 	f.mu.Lock()
@@ -209,6 +219,10 @@ func (f *fakeDiscordAPI) EditWebhook(webhookID, token, messageID, threadID, cont
 			return err
 		}
 	}
+	if f.sentContents == nil {
+		f.sentContents = map[string]string{}
+	}
+	f.sentContents[messageID] = content
 	f.webhookEdits = append(f.webhookEdits, call)
 	return nil
 }
