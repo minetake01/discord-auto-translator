@@ -156,7 +156,7 @@ func (s *Service) translateWithLimit(ctx context.Context, guildID, content strin
 	if err != nil {
 		return MultiTranslationResult{}, err
 	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	s.recordSuccessfulTranslation(guildID, result)
 	for _, language := range languages {
 		if _, ok := result.Translations[language]; !ok {
 			return MultiTranslationResult{}, fmt.Errorf("missing translation for %q", language)
@@ -187,7 +187,7 @@ func (s *Service) translateAttachmentAltsWithLimit(ctx context.Context, guildID 
 	if err != nil {
 		return nil, err
 	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	s.recordSuccessfulTranslation(guildID, result)
 	for _, language := range languages {
 		if len(result.Descriptions[language]) != len(loaded) {
 			return nil, fmt.Errorf("missing attachment descriptions for %q", language)
@@ -293,7 +293,7 @@ func (s *Service) translatePollWithLimit(ctx context.Context, guildID, question 
 	if err != nil {
 		return nil, err
 	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	s.recordSuccessfulTranslation(guildID, result)
 	for _, language := range languages {
 		translated, ok := result.Translations[language]
 		if !ok {
@@ -329,7 +329,7 @@ func (s *Service) translateThreadCreateWithLimit(ctx context.Context, guildID, n
 	if err != nil {
 		return nil, err
 	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	s.recordSuccessfulTranslation(guildID, result)
 	for _, language := range languages {
 		translated, ok := result.Translations[language]
 		if !ok {
@@ -380,7 +380,10 @@ func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputToke
 	}
 }
 
-func (s *Service) recordSuccessfulTranslation(guildID string, inputTokens, outputTokens int) {
+// recordSuccessfulTranslation records a completed translator call's usage
+// against the guild's token budget.
+func (s *Service) recordSuccessfulTranslation(guildID string, result tokenUsage) {
+	inputTokens, outputTokens := result.tokenUsage()
 	s.recordTranslationUsage(guildID, inputTokens, outputTokens)
 }
 

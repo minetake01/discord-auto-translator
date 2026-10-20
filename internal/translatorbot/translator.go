@@ -98,6 +98,18 @@ type TopicSummaryResult struct {
 	OutputTokens int
 }
 
+// tokenUsage reports the token accounting every translator result carries so
+// completed calls record usage through one path.
+type tokenUsage interface {
+	tokenUsage() (inputTokens, outputTokens int)
+}
+
+func (r MultiTranslationResult) tokenUsage() (int, int)             { return r.InputTokens, r.OutputTokens }
+func (r AttachmentAltTranslationResult) tokenUsage() (int, int)     { return r.InputTokens, r.OutputTokens }
+func (r PollMultiTranslationResult) tokenUsage() (int, int)         { return r.InputTokens, r.OutputTokens }
+func (r ThreadCreateMultiTranslationResult) tokenUsage() (int, int) { return r.InputTokens, r.OutputTokens }
+func (r TopicSummaryResult) tokenUsage() (int, int)                 { return r.InputTokens, r.OutputTokens }
+
 type Translator interface {
 	TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error)
 	TranslateAttachmentAlts(ctx context.Context, prepared preparedTranslation) (AttachmentAltTranslationResult, error)

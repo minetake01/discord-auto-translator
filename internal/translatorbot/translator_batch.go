@@ -47,6 +47,8 @@ type BatchTranslationResult struct {
 	OutputTokens int
 }
 
+func (r BatchTranslationResult) tokenUsage() (int, int) { return r.InputTokens, r.OutputTokens }
+
 // errBatchContent marks a response that violated the batch contract. The
 // caller splits the batch and retries smaller pieces.
 var errBatchContent = fmt.Errorf("%w: batch contract violated", errTranslationContent)

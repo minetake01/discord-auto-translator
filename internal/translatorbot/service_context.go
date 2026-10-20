@@ -345,7 +345,7 @@ func (s *Service) generateAndStoreTopicSummary(ctx context.Context, summaries to
 	if err != nil {
 		return err
 	}
-	s.recordSuccessfulTranslation(guildID, result.InputTokens, result.OutputTokens)
+	s.recordSuccessfulTranslation(guildID, result)
 	if strings.TrimSpace(result.Summary) == "" {
 		return errors.New("empty topic summary")
 	}

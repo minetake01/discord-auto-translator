@@ -160,7 +160,7 @@ func (r *backfillRunner) translateBatch(ctx context.Context, items []backfillIte
 	if err != nil {
 		return nil, err
 	}
-	r.s.recordSuccessfulTranslation(first.GuildID, result.InputTokens, result.OutputTokens)
+	r.s.recordSuccessfulTranslation(first.GuildID, result)
 	if len(result.Translations) != len(messages) {
 		return nil, fmt.Errorf("%w: got %d translations for %d messages", errBatchContent, len(result.Translations), len(messages))
 	}
