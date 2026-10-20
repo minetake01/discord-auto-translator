@@ -121,11 +121,8 @@ func (s *Store) backupBeforeMigration(ctx context.Context, version int) error {
 	if path == "" || path == ":memory:" || strings.HasPrefix(path, "file::memory:") {
 		return nil
 	}
-	if i := strings.Index(path, "?"); i >= 0 {
-		path = path[:i]
-	}
-	path = strings.TrimPrefix(path, "file:")
-	backup := fmt.Sprintf("%s.v%d-%s.bak", path, version, time.Now().UTC().Format("20060102T150405Z"))
+	basePath, _ := splitSQLiteDSN(path)
+	backup := fmt.Sprintf("%s.v%d-%s.bak", strings.TrimPrefix(basePath, "file:"), version, time.Now().UTC().Format("20060102T150405Z"))
 	if _, err := os.Stat(backup); err == nil {
 		return fmt.Errorf("migration backup %s already exists", backup)
 	}

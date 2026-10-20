@@ -40,11 +40,8 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
-	separator := "?"
-	if strings.Contains(path, "?") {
-		separator = "&"
-	}
-	db, err := sql.Open("sqlite", path+separator+"_pragma=busy_timeout%3d2000&_pragma=foreign_keys%3dON")
+	basePath, separator := splitSQLiteDSN(path)
+	db, err := sql.Open("sqlite", basePath+separator+"_pragma=busy_timeout%3d2000&_pragma=foreign_keys%3dON")
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +55,15 @@ func OpenStore(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// splitSQLiteDSN splits a data source name into the bare database path and
+// the separator that appends more parameters to it.
+func splitSQLiteDSN(path string) (basePath, separator string) {
+	if i := strings.Index(path, "?"); i >= 0 {
+		return path[:i], "&"
+	}
+	return path, "?"
+}
 
 // constraintMatch pairs the error-message fragment a SQLite constraint
 // failure carries with the sentinel it means.
