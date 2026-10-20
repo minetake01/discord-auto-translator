@@ -10,6 +10,10 @@ import (
 
 const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot,source_image_attachments,timestamp_line`
 
+// messageLinkColumnsML is messageLinkColumns qualified with the ml alias,
+// for lookups that join message_references over the shared source columns.
+var messageLinkColumnsML = "ml." + strings.Join(strings.Split(messageLinkColumns, ","), ",ml.")
+
 func (s *Store) UpdateMessageLinkSnapshot(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID, snapshot string) error {
 	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
 	if err != nil {
@@ -153,7 +157,7 @@ func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelI
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT ml.source_message_id,ml.source_channel_id,ml.group_id,ml.target_channel_id,ml.target_message_id,ml.target_language,ml.source_author_id,ml.source_author_display_name,ml.source_content_snapshot,ml.source_image_attachments,ml.timestamp_line
+	rows, err := s.db.QueryContext(ctx, `SELECT `+messageLinkColumnsML+`
 		FROM message_links ml
 		JOIN message_references mr ON mr.source_channel_id=ml.source_channel_id AND mr.source_message_id=ml.source_message_id
 		WHERE mr.referenced_channel_id=? AND mr.referenced_message_id=?`, referencedChannelID, referencedMessageIDValue)
