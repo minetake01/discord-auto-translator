@@ -116,7 +116,7 @@ func (d DiscordGoAPI) mapMessage(m *discordgo.Message, raw json.RawMessage, opts
 	out := DiscordMessage{
 		ID: m.ID, ChannelID: m.ChannelID, GuildID: guildID, AuthorID: m.Author.ID,
 		ParentChannelID: parentChannelID, ThreadName: threadName,
-		AuthorDisplayName: authorDisplayName(m.Author, member),
+		AuthorDisplayName: userDisplayName(member, m.Author),
 		AuthorAvatarURL:   m.Author.AvatarURL("128"),
 		AuthorRoleColor:   d.memberRoleColor(guildID, member),
 		Content:           m.Content,
@@ -312,6 +312,8 @@ func (d DiscordGoAPI) mentionNameMaps(guildID string, m *discordgo.Message) (use
 		channels[ch.ID] = strings.TrimSpace(ch.Name)
 	}
 	for _, roleID := range m.MentionRoles {
+		// Roles resolve through the session State cache only: the mapping
+		// hot path never issues a REST round trip per mentioned role.
 		if role, err := d.session.State.Role(guildID, roleID); err == nil && role != nil {
 			roles[roleID] = strings.TrimSpace(role.Name)
 		}
@@ -319,27 +321,12 @@ func (d DiscordGoAPI) mentionNameMaps(guildID string, m *discordgo.Message) (use
 	return users, channels, roles
 }
 
-func (d DiscordGoAPI) userMentionName(guildID string, user *discordgo.User) string {
-	if user == nil {
-		return ""
-	}
-	if guildID != "" {
-		if member, err := d.session.State.Member(guildID, user.ID); err == nil && member != nil {
-			if name := strings.TrimSpace(member.DisplayName()); name != "" {
-				return name
-			}
-			if name := strings.TrimSpace(member.Nick); name != "" {
-				return name
-			}
-		}
-	}
-	if name := strings.TrimSpace(user.DisplayName()); name != "" {
-		return name
-	}
-	return strings.TrimSpace(user.Username)
-}
-
-func authorDisplayName(author *discordgo.User, member *discordgo.Member) string {
+// userDisplayName resolves a user's display name through the single policy:
+// the server's member view first (member display name, then nickname), then
+// the user's own profile (global name, then username). It never issues REST
+// calls; the mapping hot path relies on the gateway member payload, the
+// member cache, or the mention's State lookup.
+func userDisplayName(member *discordgo.Member, user *discordgo.User) string {
 	if member != nil {
 		if member.User != nil {
 			if name := strings.TrimSpace(member.DisplayName()); name != "" {
@@ -350,12 +337,28 @@ func authorDisplayName(author *discordgo.User, member *discordgo.Member) string 
 			return name
 		}
 	}
-	if author != nil {
-		if name := strings.TrimSpace(author.DisplayName()); name != "" {
+	if user != nil {
+		if name := strings.TrimSpace(user.DisplayName()); name != "" {
 			return name
 		}
+		return strings.TrimSpace(user.Username)
 	}
 	return ""
+}
+
+// userMentionName names a mentioned user through the State cache; a mention
+// whose member is unknown to State falls back to the user's own profile.
+func (d DiscordGoAPI) userMentionName(guildID string, user *discordgo.User) string {
+	if user == nil {
+		return ""
+	}
+	if guildID == "" {
+		return userDisplayName(nil, user)
+	}
+	if member, err := d.session.State.Member(guildID, user.ID); err == nil && member != nil {
+		return userDisplayName(member, user)
+	}
+	return userDisplayName(nil, user)
 }
 
 func referencedMessageFields(ref *discordgo.MessageReference, referenced *discordgo.Message) (id, channelID, content string) {

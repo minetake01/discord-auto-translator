@@ -51,11 +51,16 @@ func TestAuthorDisplayNameUsesMemberDisplayNameFallbacks(t *testing.T) {
 			author: author,
 			want:   "global",
 		},
+		{
+			name:   "username when no member and no global name",
+			author: &discordgo.User{Username: "username"},
+			want:   "username",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := authorDisplayName(tt.author, tt.member); got != tt.want {
+			if got := userDisplayName(tt.member, tt.author); got != tt.want {
 				t.Fatalf("got %q, want %q", got, tt.want)
 			}
 		})
