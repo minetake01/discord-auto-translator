@@ -22,7 +22,7 @@ type backfillPoster struct {
 // single mirrors one message that cannot join a batch (a poll, a forwarded
 // message, or a thread starter).
 func (p *backfillPoster) single(ctx context.Context, m DiscordMessage, dest mirrorDestination, sourceLanguage string, contextFn func() TranslationContext) error {
-	err := p.retry.do(ctx, func() error {
+	err := p.retry.translation(ctx, func() error {
 		return p.s.mirrorMessage(ctx, m, p.run.job.GroupID, sourceLanguage, contextFn, []mirrorDestination{dest}, p.scope)
 	})
 	if err != nil {

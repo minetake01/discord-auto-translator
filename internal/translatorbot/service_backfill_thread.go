@@ -91,7 +91,7 @@ func (t *backfillThreads) create(ctx context.Context, family *threadFamily, m *D
 	} else {
 		req.SourceMessageID = rep.ID
 	}
-	err := t.retry.do(ctx, func() error {
+	err := t.retry.translation(ctx, func() error {
 		_, err := t.s.syncThreadCreate(ctx, req, t.scope)
 		return err
 	})

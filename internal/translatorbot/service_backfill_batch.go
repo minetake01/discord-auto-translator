@@ -55,7 +55,7 @@ func (r *backfillRunner) flushBatch(ctx context.Context, items []backfillItem) e
 		return nil
 	}
 	var translations []string
-	err := r.retry.do(ctx, func() error {
+	err := r.retry.translation(ctx, func() error {
 		var err error
 		translations, err = r.translateBatch(ctx, items)
 		return err
@@ -185,7 +185,7 @@ func (r *backfillRunner) batchAlts(ctx context.Context, items []backfillItem) []
 	}
 	language := items[0].dest.channel.Language
 	var descriptions map[string][]string
-	err := r.retry.do(ctx, func() error {
+	err := r.retry.translation(ctx, func() error {
 		var err error
 		descriptions, err = r.s.translateAttachmentAltsWithLimit(ctx, items[0].m.GuildID, loaded, []string{language}, func() TranslationContext {
 			return TranslationContext{GuildID: items[0].m.GuildID, MessageID: items[0].m.ID}

@@ -6,16 +6,23 @@ import (
 	"time"
 )
 
-// backfillRetrier waits out the failures that retrying the same request fixes:
-// a guild over its token budget and a briefly unavailable provider. Backfill
-// never drops history for those, so it waits and tries again until the job is
-// gone. Every other failure goes back to the caller.
+// backfillRetrier waits out the translation failures that retrying the same
+// request fixes: a guild over its token budget and a briefly unavailable
+// provider. Backfill never drops history for those, so it waits and tries
+// again until the job is gone. Discord failures of a wrapped step are not
+// classified here: the Discord API layer retries its transient errors, and
+// the caller decides what is permanent through isPermanentBackfillError.
 type backfillRetrier struct {
 	s     *Service
 	jobID int64
 }
 
-func (b *backfillRetrier) do(ctx context.Context, op func() error) error {
+// translation runs one mirror step and waits out its translation failures.
+// The steps wrapped here mix translation with Discord work (a batch
+// translation, a mirror post, a thread create); only the translation part
+// returns the errors classified below — the Discord part either surfaces to
+// the caller for its permanence check or was retried by the API layer.
+func (b *backfillRetrier) translation(ctx context.Context, op func() error) error {
 	for {
 		err := op()
 		var wait time.Duration
