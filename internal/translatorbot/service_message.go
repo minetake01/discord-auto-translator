@@ -345,11 +345,6 @@ func (s *Service) pollResultVictorLabel(ctx context.Context, pollChannelID, poll
 	return formatPollVictorLabel(answerText, result.VictorEmoji), nil
 }
 
-type pendingMessageEdit struct {
-	link   MessageLink
-	target GroupChannel
-}
-
 func (s *Service) messageLinkTarget(ctx context.Context, targets []GroupChannel, link MessageLink) (*GroupChannel, error) {
 	target := findChannel(targets, link.TargetChannelID)
 	if target != nil {
@@ -379,74 +374,65 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 	if err != nil {
 		return err
 	}
-	byGroup := make(map[string][]MessageLink)
+	var edited []MessageLink
 	for _, link := range links {
-		if link.SourceContentSnapshot == m.Content {
-			continue
+		if link.SourceContentSnapshot != m.Content {
+			edited = append(edited, link)
 		}
-		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
 	}
-	if len(byGroup) > 0 {
+	if len(edited) > 0 {
 		if err := s.restoreReplyReference(ctx, &m); err != nil {
 			return err
 		}
 	}
-	for groupID, groupLinks := range byGroup {
-		targets, err := s.store.ChannelsInGroup(ctx, m.GuildID, groupID)
-		if err != nil {
-			return err
-		}
-		pending := make([]pendingMessageEdit, 0, len(groupLinks))
-		for _, link := range groupLinks {
-			target, err := s.messageLinkTarget(ctx, targets, link)
-			if err != nil {
-				return err
-			}
-			if target == nil {
-				continue
-			}
-			pending = append(pending, pendingMessageEdit{link: link, target: *target})
-		}
-		if len(pending) == 0 {
-			continue
-		}
-		contextFn := func() TranslationContext {
-			contextChannelID, historyChannelID := m.ChannelID, m.ChannelID
-			threadName := ""
-			if threads, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err == nil {
-				for _, tl := range threads {
-					if tl.GroupID == groupID {
-						contextChannelID = tl.SourceChannelID
-						threadName = s.resolveThreadName(m)
-						break
-					}
+	return forEachGroupEdit(ctx, s.store, m.GuildID, edited,
+		func(link MessageLink) string { return link.GroupID },
+		s.messageLinkTarget,
+		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
+			return s.editMessageMirrors(ctx, m, groupID, pending)
+		},
+	)
+}
+
+// editMessageMirrors translates the edited source once for the group's target
+// languages and rewrites every mirror, then records the new snapshot. A
+// rate-limited translation skips this group's mirrors until the next update.
+func (s *Service) editMessageMirrors(ctx context.Context, m DiscordMessage, groupID string, pending []editPair[MessageLink]) error {
+	contextFn := func() TranslationContext {
+		contextChannelID, historyChannelID := m.ChannelID, m.ChannelID
+		threadName := ""
+		if threads, err := s.store.SourceThreadTargets(ctx, m.ChannelID); err == nil {
+			for _, tl := range threads {
+				if tl.GroupID == groupID {
+					contextChannelID = tl.SourceChannelID
+					threadName = s.resolveThreadName(m)
+					break
 				}
 			}
-			return s.translationContextForMessage(ctx, m, groupID, contextChannelID, historyChannelID, threadName, liveTranslation)
 		}
-		languages := make([]string, 0, len(pending))
-		for _, p := range pending {
-			languages = append(languages, p.target.Language)
+		return s.translationContextForMessage(ctx, m, groupID, contextChannelID, historyChannelID, threadName, liveTranslation)
+	}
+	languages := make([]string, 0, len(pending))
+	for _, p := range pending {
+		languages = append(languages, p.target.Language)
+	}
+	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn, liveTranslation)
+	if err != nil {
+		if errors.Is(err, errTranslationRateLimited) {
+			return nil
 		}
-		translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn, liveTranslation)
+		return err
+	}
+	for _, p := range pending {
+		content, err := s.mirrorContent(ctx, m, p.link.TargetChannelID, p.target.Language, translations.Translations[p.target.Language], nil, p.link.TimestampLine)
 		if err != nil {
-			if errors.Is(err, errTranslationRateLimited) {
-				continue
-			}
 			return err
 		}
-		for _, p := range pending {
-			content, err := s.mirrorContent(ctx, m, p.link.TargetChannelID, p.target.Language, translations.Translations[p.target.Language], nil, p.link.TimestampLine)
-			if err != nil {
-				return err
-			}
-			if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
-				return err
-			}
-
-			if err := s.store.UpdateMessageLinkSnapshot(ctx, p.link.SourceChannelID, p.link.SourceMessageID, p.link.TargetChannelID, m.Content); err != nil {
-				return err
-			}
+		if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+			return err
+		}
+		if err := s.store.UpdateMessageLinkSnapshot(ctx, p.link.SourceChannelID, p.link.SourceMessageID, p.link.TargetChannelID, m.Content); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -482,28 +468,19 @@ func (s *Service) HandleMessageDelete(ctx context.Context, guildID, channelID, m
 	if err := s.replaceDeletedReplyQuotes(ctx, guildID, replies); err != nil {
 		return err
 	}
-
-	byGroup := make(map[string][]MessageLink)
-	for _, link := range links {
-		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
-	}
-	for groupID, groupLinks := range byGroup {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
-		if err != nil {
-			return err
-		}
-		for _, link := range groupLinks {
-			target, err := s.messageLinkTarget(ctx, targets, link)
-			if err != nil {
-				return err
+	if err := forEachGroupEdit(ctx, s.store, guildID, links,
+		func(link MessageLink) string { return link.GroupID },
+		s.messageLinkTarget,
+		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
+			for _, p := range pending {
+				if err := s.discord.DeleteWebhook(p.target.WebhookID, p.target.WebhookToken, p.link.TargetMessageID, threadIDForWebhook(p.link, &p.target)); err != nil {
+					return err
+				}
 			}
-			if target == nil {
-				continue
-			}
-			if err := s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadIDForWebhook(link, target)); err != nil {
-				return err
-			}
-		}
+			return nil
+		},
+	); err != nil {
+		return err
 	}
 	return s.store.DeleteMessageData(ctx, channelID, messageID, links)
 }
@@ -533,38 +510,27 @@ func (s *Service) messageTargetsReplyingToCopies(ctx context.Context, sourceChan
 }
 
 func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string, links []MessageLink) error {
-	byGroup := make(map[string][]MessageLink)
-	for _, link := range links {
-		byGroup[link.GroupID] = append(byGroup[link.GroupID], link)
-	}
-	for groupID, groupLinks := range byGroup {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
-		if err != nil {
-			return err
-		}
-		for _, link := range groupLinks {
-			target, err := s.messageLinkTarget(ctx, targets, link)
-			if err != nil {
-				return err
+	return forEachGroupEdit(ctx, s.store, guildID, links,
+		func(link MessageLink) string { return link.GroupID },
+		s.messageLinkTarget,
+		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
+			for _, p := range pending {
+				message, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
+				if err != nil {
+					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
+				}
+				content, err := finishMirrorContent(p.link.SourceMessageID, withQuote(
+					fmt.Sprintf("> -# %s", localizedUIString(p.link.TargetLanguage, uiKeyOriginalMessageDeleted)),
+					mirroredMessageBody(message.Content),
+				), p.link.TimestampLine)
+				if err != nil {
+					return err
+				}
+				if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+					return err
+				}
 			}
-			if target == nil {
-				continue
-			}
-			message, err := s.discord.Message(link.TargetChannelID, link.TargetMessageID)
-			if err != nil {
-				return fmt.Errorf("fetch reply mirror %s/%s: %w", link.TargetChannelID, link.TargetMessageID, err)
-			}
-			content, err := finishMirrorContent(link.SourceMessageID, withQuote(
-				fmt.Sprintf("> -# %s", localizedUIString(link.TargetLanguage, uiKeyOriginalMessageDeleted)),
-				mirroredMessageBody(message.Content),
-			), link.TimestampLine)
-			if err != nil {
-				return err
-			}
-			if err := s.editWebhookMessage(ctx, *target, link, content); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
+			return nil
+		},
+	)
 }

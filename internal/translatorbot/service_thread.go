@@ -421,11 +421,6 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests, liveTranslation)
 }
 
-type pendingThreadEdit struct {
-	thread ThreadLink
-	target GroupChannel
-}
-
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string, appliedTags []string, nameChanged, tagsChanged bool) error {
 	if !nameChanged && !tagsChanged {
 		return nil
@@ -434,84 +429,83 @@ func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID,
 	if err != nil {
 		return err
 	}
-	byGroup := make(map[string][]ThreadLink)
-	for _, thread := range threads {
-		byGroup[thread.GroupID] = append(byGroup[thread.GroupID], thread)
-	}
-	for groupID, groupThreads := range byGroup {
-		targets, err := s.store.ChannelsInGroup(ctx, guildID, groupID)
-		if err != nil {
-			return err
-		}
-		pending := make([]pendingThreadEdit, 0, len(groupThreads))
-		for _, thread := range groupThreads {
+	return forEachGroupEdit(ctx, s.store, guildID, threads,
+		func(thread ThreadLink) string { return thread.GroupID },
+		func(ctx context.Context, targets []GroupChannel, thread ThreadLink) (*GroupChannel, error) {
 			target := findChannel(targets, thread.TargetChannelID)
 			if target == nil {
-				continue
+				return nil, nil
 			}
-			pending = append(pending, pendingThreadEdit{thread: thread, target: *target})
+			return target, nil
+		},
+		func(ctx context.Context, groupID string, pending []editPair[ThreadLink]) error {
+			return s.editThreadMirrors(ctx, guildID, groupID, sourceThreadID, name, appliedTags, nameChanged, tagsChanged, pending)
+		},
+	)
+}
+
+// editThreadMirrors translates the new thread name once for the group's
+// target languages and applies it, together with the mapped tags, to every
+// peer thread. A rate-limited name translation leaves the renames out and
+// still syncs the tags.
+func (s *Service) editThreadMirrors(ctx context.Context, guildID, groupID, sourceThreadID, name string, appliedTags []string, nameChanged, tagsChanged bool, pending []editPair[ThreadLink]) error {
+	var translations MultiTranslationResult
+	if nameChanged && strings.TrimSpace(name) != "" {
+		contextFn := func() TranslationContext {
+			// The rename speaks in the thread's own conversation, the same
+			// context the thread's creation used.
+			return s.groupTranslationContext(ctx, translationContextRequest{
+				guildID:          guildID,
+				groupID:          groupID,
+				contextChannelID: sourceThreadID,
+				historyChannelID: sourceThreadID,
+				excludeMessageID: sourceThreadID,
+			}, liveTranslation)
 		}
-		if len(pending) == 0 {
-			continue
-		}
-		var translations MultiTranslationResult
-		if nameChanged && strings.TrimSpace(name) != "" {
-			contextFn := func() TranslationContext {
-				_, locationKey := s.conversationScope(ctx, guildID, groupID, sourceThreadID)
-				return TranslationContext{
-					GuildID:               guildID,
-					MessageID:             sourceThreadID,
-					StyleInstructions:     s.groupStyleInstructions(ctx, guildID, groupID),
-					PromptCacheLocation:   locationKey,
-					PromptCacheGeneration: sourceThreadID,
-				}
-			}
-			languages := make([]string, 0, len(pending))
-			for _, p := range pending {
-				languages = append(languages, p.target.Language)
-			}
-			translations, err = s.translateWithLimit(ctx, guildID, name, nil, languages, contextFn, liveTranslation)
-			if err != nil {
-				if errors.Is(err, errTranslationRateLimited) {
-					translations = MultiTranslationResult{}
-				} else {
-					return err
-				}
-			}
-		}
+		languages := make([]string, 0, len(pending))
 		for _, p := range pending {
-			editName := ""
-			if translations.Translations != nil {
-				editName = translations.Translations[p.target.Language]
-			}
-			var editTags *[]string
-			if tagsChanged && isThreadOnlyChannelType(p.target.ChannelType) {
-				mapping, err := s.store.ForumTagMapsBetween(ctx, guildID, groupID, p.thread.SourceChannelID, p.target.ChannelID)
-				if err != nil {
-					return err
-				}
-				mapped := MapAppliedForumTags(mapping, appliedTags)
-				targetThread, err := s.discord.Channel(p.thread.TargetThreadID)
-				if err != nil {
-					return err
-				}
-				if ForumTagSetsEqual(targetThread.AppliedTags, mapped) {
-					mapped = nil
-					editTags = nil
-				} else {
-					tags := mapped
-					if tags == nil {
-						tags = []string{}
-					}
-					editTags = &tags
-				}
-			}
-			if editName == "" && editTags == nil {
-				continue
-			}
-			if err := s.editThread(p.thread.TargetThreadID, editName, editTags); err != nil {
+			languages = append(languages, p.target.Language)
+		}
+		translated, err := s.translateWithLimit(ctx, guildID, name, nil, languages, contextFn, liveTranslation)
+		if err != nil && !errors.Is(err, errTranslationRateLimited) {
+			return err
+		}
+		if err == nil {
+			translations = translated
+		}
+	}
+	for _, p := range pending {
+		editName := ""
+		if translations.Translations != nil {
+			editName = translations.Translations[p.target.Language]
+		}
+		var editTags *[]string
+		if tagsChanged && isThreadOnlyChannelType(p.target.ChannelType) {
+			mapping, err := s.store.ForumTagMapsBetween(ctx, guildID, groupID, p.link.SourceChannelID, p.target.ChannelID)
+			if err != nil {
 				return err
 			}
+			mapped := MapAppliedForumTags(mapping, appliedTags)
+			targetThread, err := s.discord.Channel(p.link.TargetThreadID)
+			if err != nil {
+				return err
+			}
+			if ForumTagSetsEqual(targetThread.AppliedTags, mapped) {
+				mapped = nil
+				editTags = nil
+			} else {
+				tags := mapped
+				if tags == nil {
+					tags = []string{}
+				}
+				editTags = &tags
+			}
+		}
+		if editName == "" && editTags == nil {
+			continue
+		}
+		if err := s.editThread(p.link.TargetThreadID, editName, editTags); err != nil {
+			return err
 		}
 	}
 	return nil

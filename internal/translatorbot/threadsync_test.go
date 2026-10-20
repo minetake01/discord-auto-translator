@@ -475,22 +475,26 @@ func TestSyncThreadUpdateBatchesTranslationByGroup(t *testing.T) {
 		}
 	}
 
-	if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル", nil, true, false); err != nil {
-		t.Fatal(err)
+	for i := 0; i < 2; i++ {
+		if err := service.SyncThreadUpdate(ctx, "guild", "100000000000000005", "新タイトル", nil, true, false); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	if len(translator.contexts) != 1 {
-		t.Fatalf("expected one batched translation call, got %#v", translator.contexts)
+	if len(translator.contexts) != 2 {
+		t.Fatalf("expected one batched translation call per rename, got %#v", translator.contexts)
 	}
 	tc := translator.contexts[0]
 	if !strings.HasPrefix(tc.PromptCacheLocation, "guild:g:thread:") {
 		t.Fatalf("thread rename cache location = %q", tc.PromptCacheLocation)
 	}
-	if tc.PromptCacheGeneration != "100000000000000005" {
-		t.Fatalf("thread rename generation = %q, want source thread id", tc.PromptCacheGeneration)
+	// A rename speaks with the thread's shared conversation context, so a
+	// rename without a conversation change keeps the cache generation.
+	if tc.PromptCacheGeneration == "" || tc.PromptCacheGeneration != translator.contexts[1].PromptCacheGeneration {
+		t.Fatalf("thread rename generation not stable: %q vs %q", translator.contexts[0].PromptCacheGeneration, translator.contexts[1].PromptCacheGeneration)
 	}
-	if len(discord.edits) != 2 {
-		t.Fatalf("expected two thread edits, got %#v", discord.edits)
+	if len(discord.edits) != 4 {
+		t.Fatalf("expected four thread edits, got %#v", discord.edits)
 	}
 }
 

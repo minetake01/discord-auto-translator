@@ -55,3 +55,47 @@ func threadIDForWebhook(link MessageLink, target *GroupChannel) string {
 	}
 	return link.TargetChannelID
 }
+
+// editPair pairs one mirror link with the target channel that now hosts the
+// mirror. The link type is MessageLink for mirrored messages and ThreadLink
+// for synced threads.
+type editPair[L any] struct {
+	link   L
+	target GroupChannel
+}
+
+// forEachGroupEdit walks the groups a set of mirror links belongs to. For
+// every group it fetches the group's channels, resolves each link's target
+// channel, and hands the resolved pairs to act once per group. Links whose
+// target is gone are skipped, and processing stops at the first error.
+func forEachGroupEdit[L any](ctx context.Context, store *Store, guildID string, links []L, groupOf func(L) string, resolve func(ctx context.Context, targets []GroupChannel, link L) (*GroupChannel, error), act func(ctx context.Context, groupID string, pending []editPair[L]) error) error {
+	byGroup := make(map[string][]L)
+	for _, link := range links {
+		groupID := groupOf(link)
+		byGroup[groupID] = append(byGroup[groupID], link)
+	}
+	for groupID, groupLinks := range byGroup {
+		targets, err := store.ChannelsInGroup(ctx, guildID, groupID)
+		if err != nil {
+			return err
+		}
+		pending := make([]editPair[L], 0, len(groupLinks))
+		for _, link := range groupLinks {
+			target, err := resolve(ctx, targets, link)
+			if err != nil {
+				return err
+			}
+			if target == nil {
+				continue
+			}
+			pending = append(pending, editPair[L]{link: link, target: *target})
+		}
+		if len(pending) == 0 {
+			continue
+		}
+		if err := act(ctx, groupID, pending); err != nil {
+			return err
+		}
+	}
+	return nil
+}
