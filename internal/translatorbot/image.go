@@ -10,9 +10,7 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	"io"
 	"net/http"
-	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -102,40 +100,23 @@ func (s *Service) imageHTTPClient() *http.Client {
 	return http.DefaultClient
 }
 
-func fetchImageBytes(ctx context.Context, client *http.Client, rawURL string) ([]byte, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return nil, fmt.Errorf("invalid HTTP URL %q", rawURL)
+func (s *Service) tryLoadVisionJPEG(ctx context.Context, client *http.Client, rawURL string, remainingBytes int) ([]byte, bool) {
+	imageURL := strings.TrimSpace(rawURL)
+	if imageURL == "" || remainingBytes <= 0 {
+		return nil, false
 	}
-	if client == nil {
-		client = http.DefaultClient
-	}
-	ctx, cancel := context.WithTimeout(ctx, imageFetchTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	content, err := fetchRemoteURL(ctx, client, imageURL, remoteFetchOptions{
+		timeout:  imageFetchTimeout,
+		maxBytes: imageFetchMaxBytes,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create image request: %w", err)
+		return nil, false
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch image: %w", err)
+	jpegBytes, err := resizeImageForVision(content.body)
+	if err != nil || len(jpegBytes) == 0 || len(jpegBytes) > remainingBytes {
+		return nil, false
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("fetch image: HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, imageFetchMaxBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read image: %w", err)
-	}
-	if len(body) > imageFetchMaxBytes {
-		return nil, fmt.Errorf("image exceeds %d bytes", imageFetchMaxBytes)
-	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("image is empty")
-	}
-	return body, nil
+	return jpegBytes, true
 }
 
 func resizeImageForVision(original []byte) ([]byte, error) {
@@ -174,22 +155,6 @@ func jpegDataURL(jpegBytes []byte) string {
 	return "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(jpegBytes)
 }
 
-func (s *Service) tryLoadVisionJPEG(ctx context.Context, client *http.Client, rawURL string, remainingBytes int) ([]byte, bool) {
-	imageURL := strings.TrimSpace(rawURL)
-	if imageURL == "" || remainingBytes <= 0 {
-		return nil, false
-	}
-	original, err := fetchImageBytes(ctx, client, imageURL)
-	if err != nil {
-		return nil, false
-	}
-	jpegBytes, err := resizeImageForVision(original)
-	if err != nil || len(jpegBytes) == 0 || len(jpegBytes) > remainingBytes {
-		return nil, false
-	}
-	return jpegBytes, true
-}
-
 func (s *Service) downloadImageOriginals(ctx context.Context, attachments []DiscordAttachment) []loadedImageAttachment {
 	if len(attachments) == 0 {
 		return nil
@@ -197,11 +162,14 @@ func (s *Service) downloadImageOriginals(ctx context.Context, attachments []Disc
 	client := s.imageHTTPClient()
 	loaded := make([]loadedImageAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
-		original, err := fetchImageBytes(ctx, client, attachment.URL)
-		if err != nil {
+		content, err := fetchRemoteURL(ctx, client, attachment.URL, remoteFetchOptions{
+			timeout:  imageFetchTimeout,
+			maxBytes: imageFetchMaxBytes,
+		})
+		if err != nil || len(content.body) == 0 {
 			continue
 		}
-		loaded = append(loaded, loadedImageAttachment{Attachment: attachment, Original: original})
+		loaded = append(loaded, loadedImageAttachment{Attachment: attachment, Original: content.body})
 	}
 	return loaded
 }

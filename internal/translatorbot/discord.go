@@ -306,16 +306,11 @@ func discordFilesAndMeta(files []WebhookFile) ([]*discordgo.File, []webhookAttac
 	return outFiles, attachments, nil
 }
 
+// sanitizeWebhookAvatarURL applies the webhook avatar constraints (length
+// ceiling) on top of the shared outbound URL shape check.
 func sanitizeWebhookAvatarURL(avatarURL string) string {
 	avatarURL = strings.TrimSpace(avatarURL)
-	if avatarURL == "" || len(avatarURL) > 2048 {
-		return ""
-	}
-	u, err := url.Parse(avatarURL)
-	if err != nil || u.Host == "" {
-		return ""
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if avatarURL == "" || len(avatarURL) > 2048 || validRemoteHTTPURL(avatarURL) != nil {
 		return ""
 	}
 	return avatarURL

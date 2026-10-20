@@ -3,7 +3,6 @@ package translatorbot
 import (
 	"context"
 	"html"
-	"io"
 	"maps"
 	"net/http"
 	"net/url"
@@ -56,7 +55,7 @@ type urlPageCache struct {
 
 func newURLPageCache(client *http.Client, ttl time.Duration, now func() time.Time) *urlPageCache {
 	if client == nil {
-		client = &http.Client{Timeout: 4 * time.Second}
+		panic("newURLPageCache requires a non-nil *http.Client")
 	}
 	if now == nil {
 		now = time.Now
@@ -276,45 +275,37 @@ func shouldSkipURLFetch(rawURL string) bool {
 }
 
 func fetchURLPage(ctx context.Context, client *http.Client, rawURL string) (info urlPageInfo, cacheable bool) {
-	ctx, cancel := context.WithTimeout(ctx, urlPageFetchTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	content, err := fetchRemoteURL(ctx, client, rawURL, remoteFetchOptions{
+		timeout:  urlPageFetchTimeout,
+		maxBytes: urlPageBodyLimit,
+		accept:   "text/html",
+	})
 	if err != nil {
 		return urlPageInfo{}, false
 	}
-	req.Header.Set("Accept", "text/html")
-	resp, err := client.Do(req)
-	if err != nil {
-		return urlPageInfo{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return urlPageInfo{}, false
-	}
-	if !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") {
+	if !strings.Contains(strings.ToLower(content.contentType), "text/html") {
 		return urlPageInfo{}, true
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, urlPageBodyLimit))
-	if err != nil {
-		return urlPageInfo{}, false
-	}
-	info = parseURLPage(string(body))
-	baseURL := parsedRequestURL(resp, rawURL)
+	info = parseURLPage(string(content.body))
+	baseURL := parsedRequestURL(content.finalURL, rawURL)
 	if info.ImageURL != "" {
 		info.ImageURL = resolveMaybeRelativeURL(baseURL, info.ImageURL)
 	}
 	return info, true
 }
 
-func parsedRequestURL(resp *http.Response, fallback string) *url.URL {
-	if resp != nil && resp.Request != nil && resp.Request.URL != nil {
-		return resp.Request.URL
+// parsedRequestURL prefers the URL the response followed through redirects.
+func parsedRequestURL(finalURL, fallback string) *url.URL {
+	for _, candidate := range []string{finalURL, fallback} {
+		if candidate == "" {
+			continue
+		}
+		parsed, err := url.Parse(candidate)
+		if err == nil {
+			return parsed
+		}
 	}
-	parsed, err := url.Parse(fallback)
-	if err != nil {
-		return nil
-	}
-	return parsed
+	return nil
 }
 
 func resolveMaybeRelativeURL(base *url.URL, ref string) string {
