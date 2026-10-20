@@ -264,13 +264,10 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		if err != nil {
 			return "", "", err
 		}
-		var descriptions []string
 		alts, altErr := s.translateAttachmentAltsWithLimit(ctx, req.GuildID, loaded, []string{target.Language}, func() TranslationContext {
 			return TranslationContext{GuildID: req.GuildID, MessageID: req.InitialMessageID}
 		}, scope)
-		if altErr == nil {
-			descriptions = alts[target.Language]
-		}
+		descriptions := usableAttachmentAlts(alts, altErr, target.Language, len(loaded))
 		files := webhookFilesForImages(loaded, descriptions)
 		if content == "" && len(embeds) == 0 && len(files) == 0 {
 			content = name

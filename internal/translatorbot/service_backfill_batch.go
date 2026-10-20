@@ -192,8 +192,8 @@ func (r *backfillRunner) batchAlts(ctx context.Context, items []backfillItem) []
 		}, r.scope)
 		return err
 	})
-	translated := descriptions[language]
-	if err != nil || len(translated) != len(loaded) {
+	translated := usableAttachmentAlts(descriptions, err, language, len(loaded))
+	if translated == nil {
 		return out
 	}
 	offset := 0

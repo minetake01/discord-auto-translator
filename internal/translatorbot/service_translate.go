@@ -226,16 +226,24 @@ func takeReadyAttachmentAlts(ch <-chan attachmentAltOutcome) (map[string][]strin
 	}
 }
 
+// usableAttachmentAlts applies the alt-translation failure contract: a failed
+// or incomplete translation keeps the source alt text, so the caller proceeds
+// with nil descriptions instead of failing content that is already posted.
+func usableAttachmentAlts(descriptions map[string][]string, err error, language string, count int) []string {
+	if err != nil || len(descriptions[language]) != count {
+		return nil
+	}
+	return descriptions[language]
+}
+
 func (s *Service) applyReadyAttachmentAlts(pending <-chan attachmentAltOutcome, posted []postedWebhookMirror) {
 	if pending == nil {
 		return
 	}
 	out := <-pending
-	if out.Err != nil || out.Descriptions == nil {
-		return
-	}
 	for _, item := range posted {
-		if err := s.patchWebhookAttachmentDescriptions(item, out.Descriptions[item.language]); err != nil {
+		descriptions := usableAttachmentAlts(out.Descriptions, out.Err, item.language, len(item.attachmentIDs))
+		if err := s.patchWebhookAttachmentDescriptions(item, descriptions); err != nil {
 			continue
 		}
 	}
