@@ -20,6 +20,7 @@ var schemaMigrations = []schemaMigration{
 	migrateBaselineSchema,
 	migrateBackfillSchema,
 	migrateDropProcessedEvents,
+	migrateResetPollCacheSeconds,
 }
 
 func currentSchemaVersion() int { return len(schemaMigrations) }
@@ -428,4 +429,12 @@ func migrateBackfillSchema(ctx context.Context, tx *sql.Tx) error {
 // message was mirrored into a target channel.
 func migrateDropProcessedEvents(ctx context.Context, tx *sql.Tx) error {
 	return execAll(ctx, tx, `DROP TABLE IF EXISTS processed_events`)
+}
+
+// migrateResetPollCacheSeconds clears the poll translation cache, whose
+// expires_at switched from Unix seconds to the store-wide Unix milliseconds.
+// Cached translations are disposable, so the rows are cleared instead of
+// being rescaled.
+func migrateResetPollCacheSeconds(ctx context.Context, tx *sql.Tx) error {
+	return execAll(ctx, tx, `DELETE FROM poll_translation_cache`)
 }

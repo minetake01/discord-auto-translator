@@ -10,7 +10,8 @@ import (
 )
 
 // SavePollTranslationCache stores translated poll answers for one language until
-// the poll expires (or the poll-result handler deletes the row).
+// the poll expires (or the poll-result handler deletes the row). expires_at is
+// written as Unix milliseconds, the store-wide clock unit.
 func (s *Store) SavePollTranslationCache(ctx context.Context, sourceChannelID, sourceMessageID, language string, answers []string, expiresAt time.Time) error {
 	sourceMessageIDValue, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
 	if err != nil {
@@ -24,7 +25,7 @@ func (s *Store) SavePollTranslationCache(ctx context.Context, sourceChannelID, s
 		return fmt.Errorf("marshal poll answers: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT OR REPLACE INTO poll_translation_cache(source_channel_id,source_message_id,language,answers_json,expires_at) VALUES(?,?,?,?,?)`,
-		sourceChannelID, sourceMessageIDValue, normalizeLanguage(language), string(payload), expiresAt.UTC().Unix())
+		sourceChannelID, sourceMessageIDValue, normalizeLanguage(language), string(payload), expiresAt.UTC().UnixMilli())
 	return err
 }
 
@@ -64,9 +65,10 @@ func (s *Store) DeletePollTranslationCache(ctx context.Context, sourceChannelID,
 	return err
 }
 
-// PurgeExpiredPollTranslationCache deletes orphan cache rows past expires_at.
+// PurgeExpiredPollTranslationCache deletes orphan cache rows past expires_at,
+// compared in Unix milliseconds.
 func (s *Store) PurgeExpiredPollTranslationCache(ctx context.Context, now time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM poll_translation_cache WHERE expires_at < ?`, now.UTC().Unix())
+	res, err := s.db.ExecContext(ctx, `DELETE FROM poll_translation_cache WHERE expires_at < ?`, now.UTC().UnixMilli())
 	if err != nil {
 		return 0, err
 	}
