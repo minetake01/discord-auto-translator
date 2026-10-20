@@ -53,7 +53,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		return "", nil
 	}
 	content := m.ReferencedMessageContent
-	hasAttachments := len(m.ReferencedMessageAttachments) > 0
+	attachmentCount := len(m.ReferencedMessageAttachments)
 	quoteChannelID := m.ReferencedMessageChannelID
 	quoteMessageID := m.ReferencedMessageID
 	if quoteChannelID == "" {
@@ -65,7 +65,7 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 		return "", err
 	}
 	if ok {
-		hasAttachments = hasAttachments || len(source.SourceImageAttachments) > 0
+		attachmentCount = max(attachmentCount, len(source.SourceImageAttachments))
 		if dbQuoteChannelID != "" && dbQuoteMessageID != "" {
 			quoteChannelID = dbQuoteChannelID
 			quoteMessageID = dbQuoteMessageID
@@ -80,10 +80,10 @@ func (s *Service) replyQuote(ctx context.Context, m DiscordMessage, targetChanne
 	}
 	snippet := firstLineWithoutPseudoReply(content)
 	if snippet == "" {
-		if !hasAttachments {
+		if attachmentCount == 0 {
 			return "", nil
 		}
-		snippet = localizedUIString(targetLanguage, uiKeyAttachmentOnly)
+		snippet = localizedUIStringf(targetLanguage, uiKeyAttachmentOnly, attachmentCount)
 	}
 	snippet = normalizeMarkdownHeaderSnippet(snippet)
 	snippet = truncateRunes(snippet, replyQuoteMaxRunes, "...")

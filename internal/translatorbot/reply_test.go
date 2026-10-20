@@ -527,12 +527,15 @@ func TestReplyQuoteAttachmentOnlyReferencedMessage(t *testing.T) {
 	got, err := service.replyQuote(context.Background(), DiscordMessage{
 		GuildID: "guild", ChannelID: "en",
 		ReferencedMessageID: "100000000000000001", ReferencedMessageChannelID: "en",
-		ReferencedMessageAttachments: []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/image.png", Filename: "image.png", ContentType: "image/png"}},
+		ReferencedMessageAttachments: []DiscordAttachment{
+			{URL: "https://cdn.discordapp.com/attachments/1/2/image.png", Filename: "image.png", ContentType: "image/png"},
+			{URL: "https://cdn.discordapp.com/attachments/1/3/photo.jpg", Filename: "photo.jpg", ContentType: "image/jpeg"},
+		},
 	}, "target", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/en/100000000000000001)"
+	want := "> -# 2 attachment(s) · [Source](https://discord.com/channels/guild/en/100000000000000001)"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -559,7 +562,7 @@ func TestReplyQuoteAttachmentOnlyViaStoredLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/en/700000000000000019)"
+	want := "> -# 1 attachment(s) · [Source](https://discord.com/channels/guild/en/700000000000000019)"
 	if got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
@@ -581,7 +584,7 @@ func TestHandleMessageCreateAttachmentOnlyReplyQuote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantPrefix := "> -# Click to see attachment · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
+	wantPrefix := "> -# 1 attachment(s) · [Source](https://discord.com/channels/guild/ja/100000000000000002)"
 	if len(discord.sent) != 1 || discord.sent[0].Content != wantPrefix+"\n\n[en] 画像への返信です" {
 		t.Fatalf("sent: %#v", discord.sent)
 	}
