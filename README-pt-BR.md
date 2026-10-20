@@ -85,6 +85,7 @@ Agora `#general-ja`, `#general-en` e `#general-pt` estão vinculados e a traduç
 #### Sair de um grupo e excluir grupos
 - Remover um canal do grupo: `/leave-channel group:general`
 - Excluir um grupo por completo: `/delete-group group:general`
+- Canais excluídos no Discord são removidos automaticamente dos seus grupos, junto com seus links de tradução
 - Listar grupos e canais ativos: `/list-groups`
 
 ---

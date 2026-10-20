@@ -85,6 +85,7 @@ Now `#general-ja`, `#general-en`, and `#general-zh` are linked and mutual auto-t
 #### Leaving a Group and Deleting Groups
 - Remove a channel from a group: `/leave-channel group:general`
 - Delete an entire translation group: `/delete-group group:general`
+- Channels deleted in Discord are removed from their groups automatically, along with their translation links
 - View all active translation groups and channels: `/list-groups`
 
 ---

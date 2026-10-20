@@ -85,6 +85,7 @@ Sekarang `#general-ja`, `#general-en`, dan `#general-id` saling terhubung dan pe
 #### Keluar dari Grup dan Menghapus Grup
 - Menghapus saluran dari grup: `/leave-channel group:general`
 - Menghapus grup penerjemahan sepenuhnya: `/delete-group group:general`
+- Saluran yang dihapus di Discord otomatis dikeluarkan dari grupnya, beserta tautan terjemahannya
 - Melihat daftar grup dan saluran aktif: `/list-groups`
 
 ---

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -116,6 +117,71 @@ func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID st
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM forum_tag_maps WHERE guild_id=? AND group_id=? AND (channel_a_id=? OR channel_b_id=?)`, guildID, groupID, channelID, channelID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// PurgeDeletedChannel removes every record of a channel Discord has deleted.
+// The channel may belong to several groups, and Discord sends CHANNEL_DELETE
+// only for the channel itself, so this removes all group memberships and finds
+// the channel's threads through thread_links. Groups are kept, even when no
+// channel remains: an empty group can accept a new channel, and /delete-group
+// is the explicit way to discard its settings.
+func (s *Store) PurgeDeletedChannel(ctx context.Context, guildID, channelID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	ids := []string{channelID}
+	rows, err := tx.QueryContext(ctx, `SELECT source_thread_id FROM thread_links WHERE source_channel_id=?
+		UNION SELECT target_thread_id FROM thread_links WHERE target_channel_id=?`,
+		channelID, channelID)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	idList := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	placeholders := "(" + idList + ")"
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	referenceArgs := append(append([]any{}, args...), args...)
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references
+		WHERE source_channel_id IN `+placeholders+` OR referenced_channel_id IN `+placeholders,
+		referenceArgs...); err != nil {
+		return fmt.Errorf("delete message references: %w", err)
+	}
+	if err := deleteChannelCascade(ctx, tx, "", idList, args...); err != nil {
+		return fmt.Errorf("delete channel cascade: %w", err)
+	}
+	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
+		return fmt.Errorf("delete orphaned message references: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM forum_tag_maps WHERE guild_id=? AND (channel_a_id=? OR channel_b_id=?)`,
+		guildID, channelID, channelID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_channels WHERE guild_id=? AND channel_id=?`,
+		guildID, channelID); err != nil {
 		return err
 	}
 	return tx.Commit()

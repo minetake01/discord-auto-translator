@@ -85,6 +85,7 @@ Discord 개발자 포털의 **Bot** 탭에서 `MESSAGE CONTENT INTENT`가 활성
 #### 채널 퇴장 및 그룹 삭제
 - 채널을 그룹에서 제거: `/leave-channel group:general`
 - 그룹 전체를 완전히 삭제: `/delete-group group:general`
+- Discord에서 삭제된 채널은 번역 링크와 함께 그룹에서 자동으로 제거됩니다
 - 서버 내 번역 그룹 및 채널 목록 확인: `/list-groups`
 
 ---

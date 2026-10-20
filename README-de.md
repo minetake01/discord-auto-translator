@@ -85,6 +85,7 @@ Jetzt sind `#general-ja`, `#general-en` und `#general-de` miteinander verknüpft
 #### Kanäle entfernen und Gruppen löschen
 - Kanal aus Gruppe entfernen: `/leave-channel group:general`
 - Eine Übersetzungsgruppe vollständig löschen: `/delete-group group:general`
+- In Discord gelöschte Kanäle werden automatisch aus ihren Gruppen entfernt; die zugehörigen Übersetzungslinks werden ebenfalls gelöscht
 - Aktive Gruppen und Kanäle auflisten: `/list-groups`
 
 ---

@@ -85,6 +85,7 @@
 #### 退出頻道與刪除群組
 - 將頻道移出群組: `/leave-channel group:general`
 - 完全刪除翻譯群組: `/delete-group group:general`
+- 在 Discord 中刪除的頻道會自動從群組中移除，並刪除其翻譯連結
 - 檢視當前伺服器中的翻譯群組與頻道配置: `/list-groups`
 
 ---

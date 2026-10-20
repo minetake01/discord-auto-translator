@@ -85,6 +85,7 @@ Désormais, `#general-ja`, `#general-en` et `#general-fr` sont liés et la tradu
 #### Quitter un groupe et supprimer des groupes
 - Retirer un salon d'un groupe : `/leave-channel group:general`
 - Supprimer complètement un groupe : `/delete-group group:general`
+- Les salons supprimés dans Discord sont automatiquement retirés de leurs groupes, ainsi que leurs liens de traduction
 - Afficher les groupes et salons actifs : `/list-groups`
 
 ---

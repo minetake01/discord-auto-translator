@@ -85,6 +85,7 @@ Bot アカウント側で `MESSAGE CONTENT INTENT`（メッセージコンテン
 #### チャンネルの離脱とグループの削除
 - チャンネルをグループから外す場合: `/leave-channel group:general`
 - グループ自体を完全に削除する場合: `/delete-group group:general`
+- Discord 側でチャンネルが削除されると、そのチャンネルはグループから自動的に外れ、翻訳リンクも削除されます
 - 現在のグループとチャンネルの構成を確認する場合: `/list-groups`
 
 ---

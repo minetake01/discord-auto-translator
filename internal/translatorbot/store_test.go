@@ -674,6 +674,198 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	}
 }
 
+func TestPurgeDeletedChannelRemovesEveryGroupAndCancelsBackfill(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "alpha", GuildID: "g1", DisplayName: "alpha", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "alpha", GuildID: "g1", ChannelID: "peer-a", Language: "en", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.JoinChannel(ctx, GroupChannel{GroupID: "alpha", GuildID: "g1", ChannelID: "peer-b", Language: "fr", WebhookID: "w2", WebhookToken: "t2"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.JoinChannelWithBackfill(ctx, GroupChannel{GroupID: "alpha", GuildID: "g1", ChannelID: "doomed", Language: "ja", WebhookID: "w3", WebhookToken: "t3"}, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "beta", GuildID: "g1", DisplayName: "beta", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "beta", GuildID: "g1", ChannelID: "doomed", Language: "de", WebhookID: "w4", WebhookToken: "t4",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.PurgeDeletedChannel(ctx, "g1", "doomed"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, groupID := range []string{"alpha", "beta"} {
+		exists, err := s.GroupExists(ctx, "g1", groupID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("group %s was deleted", groupID)
+		}
+	}
+	channels, err := s.ChannelsInGroup(ctx, "g1", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	channelIDs := map[string]bool{}
+	for _, channel := range channels {
+		channelIDs[channel.ChannelID] = true
+	}
+	if len(channels) != 2 || !channelIDs["peer-a"] || !channelIDs["peer-b"] {
+		t.Fatalf("unexpected alpha channels: %#v", channels)
+	}
+	channels, err = s.ChannelsInGroup(ctx, "g1", "beta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(channels) != 0 {
+		t.Fatalf("deleted channel remains in beta: %#v", channels)
+	}
+	jobs, err := s.BackfillJobs(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("backfill job for the deleted channel remains: %#v", jobs)
+	}
+
+	if err := s.PurgeDeletedChannel(ctx, "g1", "doomed"); err != nil {
+		t.Fatalf("second purge should be a no-op: %v", err)
+	}
+}
+
+func TestPurgeDeletedChannelRemovesChannelAndThreadState(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	if err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: "team", GuildID: "g1", DisplayName: "team", CreatedBy: "u1"}, GroupChannel{
+		GroupID: "team", GuildID: "g1", ChannelID: "peer-a", Language: "en", WebhookID: "w1", WebhookToken: "t1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for channelID, language := range map[string]string{"peer-b": "fr", "doomed": "ja"} {
+		if err := s.JoinChannel(ctx, GroupChannel{GroupID: "team", GuildID: "g1", ChannelID: channelID, Language: language, WebhookID: "w-" + channelID, WebhookToken: "t"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	links := []MessageLink{
+		{SourceMessageID: "1001", SourceChannelID: "doomed", GroupID: "team", TargetChannelID: "peer-a", TargetMessageID: "7001"},
+		{SourceMessageID: "1002", SourceChannelID: "peer-a", GroupID: "team", TargetChannelID: "doomed", TargetMessageID: "7002"},
+		{SourceMessageID: "1003", SourceChannelID: "peer-a", GroupID: "team", TargetChannelID: "peer-b", TargetMessageID: "7003"},
+		{SourceMessageID: "1004", SourceChannelID: "th-doomed", GroupID: "team", TargetChannelID: "th-peer-a", TargetMessageID: "7004"},
+		{SourceMessageID: "1005", SourceChannelID: "th-survivor", GroupID: "team", TargetChannelID: "th-doomed-target", TargetMessageID: "7005"},
+		{SourceMessageID: "1006", SourceChannelID: "th-peer-a", GroupID: "team", TargetChannelID: "th-peer-b", TargetMessageID: "7006"},
+		{SourceMessageID: "1007", SourceChannelID: "peer-a", GroupID: "team", TargetChannelID: "peer-b", TargetMessageID: "7007"},
+	}
+	for _, link := range links {
+		if err := s.SaveMessageLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SaveMessageLinkWithReference(ctx, links[2], MessageReference{MessageID: "8003", ChannelID: "doomed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveMessageLinkWithReference(ctx, links[6], MessageReference{MessageID: "8007", ChannelID: "peer-b"}); err != nil {
+		t.Fatal(err)
+	}
+	threads := []ThreadLink{
+		{GroupID: "team", SourceThreadID: "th-doomed", SourceChannelID: "doomed", TargetThreadID: "th-peer-a", TargetChannelID: "peer-a"},
+		{GroupID: "team", SourceThreadID: "th-survivor", SourceChannelID: "peer-a", TargetThreadID: "th-doomed-target", TargetChannelID: "doomed"},
+		{GroupID: "team", SourceThreadID: "th-peer-a", SourceChannelID: "peer-a", TargetThreadID: "th-peer-b", TargetChannelID: "peer-b"},
+	}
+	for _, link := range threads {
+		if err := s.SaveThreadLink(ctx, link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.SavePinState(ctx, "doomed", "8001", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SavePinState(ctx, "th-doomed", "8002", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SavePinState(ctx, "peer-a", "8003", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "doomed", "tag-doomed", "peer-a", "tag-a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertForumTagMap(ctx, "g1", "team", "peer-a", "tag-a2", "peer-b", "tag-b"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.PurgeDeletedChannel(ctx, "g1", "doomed"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, source := range []struct {
+		channelID string
+		messageID string
+	}{{"doomed", "1001"}, {"peer-a", "1002"}, {"th-doomed", "1004"}, {"th-survivor", "1005"}} {
+		got, err := s.MessageTargets(ctx, source.channelID, source.messageID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 0 {
+			t.Fatalf("message links for %s/%s were not removed: %#v", source.channelID, source.messageID, got)
+		}
+	}
+	for _, source := range []struct {
+		channelID string
+		messageID string
+	}{{"peer-a", "1003"}, {"th-peer-a", "1006"}, {"peer-a", "1007"}} {
+		got, err := s.MessageTargets(ctx, source.channelID, source.messageID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("unrelated message links for %s/%s were removed: %#v", source.channelID, source.messageID, got)
+		}
+	}
+	for threadID, want := range map[string]int{"th-doomed": 0, "th-survivor": 0, "th-peer-a": 1} {
+		got, err := s.SourceThreadTargets(ctx, threadID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != want {
+			t.Fatalf("thread links for %s: got %#v, want %d", threadID, got, want)
+		}
+	}
+
+	if _, found, err := s.MessageReferenceOf(ctx, "peer-a", "1003"); err != nil || found {
+		t.Fatalf("reference to the deleted channel was not removed: found=%v err=%v", found, err)
+	}
+	if ref, found, err := s.MessageReferenceOf(ctx, "peer-a", "1007"); err != nil || !found || ref.ChannelID != "peer-b" {
+		t.Fatalf("unrelated reference was removed: ref=%#v found=%v err=%v", ref, found, err)
+	}
+
+	for channelID, messageID := range map[string]string{"doomed": "8001", "th-doomed": "8002"} {
+		if _, known, err := s.GetPinState(ctx, channelID, messageID); err != nil || known {
+			t.Fatalf("pin state %s/%s was not removed: known=%v err=%v", channelID, messageID, known, err)
+		}
+	}
+	if pinned, known, err := s.GetPinState(ctx, "peer-a", "8003"); err != nil || !known || !pinned {
+		t.Fatalf("unrelated pin state was removed: pinned=%v known=%v err=%v", pinned, known, err)
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM forum_tag_maps WHERE channel_a_id='doomed' OR channel_b_id='doomed'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("forum tag maps for the deleted channel remain: %d", count)
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM forum_tag_maps WHERE channel_a_id='peer-a' AND channel_b_id='peer-b'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("unrelated forum tag map was removed: %d", count)
+	}
+}
+
 func TestForumTagMapUpsertLookupAndDelete(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

@@ -85,6 +85,7 @@
 #### 退出频道与解散组
 - 将频道移出组: `/leave-channel group:general`
 - 完全解散并删除组: `/delete-group group:general`
+- 在 Discord 中删除的频道会自动从组中移除，并删除其翻译链接
 - 查看当前服务器中的翻译组与频道配置: `/list-groups`
 
 ---

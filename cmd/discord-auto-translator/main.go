@@ -172,6 +172,14 @@ func main() {
 			log.Printf("reaction remove sync: %v", err)
 		}
 	})
+	dg.AddHandler(func(_ *discordgo.Session, c *discordgo.ChannelDelete) {
+		if c.Channel == nil || c.GuildID == "" || c.ID == "" {
+			return
+		}
+		if err := store.PurgeDeletedChannel(context.Background(), c.GuildID, c.ID); err != nil {
+			log.Printf("channel delete cleanup: %v", err)
+		}
+	})
 	dg.AddHandler(func(s *discordgo.Session, t *discordgo.ThreadCreate) {
 		if t.Channel == nil || !t.NewlyCreated || t.OwnerID == s.State.User.ID || t.ParentID == "" {
 			return

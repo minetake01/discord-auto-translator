@@ -85,6 +85,7 @@ Bây giờ `#general-ja`, `#general-en` và `#general-vi` đã được liên k�
 #### Rời khỏi nhóm và xóa nhóm
 - Rút một kênh ra khỏi nhóm: `/leave-channel group:general`
 - Xóa hoàn toàn một nhóm dịch thuật: `/delete-group group:general`
+- Các kênh bị xóa trên Discord sẽ tự động được gỡ khỏi nhóm cùng với các liên kết dịch
 - Xem danh sách các nhóm và kênh hiện có: `/list-groups`
 
 ---
