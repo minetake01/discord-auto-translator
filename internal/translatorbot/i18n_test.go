@@ -12,8 +12,28 @@ import (
 
 var formatVerbPattern = regexp.MustCompile(`%\[\d+\][a-z]|%[a-z]`)
 
+// untranslatedCopies names catalog entries allowed to repeat the English
+// string verbatim: loanwords that are the standard term in a language, and
+// the tag map line, which carries only a bullet, an arrow, and placeholders.
+// Any other copy is an untranslated entry and fails the catalog test.
+var untranslatedCopies = map[string]map[uiKey]bool{
+	"de":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyStylePresetGamingLabel: true, uiKeyForumTagMapLine: true},
+	"es":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyStylePresetFormalLabel: true, uiKeyStylePresetLiteralLabel: true, uiKeyForumTagMapLine: true},
+	"fr":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyOriginalMessage: true, uiKeyForumTagMapLine: true},
+	"id":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyStylePresetFormalLabel: true, uiKeyGlossaryAttributeSlang: true, uiKeyForumTagMapLine: true},
+	"it":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyGlossaryAttributeSlang: true, uiKeyForumTagMapLine: true},
+	"ja":    {uiKeyChoiceSourceTypeWebhook: true, uiKeyForumTagMapLine: true},
+	"ko":    {uiKeyForumTagMapLine: true},
+	"pt-BR": {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyStylePresetFormalLabel: true, uiKeyStylePresetLiteralLabel: true, uiKeyForumTagMapLine: true},
+	"th":    {uiKeyForumTagMapLine: true},
+	"vi":    {uiKeyChoiceSourceTypeBot: true, uiKeyChoiceSourceTypeWebhook: true, uiKeyForumTagMapLine: true},
+	"zh-CN": {uiKeyChoiceSourceTypeWebhook: true, uiKeyForumTagMapLine: true},
+	"zh-TW": {uiKeyChoiceSourceTypeWebhook: true, uiKeyForumTagMapLine: true},
+}
+
 // TestUIStringCatalogIsComplete verifies that every supported language defines
-// every key with the same format verbs as the English reference catalog.
+// every key with the same format verbs as the English reference catalog and
+// that no language silently repeats the English string.
 func TestUIStringCatalogIsComplete(t *testing.T) {
 	reference := uiStrings["en"]
 	if len(reference) == 0 {
@@ -46,6 +66,9 @@ func TestUIStringCatalogIsComplete(t *testing.T) {
 					t.Errorf("lang %s key %s format verbs = %v, want %v", lang, key, gotVerbs, wantVerbs)
 					break
 				}
+			}
+			if lang != canonicalUILanguage && text == refText && !untranslatedCopies[lang][key] {
+				t.Errorf("lang %s key %s repeats the English string %q", lang, key, text)
 			}
 		}
 	}
