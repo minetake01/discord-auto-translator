@@ -63,6 +63,9 @@ func (sc translationScope) fillsTarget(groupID, targetChannelID string) bool {
 type backfillWorkers struct {
 	mu      sync.Mutex
 	running map[string]bool
+	// wanted marks a StartBackfill that arrived while the worker was
+	// scanning, so the worker re-checks the queue before it may exit.
+	wanted map[string]bool
 	// holds is keyed by group and target channel.
 	holds map[string]*backfillHold
 	sleep func(context.Context, time.Duration) error
@@ -134,6 +137,13 @@ func (s *Service) StartBackfill(guildID string) {
 	if s.backfill.running == nil {
 		s.backfill.running = make(map[string]bool)
 	}
+	if s.backfill.wanted == nil {
+		s.backfill.wanted = make(map[string]bool)
+	}
+	// A start that lands while the worker is between its empty scan and its
+	// exit marks itself here, so the worker looks one more time instead of
+	// leaving the job without a worker.
+	s.backfill.wanted[guildID] = true
 	if s.backfill.running[guildID] {
 		return
 	}
@@ -156,21 +166,29 @@ func (s *Service) ResumeBackfills(ctx context.Context) error {
 func (s *Service) runBackfillQueue(guildID string) {
 	ctx := context.Background()
 	for {
-		// The queue flag is cleared in the same critical section that finds
-		// no job, so a job queued right now always starts a worker.
-		s.backfill.mu.Lock()
+		// The scan runs outside the mutex: the lock guards the in-memory
+		// flags, not the store. A job queued between the empty scan and the
+		// exit below left its mark in wanted, which the worker consumes
+		// before it may leave, so a job queued right now always finds a
+		// worker.
 		job, ok, err := s.store.NextBackfillJob(ctx, guildID)
-		if err == nil && !ok {
-			delete(s.backfill.running, guildID)
-			s.backfill.mu.Unlock()
-			return
-		}
-		s.backfill.mu.Unlock()
 		if err != nil {
 			log.Printf("backfill queue (guild %s): %v", guildID, err)
 			_ = s.backfill.wait(ctx, backfillErrorWait)
 			continue
 		}
+		s.backfill.mu.Lock()
+		if !ok {
+			if s.backfill.wanted[guildID] {
+				s.backfill.wanted[guildID] = false
+				s.backfill.mu.Unlock()
+				continue
+			}
+			delete(s.backfill.running, guildID)
+			s.backfill.mu.Unlock()
+			return
+		}
+		s.backfill.mu.Unlock()
 		if err := s.runBackfillJob(ctx, job); err != nil && !errors.Is(err, errBackfillCanceled) {
 			log.Printf("backfill job %d (guild %s, target %s): %v", job.ID, guildID, job.TargetChannelID, err)
 			_ = s.backfill.wait(ctx, backfillErrorWait)
