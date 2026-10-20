@@ -79,48 +79,20 @@ func (s *Store) PurgeGuildRemovedBefore(ctx context.Context, guildID string, cut
 	if !eligible {
 		return false, tx.Commit()
 	}
-	guildChannelsAndThreads := `WITH guild_channels(channel_id) AS (
-		SELECT channel_id FROM group_channels WHERE guild_id=?
-	), guild_threads(thread_id) AS (
-		SELECT source_thread_id FROM thread_links
-		WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
-			OR target_channel_id IN (SELECT channel_id FROM guild_channels)
-		UNION
-		SELECT target_thread_id FROM thread_links
-		WHERE source_channel_id IN (SELECT channel_id FROM guild_channels)
-			OR target_channel_id IN (SELECT channel_id FROM guild_channels)
-	) `
-	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM message_references
-		WHERE source_channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		) OR referenced_channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		)`, guildID); err != nil {
+	guildChannelsAndThreads := `(SELECT channel_id FROM group_channels WHERE guild_id=?
+		UNION SELECT source_thread_id FROM thread_links
+			WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+		UNION SELECT target_thread_id FROM thread_links
+			WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
+			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?))`
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message_references
+		WHERE source_channel_id IN `+guildChannelsAndThreads+` OR referenced_channel_id IN `+guildChannelsAndThreads,
+		guildID, guildID, guildID, guildID, guildID, guildID, guildID, guildID, guildID, guildID); err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM message_links
-		WHERE source_channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		) OR target_channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		)`, guildID); err != nil {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM poll_translation_cache
-		WHERE source_channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		)`, guildID); err != nil {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx, guildChannelsAndThreads+`DELETE FROM pin_states
-		WHERE channel_id IN (
-			SELECT channel_id FROM guild_channels UNION SELECT thread_id FROM guild_threads
-		)`, guildID); err != nil {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE
-		source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)
-		OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=?)`, guildID, guildID); err != nil {
+	if err := deleteChannelCascade(ctx, tx, "", guildChannelsAndThreads,
+		guildID, guildID, guildID, guildID, guildID); err != nil {
 		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM glossary_entries WHERE guild_id=?`, guildID); err != nil {

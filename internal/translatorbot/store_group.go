@@ -78,27 +78,11 @@ func (s *Store) DeleteGroup(ctx context.Context, guildID, groupID string) error 
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links
-		WHERE group_id=?
-		AND (
-			source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
-			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
-		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
+	if err := deleteChannelCascade(ctx, tx, groupID,
+		`SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?`, guildID, groupID); err != nil {
 		return err
 	}
 	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links
-		WHERE group_id=?
-		AND (
-			source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
-			OR target_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)
-		)`, groupID, guildID, groupID, guildID, groupID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache
-		WHERE source_channel_id IN (SELECT channel_id FROM group_channels WHERE guild_id=? AND group_id=?)`, guildID, groupID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM topic_summaries WHERE guild_id=? AND (
@@ -131,16 +115,10 @@ func (s *Store) LeaveChannel(ctx context.Context, guildID, groupID, channelID st
 	if n == 0 {
 		return ErrChannelNotFound
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
+	if err := deleteChannelCascade(ctx, tx, groupID, `SELECT ?`, channelID); err != nil {
 		return err
 	}
 	if err := deleteOrphanedMessageReferences(ctx, tx); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM thread_links WHERE group_id=? AND (source_channel_id=? OR target_channel_id=?)`, groupID, channelID, channelID); err != nil {
-		return err
-	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM poll_translation_cache WHERE source_channel_id=?`, channelID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM forum_tag_maps WHERE guild_id=? AND group_id=? AND (channel_a_id=? OR channel_b_id=?)`, guildID, groupID, channelID, channelID); err != nil {

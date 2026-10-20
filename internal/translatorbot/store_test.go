@@ -640,6 +640,9 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SavePinState(ctx, "c2", "700000000000000020", true); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := s.LeaveChannel(ctx, "g1", "team", "c2"); err != nil {
 		t.Fatal(err)
@@ -665,6 +668,9 @@ func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	}
 	if len(threads) != 0 {
 		t.Fatalf("thread links were not removed: %#v", threads)
+	}
+	if _, known, err := s.GetPinState(ctx, "c2", "700000000000000020"); err != nil || known {
+		t.Fatalf("pin states were not removed: known=%v err=%v", known, err)
 	}
 }
 
@@ -778,6 +784,9 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	if err := s.SaveThreadLink(ctx, ThreadLink{GroupID: "team", SourceThreadID: "th1", SourceChannelID: "c1", TargetThreadID: "th2", TargetChannelID: "c2"}); err != nil {
 		t.Fatal(err)
 	}
+	if err := s.SavePinState(ctx, "c1", "100000000000000013", true); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := s.DeleteGroup(ctx, "g1", "team"); err != nil {
 		t.Fatal(err)
@@ -803,6 +812,9 @@ func TestDeleteGroupRemovesGroupChannelsAndLinks(t *testing.T) {
 	}
 	if len(links) != 0 {
 		t.Fatalf("message links were not removed: %#v", links)
+	}
+	if _, known, err := s.GetPinState(ctx, "c1", "100000000000000013"); err != nil || known {
+		t.Fatalf("pin states were not removed: known=%v err=%v", known, err)
 	}
 }
 
