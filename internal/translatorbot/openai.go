@@ -33,6 +33,10 @@ const (
 	openaiThreadCreateTranslationSchemaName  = "thread_create_translations"
 	openaiTopicSummarySchemaName             = "topic_summary"
 	openaiBatchTranslationSchemaName         = "batch_message_translations"
+
+	// warmupContent gives the startup warmup request translatable text so
+	// the fixed response contract is exercised end to end.
+	warmupContent = "warmup"
 )
 
 // errTranslationProvider marks a translation API outage (timeout, transport, or
@@ -300,7 +304,7 @@ func (t *OpenAITranslator) SummarizeTopic(ctx context.Context, prepared prepared
 // per-attempt timeout and single retry as TranslateMulti; the caller still
 // owns the overall deadline.
 func (t *OpenAITranslator) WarmUp(ctx context.Context) error {
-	prepared, err := prepareMultiTranslation([]string{"en"}, "warmup", TranslationContext{}, nil)
+	prepared, err := prepareMultiTranslation([]string{"en"}, warmupContent, TranslationContext{}, nil)
 	if err != nil {
 		return err
 	}
