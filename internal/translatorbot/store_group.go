@@ -20,10 +20,7 @@ func (s *Store) CreateGroupWithChannel(ctx context.Context, g TranslationGroup, 
 	_, err = tx.ExecContext(ctx, `INSERT INTO translation_groups(id,guild_id,display_name,created_by,created_at) VALUES(?,?,?,?,?)`,
 		g.ID, g.GuildID, g.DisplayName, g.CreatedBy, g.CreatedAt.UnixMilli())
 	if err != nil {
-		if strings.Contains(err.Error(), "constraint") {
-			return ErrDuplicateGroup
-		}
-		return err
+		return mapSQLiteConstraint(err, constraintMatch{"constraint", ErrDuplicateGroup})
 	}
 	if err := insertGroupChannel(ctx, tx, ch); err != nil {
 		return err
@@ -59,15 +56,12 @@ func insertGroupChannel(ctx context.Context, x execer, ch GroupChannel) error {
 	_, err := x.ExecContext(ctx, `INSERT INTO group_channels(group_id,guild_id,channel_id,channel_type,language,webhook_id,webhook_token) VALUES(?,?,?,?,?,?,?)`,
 		ch.GroupID, ch.GuildID, ch.ChannelID, ch.ChannelType, normalizeLanguage(ch.Language), ch.WebhookID, ch.WebhookToken)
 	if err != nil {
-		if strings.Contains(err.Error(), "FOREIGN KEY") {
-			return ErrGroupNotFound
-		}
-		if strings.Contains(err.Error(), "group_channels.group_id") || strings.Contains(err.Error(), "channel_id") {
-			return ErrDuplicateChannel
-		}
-		if strings.Contains(err.Error(), "language") {
-			return ErrDuplicateLanguage
-		}
+		return mapSQLiteConstraint(err,
+			constraintMatch{"FOREIGN KEY", ErrGroupNotFound},
+			constraintMatch{"group_channels.group_id", ErrDuplicateChannel},
+			constraintMatch{"channel_id", ErrDuplicateChannel},
+			constraintMatch{"language", ErrDuplicateLanguage},
+		)
 	}
 	return err
 }

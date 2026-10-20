@@ -12,6 +12,10 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// managedWebhookDenyMessage is the RAISE(ABORT, ...) text the schema
+// triggers use and the error mapping reads back, so both spell it once.
+const managedWebhookDenyMessage = "translation output webhooks cannot be allowlisted"
+
 var (
 	ErrDuplicateGroup       = errors.New("translation group already exists in this guild")
 	ErrDuplicateChannel     = errors.New("channel already exists in this group")
@@ -26,7 +30,7 @@ var (
 	ErrSourceNotAllowed     = errors.New("message source is not allowed in this guild")
 	ErrInvalidSourceType    = errors.New("message source type must be bot or webhook")
 	ErrInvalidSnowflake     = errors.New("source ID must be a canonical nonzero uint64 snowflake")
-	ErrManagedWebhook       = errors.New("translation output webhooks cannot be allowlisted")
+	ErrManagedWebhook       = errors.New(managedWebhookDenyMessage)
 )
 
 type Store struct {
@@ -54,6 +58,29 @@ func OpenStore(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// constraintMatch pairs the error-message fragment a SQLite constraint
+// failure carries with the sentinel it means.
+type constraintMatch struct {
+	fragment string
+	sentinel error
+}
+
+// mapSQLiteConstraint translates a SQLite constraint failure into its
+// sentinel by matching the fragment text the driver reports, and passes any
+// other error through unchanged.
+func mapSQLiteConstraint(err error, matches ...constraintMatch) error {
+	if err == nil {
+		return nil
+	}
+	message := err.Error()
+	for _, m := range matches {
+		if strings.Contains(message, m.fragment) {
+			return m.sentinel
+		}
+	}
+	return err
+}
 
 // parseDiscordSnowflakeID converts a trusted snowflake string into the int64
 // held by SQLite INTEGER columns. IDs issued by Discord are canonical, so

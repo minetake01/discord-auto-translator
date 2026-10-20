@@ -65,14 +65,10 @@ func (s *Store) AddAllowedSource(ctx context.Context, guildID string, sourceType
 	_, err := s.db.ExecContext(ctx, `INSERT INTO source_allowlists(guild_id,source_type,source_id,created_by,created_at) VALUES(?,?,?,?,?)`,
 		guildID, sourceType, sourceID, createdBy, time.Now().UTC().UnixMilli())
 	if err != nil {
-		switch {
-		case strings.Contains(err.Error(), "translation output webhooks cannot be allowlisted"):
-			return ErrManagedWebhook
-		case strings.Contains(err.Error(), "UNIQUE constraint failed"):
-			return ErrSourceAlreadyAllowed
-		default:
-			return err
-		}
+		return mapSQLiteConstraint(err,
+			constraintMatch{managedWebhookDenyMessage, ErrManagedWebhook},
+			constraintMatch{"UNIQUE constraint failed", ErrSourceAlreadyAllowed},
+		)
 	}
 	return nil
 }

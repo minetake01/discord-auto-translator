@@ -332,24 +332,8 @@ func migrateBaselineSchema(ctx context.Context, tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_processed_events_created_at ON processed_events(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_guild_removals_removed_at ON guild_removals(removed_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_topic_summaries_guild ON topic_summaries(guild_id)`,
-		`CREATE TRIGGER IF NOT EXISTS reject_managed_webhook_allowlist_insert
-		BEFORE INSERT ON source_allowlists
-		WHEN NEW.source_type = 'webhook' AND EXISTS (
-			SELECT 1 FROM group_channels
-			WHERE guild_id = NEW.guild_id AND webhook_id = NEW.source_id
-		)
-		BEGIN
-			SELECT RAISE(ABORT, 'translation output webhooks cannot be allowlisted');
-		END`,
-		`CREATE TRIGGER IF NOT EXISTS reject_managed_webhook_allowlist_update
-		BEFORE UPDATE ON source_allowlists
-		WHEN NEW.source_type = 'webhook' AND EXISTS (
-			SELECT 1 FROM group_channels
-			WHERE guild_id = NEW.guild_id AND webhook_id = NEW.source_id
-		)
-		BEGIN
-			SELECT RAISE(ABORT, 'translation output webhooks cannot be allowlisted');
-		END`,
+		managedWebhookDenyTrigger("reject_managed_webhook_allowlist_insert", "INSERT"),
+		managedWebhookDenyTrigger("reject_managed_webhook_allowlist_update", "UPDATE"),
 		`CREATE TRIGGER IF NOT EXISTS remove_new_managed_webhook_allowlist
 		AFTER INSERT ON group_channels
 		BEGIN
@@ -357,6 +341,21 @@ func migrateBaselineSchema(ctx context.Context, tx *sql.Tx) error {
 			WHERE guild_id = NEW.guild_id AND source_type = 'webhook' AND source_id = NEW.webhook_id;
 		END`,
 	)
+}
+
+// managedWebhookDenyTrigger builds the BEFORE INSERT/UPDATE trigger that
+// rejects allowlisting one of the bot's own translation webhooks, raising
+// the shared deny message for the error mapping to read back.
+func managedWebhookDenyTrigger(name, event string) string {
+	return fmt.Sprintf(`CREATE TRIGGER IF NOT EXISTS %s
+	BEFORE %s ON source_allowlists
+	WHEN NEW.source_type = 'webhook' AND EXISTS (
+		SELECT 1 FROM group_channels
+		WHERE guild_id = NEW.guild_id AND webhook_id = NEW.source_id
+	)
+	BEGIN
+		SELECT RAISE(ABORT, '%s');
+	END`, name, event, managedWebhookDenyMessage)
 }
 
 // migrateBackfillSchema rebuilds message_links with an INTEGER mirror
