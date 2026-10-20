@@ -303,13 +303,13 @@ func (s *Service) mirrorPollResultMessage(ctx context.Context, m DiscordMessage,
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
 		}
+		// The result body is built per language instead of translated, but it
+		// is a mirror body like any other: reference resolution, the reply
+		// quote, and the content limit all come from mirrorContent. Poll
+		// messages carry no attachments, and m.Poll is nil here, so the
+		// asset-URL lines and the poll-started header are no-ops.
 		body := pollResultBody(dest.channel.Language, m.PollResult, victorLabel)
-		quote, err := s.replyQuote(ctx, m, dest.targetID, dest.channel.Language)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
-			continue
-		}
-		content, err := finishMirrorContent(m.ID, withQuote(quote, body), dest.timestamp)
+		content, err := s.mirrorContent(ctx, m, dest.targetID, dest.channel.Language, body, nil, dest.timestamp)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
 			continue
