@@ -639,7 +639,7 @@ func TestBackfillReleasesItsHoldLockAndMemberCacheWhenTheJobEnds(t *testing.T) {
 	f := newBackfillFixture(t, &echoTranslator{}, sourceMessage("100000000000000001", "a"))
 	f.run(t)
 
-	if held := len(f.service.backfill.holds); held != 0 {
+	if held := len(f.service.backfill.holds.locks); held != 0 {
 		t.Fatalf("finished job kept %d hold locks", held)
 	}
 	if f.discord.forgetMemberCacheCalls != 1 {

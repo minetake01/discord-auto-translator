@@ -24,7 +24,7 @@ type Service struct {
 	publicBaseURL        string
 	selfBotUserID        string
 	threadMu             sync.Mutex
-	messageLocks         sync.Map
+	messageLocks         keyedLocks
 	topicSummaryAttempts sync.Map
 	runTopicSummary      func(func())
 	issueNotices         issueNoticeState
@@ -81,10 +81,42 @@ func (s *Service) postProcessContent(ctx context.Context, guildID, text, targetL
 
 // lockMessage serializes concurrent handling of the same (channel, message).
 func (s *Service) lockMessage(channelID, messageID string) func() {
-	key := channelID + "\x00" + messageID
-	mu := &sync.Mutex{}
-	actual, _ := s.messageLocks.LoadOrStore(key, mu)
-	m := actual.(*sync.Mutex)
-	m.Lock()
-	return m.Unlock
+	return s.messageLocks.lock(channelID + "\x00" + messageID)
+}
+
+// keyedLocks serializes concurrent work per key. A lock is forgotten once
+// nobody holds or waits for it, so a long-lived process does not keep one
+// per key it has ever seen.
+type keyedLocks struct {
+	mu    sync.Mutex
+	locks map[string]*keyedLock
+}
+
+type keyedLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+func (l *keyedLocks) lock(key string) func() {
+	l.mu.Lock()
+	if l.locks == nil {
+		l.locks = make(map[string]*keyedLock)
+	}
+	kl := l.locks[key]
+	if kl == nil {
+		kl = &keyedLock{}
+		l.locks[key] = kl
+	}
+	kl.refs++
+	l.mu.Unlock()
+	kl.mu.Lock()
+	return func() {
+		kl.mu.Unlock()
+		l.mu.Lock()
+		kl.refs--
+		if kl.refs == 0 {
+			delete(l.locks, key)
+		}
+		l.mu.Unlock()
+	}
 }

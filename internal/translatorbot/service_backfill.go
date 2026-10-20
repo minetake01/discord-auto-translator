@@ -67,41 +67,12 @@ type backfillWorkers struct {
 	// scanning, so the worker re-checks the queue before it may exit.
 	wanted map[string]bool
 	// holds is keyed by group and target channel.
-	holds map[string]*backfillHold
+	holds keyedLocks
 	sleep func(context.Context, time.Duration) error
 }
 
-// backfillHold is the per-target lock. Entry counts let the workers drop it
-// once nobody holds or waits for it, so a long-lived process does not keep one
-// lock per target channel it has ever backfilled.
-type backfillHold struct {
-	mu   sync.Mutex
-	refs int
-}
-
 func (w *backfillWorkers) holdLock(groupID, targetChannelID string) func() {
-	key := groupID + "\x00" + targetChannelID
-	w.mu.Lock()
-	if w.holds == nil {
-		w.holds = make(map[string]*backfillHold)
-	}
-	hold := w.holds[key]
-	if hold == nil {
-		hold = &backfillHold{}
-		w.holds[key] = hold
-	}
-	hold.refs++
-	w.mu.Unlock()
-	hold.mu.Lock()
-	return func() {
-		hold.mu.Unlock()
-		w.mu.Lock()
-		hold.refs--
-		if hold.refs == 0 {
-			delete(w.holds, key)
-		}
-		w.mu.Unlock()
-	}
+	return w.holds.lock(groupID + "\x00" + targetChannelID)
 }
 
 func (w *backfillWorkers) wait(ctx context.Context, d time.Duration) error {
