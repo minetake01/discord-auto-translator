@@ -7,11 +7,18 @@ import (
 )
 
 const (
-	// backfillRequestOverheadTokens approximates the system prompt and
-	// context sent with every request.
+	// backfillRequestOverheadTokens approximates the prompt envelope a
+	// request carries beyond the message bodies: the system instruction and
+	// the glossary and context blocks. Nothing cheaper measures it, since
+	// the estimate never builds the prompts.
 	backfillRequestOverheadTokens = 3500
-	backfillRequestSeconds        = 20
-	backfillPostSeconds           = 1
+
+	// backfillRequestSeconds and backfillPostSeconds approximate how long
+	// one translation request and one webhook post take. No measurement
+	// point exists for either; every estimate large enough for the
+	// difference to matter is dominated by the token budget below.
+	backfillRequestSeconds = 20
+	backfillPostSeconds    = 1
 
 	// backfillEstimateArchivedThreadLimit bounds how many archived threads the
 	// estimate reads. Paging every archived thread of a large server would
@@ -143,10 +150,18 @@ func (s *Service) EstimateBackfill(ctx context.Context, guildID, groupID string)
 		}
 	}
 	est.InputTokens += requests * backfillRequestOverheadTokens
+	est.Duration = estimateBackfillDuration(est, requests, s.rateLimiter)
+	return est, nil
+}
+
+// estimateBackfillDuration is the stricter of the two clocks a run runs on:
+// the token budget the guild's backfill share allows — the same share the
+// run is admitted through, so a throttled guild sees its estimate stretch —
+// and the wall clock the requests and posts themselves need.
+func estimateBackfillDuration(est BackfillEstimate, requests int, limiter *RateLimiter) time.Duration {
 	seconds := float64(requests*backfillRequestSeconds + est.Messages*backfillPostSeconds)
-	if perMinute := s.rateLimiter.SharePerMinute(backfillRateLimitShare); perMinute > 0 {
+	if perMinute := limiter.SharePerMinute(backfillRateLimitShare); perMinute > 0 {
 		seconds = math.Max(seconds, float64(est.InputTokens+est.OutputTokens)/perMinute*60)
 	}
-	est.Duration = time.Duration(seconds) * time.Second
-	return est, nil
+	return time.Duration(seconds) * time.Second
 }
