@@ -249,8 +249,9 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 	if ref.MessageID != "" && ref.ChannelID == "" {
 		ref.ChannelID = m.ChannelID
 	}
-	return s.sendAndSaveLink(ctx, dest.channel, dest.threadID(), WebhookSend{
-		Content: string(content), Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: dest.threadID(), Embeds: embeds, Files: files,
+	threadID := dest.threadID()
+	return s.sendAndSaveLink(ctx, dest.channel, threadID, WebhookSend{
+		Content: string(content), Username: m.AuthorDisplayName, AvatarURL: avatar, TTS: m.TTS, ThreadID: threadID, Embeds: embeds, Files: files,
 	}, MessageLink{
 		SourceMessageID: m.ID, SourceChannelID: m.ChannelID, GroupID: groupID,
 		TargetChannelID: dest.targetID, TargetLanguage: dest.channel.Language,
