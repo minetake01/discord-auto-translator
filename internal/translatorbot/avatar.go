@@ -1,7 +1,9 @@
 package translatorbot
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -38,14 +40,21 @@ func avatarProxyURL(publicBaseURL, avatarURL string, roleColor int) string {
 	v := url.Values{}
 	v.Set("url", avatarURL)
 	if roleColor > 0 {
-		v.Set("color", fmt.Sprintf("%06X", roleColor&0xFFFFFF))
+		v.Set("color", avatarColorParam(roleColor))
 	}
 	return publicBaseURL + "/avatar?" + v.Encode()
 }
 
+// avatarColorParam encodes the ring-color query parameter written into the
+// proxied URL by avatarProxyURL and decoded by avatarRingColor. This pair is
+// the role color's single HTTP boundary.
+func avatarColorParam(roleColor int) string {
+	return fmt.Sprintf("%06X", roleColor&0xFFFFFF)
+}
+
 func NewAvatarHandler(client *http.Client, limiter *RateLimiter) http.Handler {
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		panic("NewAvatarHandler requires a non-nil *http.Client")
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !limiter.Take(clientIP(r), 1) {
@@ -57,26 +66,13 @@ func NewAvatarHandler(client *http.Client, limiter *RateLimiter) http.Handler {
 			http.Error(w, "invalid avatar url", http.StatusBadRequest)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		img, err := fetchAvatarImage(r.Context(), client, rawURL)
 		if err != nil {
-			http.Error(w, "invalid avatar url", http.StatusBadRequest)
-			return
-		}
-		resp, err := client.Do(req)
-		if err != nil {
+			if errors.Is(err, errAvatarImageUnsupported) {
+				http.Error(w, "unsupported avatar image", http.StatusUnsupportedMediaType)
+				return
+			}
 			http.Error(w, "failed to fetch avatar", http.StatusBadGateway)
-			return
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			http.Error(w, "failed to fetch avatar", http.StatusBadGateway)
-			return
-		}
-		img, _, err := image.Decode(http.MaxBytesReader(w, resp.Body, avatarMaxBytes))
-		if err != nil {
-			http.Error(w, "unsupported avatar image", http.StatusUnsupportedMediaType)
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
@@ -86,6 +82,28 @@ func NewAvatarHandler(client *http.Client, limiter *RateLimiter) http.Handler {
 			return
 		}
 	})
+}
+
+// errAvatarImageUnsupported marks a body the avatar proxy cannot render as an
+// image, whether it exceeded its byte cap or failed to decode.
+var errAvatarImageUnsupported = errors.New("unsupported avatar image")
+
+// fetchAvatarImage is the avatar proxy's transport step: one outbound image
+// fetch capped at avatarMaxBytes, then a decode. Rendering happens only after
+// the transport step succeeds.
+func fetchAvatarImage(ctx context.Context, client *http.Client, rawURL string) (image.Image, error) {
+	content, err := fetchRemoteURL(ctx, client, rawURL, remoteFetchOptions{timeout: 6 * time.Second, maxBytes: avatarMaxBytes})
+	if err != nil {
+		if errors.Is(err, errRemoteContentTooLarge) {
+			return nil, errAvatarImageUnsupported
+		}
+		return nil, err
+	}
+	img, _, err := image.Decode(bytes.NewReader(content.body))
+	if err != nil {
+		return nil, errAvatarImageUnsupported
+	}
+	return img, nil
 }
 
 func clientIP(r *http.Request) string {
@@ -105,6 +123,8 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
+// avatarRingColor decodes the query parameter avatarColorParam encodes.
+// Anything it cannot parse falls back to the default ring color.
 func avatarRingColor(raw string) color.Color {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
