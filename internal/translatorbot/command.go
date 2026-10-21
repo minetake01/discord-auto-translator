@@ -13,8 +13,11 @@ import (
 type CommandHandler struct {
 	store *Store
 	api   DiscordAPI
-	// respond delivers the interaction response; replaced in tests.
-	respond func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
+	// respond delivers the first interaction response and followUp the
+	// messages that continue one too long for a single response; both are
+	// replaced in tests.
+	respond  func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool)
+	followUp func(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) error
 
 	tagUI *sessionStore[*forumTagUISession]
 
@@ -27,6 +30,7 @@ func NewCommandHandler(store *Store, api DiscordAPI) *CommandHandler {
 		store:            store,
 		api:              api,
 		respond:          respondInteraction,
+		followUp:         followUpInteraction,
 		tagUI:            newSessionStore[*forumTagUISession](forumTagUISessionTTL),
 		pendingBackfills: newPendingBackfills(),
 	}
@@ -90,19 +94,44 @@ func (h *CommandHandler) Handle(s *discordgo.Session, i *discordgo.InteractionCr
 }
 
 func respondInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
-	flags := discordgo.MessageFlags(0)
-	if ephemeral {
-		flags = discordgo.MessageFlagsEphemeral
-	}
+	flags := interactionMessageFlags(ephemeral)
 	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{Content: msg, Flags: flags},
 	})
 }
 
+// followUpInteraction posts one further message of a split response.
+func followUpInteraction(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) error {
+	_, err := s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
+		Content: msg,
+		Flags:   interactionMessageFlags(ephemeral),
+	})
+	return err
+}
+
+func interactionMessageFlags(ephemeral bool) discordgo.MessageFlags {
+	if ephemeral {
+		return discordgo.MessageFlagsEphemeral
+	}
+	return 0
+}
+
+// respondText delivers a response, splitting it across follow-up messages when
+// it exceeds the Discord content limit.
+func (h *CommandHandler) respondText(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
+	parts := splitMessageContent(msg, discordMessageContentLimit)
+	h.respond(s, i, parts[0], ephemeral)
+	for _, part := range parts[1:] {
+		if err := h.followUp(s, i, part, ephemeral); err != nil {
+			log.Printf("interaction %s follow-up: %v", i.ID, err)
+		}
+	}
+}
+
 // reply sends a localized catalog message as the interaction response.
 func (h *CommandHandler) reply(s *discordgo.Session, i *discordgo.InteractionCreate, key uiKey, args ...any) {
-	h.respond(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
+	h.respondText(s, i, localizedUIStringf(commandLocale(i), key, args...), true)
 }
 
 // updateInteraction replaces the interaction's message with new content;
@@ -297,7 +326,7 @@ func (h *CommandHandler) handleJoinChannel(s *discordgo.Session, i *discordgo.In
 		return
 	}
 	if err := h.joinChannel(ctx, channel, "", false); err != nil {
-		h.respond(s, i, h.groupErrorText(commandLocale(i), "join-channel", groupID, err), true)
+		h.respondText(s, i, h.groupErrorText(commandLocale(i), "join-channel", groupID, err), true)
 		return
 	}
 	h.maybeOpenForumTagUIAfterJoin(s, i, groupID, ch, language)
@@ -327,7 +356,7 @@ func (h *CommandHandler) handleDeleteGroup(s *discordgo.Session, i *discordgo.In
 // replyGroupError maps store errors about groups and channels to localized
 // messages; unexpected errors are logged and reported generically.
 func (h *CommandHandler) replyGroupError(s *discordgo.Session, i *discordgo.InteractionCreate, command, groupID string, err error) {
-	h.respond(s, i, h.groupErrorText(commandLocale(i), command, groupID, err), true)
+	h.respondText(s, i, h.groupErrorText(commandLocale(i), command, groupID, err), true)
 }
 
 func (h *CommandHandler) groupErrorText(locale, command, groupID string, err error) string {
@@ -357,7 +386,7 @@ func (h *CommandHandler) groupErrorText(locale, command, groupID string, err err
 
 func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	ctx := context.Background()
-	groups, err := h.store.Groups(ctx, i.GuildID, "", 100)
+	groups, err := h.store.Groups(ctx, i.GuildID, "", 0)
 	if err != nil {
 		log.Printf("list-groups store: %v", err)
 		h.reply(s, i, uiKeyUnexpectedError)
@@ -373,56 +402,38 @@ func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.Int
 		h.reply(s, i, uiKeyUnexpectedError)
 		return
 	}
-	h.respond(s, i, msg, true)
+	h.respondText(s, i, msg, true)
 }
 
-// listBuilder assembles a list message up to Discord's content limit,
-// appending the truncation suffix once lines no longer fit.
+// listBuilder assembles a list message. The response transport splits it into
+// as many messages as the Discord content limit needs.
 type listBuilder struct {
-	b      strings.Builder
-	suffix string
-	full   bool
+	b strings.Builder
 }
 
-func newListBuilder(header, truncatedSuffix string) *listBuilder {
-	list := &listBuilder{suffix: truncatedSuffix}
+func newListBuilder(header string) *listBuilder {
+	list := &listBuilder{}
 	list.b.WriteString(header)
 	list.b.WriteString("\n")
 	return list
 }
 
-// add appends a line and reports whether it fit; once a line does not fit
-// the builder ignores the rest.
-func (t *listBuilder) add(line string) bool {
-	if t.full {
-		return false
-	}
-	if t.b.Len()+len(line)+len(t.suffix) > discordMessageContentLimit {
-		t.full = true
-		return false
-	}
+func (t *listBuilder) add(line string) {
 	t.b.WriteString(line)
-	return true
 }
 
 func (t *listBuilder) String() string {
-	result := strings.TrimSpace(t.b.String())
-	if t.full {
-		result += t.suffix
-	}
-	return result
+	return strings.TrimSpace(t.b.String())
 }
 
 func formatListGroupsMessage(ctx context.Context, store *Store, guildID, lang string, groups []TranslationGroup) (string, error) {
-	list := newListBuilder(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)), localizedUIString(lang, uiKeyGroupsTruncated))
+	list := newListBuilder(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)))
 	for _, g := range groups {
 		channels, err := store.ChannelsInGroup(ctx, guildID, g.ID)
 		if err != nil {
 			return "", err
 		}
-		if !list.add(formatGroupBlock(g, channels, lang)) {
-			break
-		}
+		list.add(formatGroupBlock(g, channels, lang))
 	}
 	return list.String(), nil
 }
@@ -491,14 +502,12 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 		h.reply(s, i, uiKeyNoGlossary)
 		return
 	}
-	list := newListBuilder(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)), localizedUIString(lang, uiKeyGlossaryTruncated))
+	list := newListBuilder(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)))
 	for _, entry := range entries {
 		mode, attribute := glossaryLabels(lang, entry.AlwaysInclude, entry.Attribute)
-		if !list.add(fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode)) {
-			break
-		}
+		list.add(fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode))
 	}
-	h.respond(s, i, list.String(), true)
+	h.respondText(s, i, list.String(), true)
 }
 
 func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -661,13 +670,11 @@ func (h *CommandHandler) handleListSources(s *discordgo.Session, i *discordgo.In
 		return
 	}
 	lang := commandLocale(i)
-	list := newListBuilder(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)), localizedUIString(lang, uiKeyAllowedSourcesTruncated))
+	list := newListBuilder(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)))
 	for _, source := range sources {
-		if !list.add(fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID)) {
-			break
-		}
+		list.add(fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID))
 	}
-	h.respond(s, i, list.String(), true)
+	h.respondText(s, i, list.String(), true)
 }
 
 func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -679,18 +686,18 @@ func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.I
 	result, ok, err := h.store.MessageOriginal(ctx, channelID, messageID)
 	if err != nil {
 		log.Printf("view-original lookup: %v", err)
-		h.respond(s, i, localizedUIString(commandLocale(i), uiKeyNotManaged), true)
+		h.respondText(s, i, localizedUIString(commandLocale(i), uiKeyNotManaged), true)
 		return
 	}
 	// View Original follows the channel's registered language so the reply
 	// matches the language of the surrounding conversation.
 	lang := h.uiLanguageForChannel(ctx, guildID, channelID, result)
 	if !ok {
-		h.respond(s, i, localizedUIString(lang, uiKeyNotManaged), true)
+		h.respondText(s, i, localizedUIString(lang, uiKeyNotManaged), true)
 		return
 	}
 	if result.IsSource {
-		h.respond(s, i, localizedUIString(lang, uiKeyAlreadyOriginal), true)
+		h.respondText(s, i, localizedUIString(lang, uiKeyAlreadyOriginal), true)
 		return
 	}
 
@@ -700,7 +707,7 @@ func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.I
 	if snippet := strings.TrimSpace(result.Snapshot); snippet != "" {
 		msg += "\n\n> " + truncateRunes(snippet, 100, "…")
 	}
-	h.respond(s, i, msg, true)
+	h.respondText(s, i, msg, true)
 }
 
 func (h *CommandHandler) uiLanguageForChannel(ctx context.Context, guildID, channelID string, result MessageOriginalResult) string {

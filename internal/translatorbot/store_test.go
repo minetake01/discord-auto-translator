@@ -623,6 +623,33 @@ func TestGroupAutocompleteQuery(t *testing.T) {
 	}
 }
 
+func TestGroupsWithoutLimitReturnsEveryMatch(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"alpha", "bravo", "charlie"} {
+		err := s.CreateGroupWithChannel(ctx, TranslationGroup{ID: id, GuildID: "g1", DisplayName: id, CreatedBy: "u1"}, GroupChannel{
+			GroupID: id, GuildID: "g1", ChannelID: id + "-c", Language: "ja", WebhookID: "w", WebhookToken: "t",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.Groups(ctx, "g1", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("unlimited groups = %#v, want 3", all)
+	}
+	limited, err := s.Groups(ctx, "g1", "", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != 2 {
+		t.Fatalf("limited groups = %#v, want 2", limited)
+	}
+}
+
 func TestLeaveChannelRemovesChannelAndRelatedLinks(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

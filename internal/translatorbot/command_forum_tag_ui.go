@@ -239,7 +239,7 @@ func (h *CommandHandler) openForumTagUI(s *discordgo.Session, i *discordgo.Inter
 	}
 	if session == nil {
 		if intro != "" {
-			h.respond(s, i, intro, true)
+			h.respondText(s, i, intro, true)
 			return
 		}
 		h.reply(s, i, uiKeyForumTagMapNoPeers)
@@ -385,7 +385,7 @@ func (h *CommandHandler) handleForumTagComponent(s *discordgo.Session, i *discor
 func (h *CommandHandler) maybeOpenForumTagUIAfterJoin(s *discordgo.Session, i *discordgo.InteractionCreate, groupID string, ch *discordgo.Channel, language string) {
 	intro := localizedUIStringf(commandLocale(i), uiKeyChannelJoined, groupID, ch.ID, language)
 	if !isThreadOnlyChannelType(int(ch.Type)) {
-		h.respond(s, i, intro, true)
+		h.respondText(s, i, intro, true)
 		return
 	}
 	h.openForumTagUI(s, i, groupID, ch, intro)

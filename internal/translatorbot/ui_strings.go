@@ -49,7 +49,6 @@ const (
 
 	uiKeyNoGroups        uiKey = "noGroups"
 	uiKeyGroupsHeader    uiKey = "groupsHeader"
-	uiKeyGroupsTruncated uiKey = "groupsTruncated"
 	uiKeyGroupNoChannels uiKey = "groupNoChannels"
 
 	uiKeyGlossaryTermRequired   uiKey = "glossaryTermRequired"
@@ -63,7 +62,6 @@ const (
 	uiKeyGlossaryNotFound       uiKey = "glossaryNotFound"
 	uiKeyNoGlossary             uiKey = "noGlossary"
 	uiKeyGlossaryHeader         uiKey = "glossaryHeader"
-	uiKeyGlossaryTruncated      uiKey = "glossaryTruncated"
 
 	uiKeyStyleBothSpecified uiKey = "styleBothSpecified"
 	uiKeyStyleNoneSpecified uiKey = "styleNoneSpecified"
@@ -84,7 +82,6 @@ const (
 	uiKeySourceRemoved           uiKey = "sourceRemoved"
 	uiKeyNoAllowedSources        uiKey = "noAllowedSources"
 	uiKeyAllowedSourcesHeader    uiKey = "allowedSourcesHeader"
-	uiKeyAllowedSourcesTruncated uiKey = "allowedSourcesTruncated"
 
 	uiKeyForumTagMapHeader         uiKey = "forumTagMapHeader"
 	uiKeyForumTagMapNone           uiKey = "forumTagMapNone"
@@ -273,7 +270,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "No translation groups are registered in this server.",
 		uiKeyGroupsHeader:    "Translation groups (%[1]d):",
-		uiKeyGroupsTruncated: "\n(remaining groups omitted)",
 		uiKeyGroupNoChannels: "  (no channels)",
 
 		uiKeyGlossaryTermRequired:   "Specify both a term and a translation.",
@@ -287,7 +283,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Term `%[1]s` is not registered.",
 		uiKeyNoGlossary:             "No glossary entries are registered in this server.",
 		uiKeyGlossaryHeader:         "Glossary (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(remaining entries omitted)",
 
 		uiKeyStyleBothSpecified: "You cannot specify both a preset and a custom instruction. Specify only one.",
 		uiKeyStyleNoneSpecified: "Specify either a preset or a custom instruction. To reset the style, specify `preset:default`.",
@@ -308,7 +303,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "Removed `%[1]s` source `%[2]s` from this server's allowlist.",
 		uiKeyNoAllowedSources:        "No bot or webhook sources are allowed in this server.",
 		uiKeyAllowedSourcesHeader:    "Allowed message sources (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(remaining sources omitted)",
 
 		uiKeyForumTagMapHeader:         "Tag mapping: <#%[1]s> ↔ <#%[2]s>\nCurrent mappings:",
 		uiKeyForumTagMapNone:           "(none)",
@@ -431,7 +425,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "このサーバーには翻訳グループが登録されていません。",
 		uiKeyGroupsHeader:    "翻訳グループ (%[1]d):",
-		uiKeyGroupsTruncated: "\n（残りのグループは表示を省略しました）",
 		uiKeyGroupNoChannels: "  （チャンネルなし）",
 
 		uiKeyGlossaryTermRequired:   "用語と訳の両方を指定してください。",
@@ -445,7 +438,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "用語 `%[1]s` は登録されていません。",
 		uiKeyNoGlossary:             "このサーバーには用語集の登録がありません。",
 		uiKeyGlossaryHeader:         "用語集 (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n（残りの用語は表示を省略しました）",
 
 		uiKeyStyleBothSpecified: "プリセットとカスタム指示は同時に指定できません。どちらか一方だけ指定してください。",
 		uiKeyStyleNoneSpecified: "プリセットまたはカスタム指示のどちらかを指定してください。スタイルをリセットする場合は `preset:default` を指定してください。",
@@ -466,7 +458,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "このサーバーの許可リストから `%[1]s` ソース `%[2]s` を削除しました。",
 		uiKeyNoAllowedSources:        "このサーバーでは bot または webhook ソースが許可されていません。",
 		uiKeyAllowedSourcesHeader:    "許可済みメッセージソース (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n（残りのソースは表示を省略しました）",
 
 		uiKeyForumTagMapHeader:         "タグ対応付け: <#%[1]s> ↔ <#%[2]s>\n現在の対応:",
 		uiKeyForumTagMapNone:           "(なし)",
@@ -589,7 +580,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "此服务器未注册任何翻译组。",
 		uiKeyGroupsHeader:    "翻译组 (%[1]d):",
-		uiKeyGroupsTruncated: "\n（其余组已省略）",
 		uiKeyGroupNoChannels: "  （无频道）",
 
 		uiKeyGlossaryTermRequired:   "请同时指定术语和译文。",
@@ -603,7 +593,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "术语 `%[1]s` 未注册。",
 		uiKeyNoGlossary:             "此服务器未注册任何术语表条目。",
 		uiKeyGlossaryHeader:         "术语表 (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n（其余术语已省略）",
 
 		uiKeyStyleBothSpecified: "不能同时指定预设和自定义指令。请只指定其中一个。",
 		uiKeyStyleNoneSpecified: "请指定预设或自定义指令。要重置风格，请指定 `preset:default`。",
@@ -624,7 +613,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "已从此服务器的允许列表中移除 `%[1]s` 来源 `%[2]s`。",
 		uiKeyNoAllowedSources:        "此服务器未允许任何 bot 或 webhook 来源。",
 		uiKeyAllowedSourcesHeader:    "已允许的消息来源 (%[1]d)：",
-		uiKeyAllowedSourcesTruncated: "\n（已省略其余来源）",
 
 		uiKeyForumTagMapHeader:         "标签映射：<#%[1]s> ↔ <#%[2]s>\n当前映射：",
 		uiKeyForumTagMapNone:           "（无）",
@@ -747,7 +735,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "此伺服器未註冊任何翻譯群組。",
 		uiKeyGroupsHeader:    "翻譯群組 (%[1]d):",
-		uiKeyGroupsTruncated: "\n（其餘群組已省略）",
 		uiKeyGroupNoChannels: "  （無頻道）",
 
 		uiKeyGlossaryTermRequired:   "請同時指定術語和譯文。",
@@ -761,7 +748,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "術語 `%[1]s` 未註冊。",
 		uiKeyNoGlossary:             "此伺服器未註冊任何詞彙表項目。",
 		uiKeyGlossaryHeader:         "詞彙表 (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n（其餘術語已省略）",
 
 		uiKeyStyleBothSpecified: "不能同時指定預設和自訂指令。請只指定其中一個。",
 		uiKeyStyleNoneSpecified: "請指定預設或自訂指令。要重設風格，請指定 `preset:default`。",
@@ -782,7 +768,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "已從此伺服器的允許清單移除 `%[1]s` 來源 `%[2]s`。",
 		uiKeyNoAllowedSources:        "此伺服器未允許任何 bot 或 webhook 來源。",
 		uiKeyAllowedSourcesHeader:    "已允許的訊息來源 (%[1]d)：",
-		uiKeyAllowedSourcesTruncated: "\n（其餘來源已省略）",
 
 		uiKeyForumTagMapHeader:         "標籤對應：<#%[1]s> ↔ <#%[2]s>\n目前對應：",
 		uiKeyForumTagMapNone:           "（無）",
@@ -905,7 +890,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "이 서버에 등록된 번역 그룹이 없습니다.",
 		uiKeyGroupsHeader:    "번역 그룹 (%[1]d):",
-		uiKeyGroupsTruncated: "\n(나머지 그룹은 생략되었습니다)",
 		uiKeyGroupNoChannels: "  (채널 없음)",
 
 		uiKeyGlossaryTermRequired:   "용어와 번역을 모두 지정해 주세요.",
@@ -919,7 +903,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "용어 `%[1]s`은(는) 등록되어 있지 않습니다.",
 		uiKeyNoGlossary:             "이 서버에 등록된 용어집 항목이 없습니다.",
 		uiKeyGlossaryHeader:         "용어집 (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(나머지 용어는 생략되었습니다)",
 
 		uiKeyStyleBothSpecified: "프리셋과 사용자 지정 지시를 동시에 지정할 수 없습니다. 하나만 지정해 주세요.",
 		uiKeyStyleNoneSpecified: "프리셋 또는 사용자 지정 지시 중 하나를 지정해 주세요. 스타일을 초기화하려면 `preset:default`를 지정하세요.",
@@ -940,7 +923,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "이 서버의 허용 목록에서 `%[1]s` 소스 `%[2]s`를 제거했습니다.",
 		uiKeyNoAllowedSources:        "이 서버에는 허용된 bot 또는 webhook 소스가 없습니다.",
 		uiKeyAllowedSourcesHeader:    "허용된 메시지 소스 (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(나머지 소스 생략)",
 
 		uiKeyForumTagMapHeader:         "태그 매핑: <#%[1]s> ↔ <#%[2]s>\n현재 매핑:",
 		uiKeyForumTagMapNone:           "(없음)",
@@ -1063,7 +1045,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Aucun groupe de traduction n'est enregistré sur ce serveur.",
 		uiKeyGroupsHeader:    "Groupes de traduction (%[1]d) :",
-		uiKeyGroupsTruncated: "\n(groupes restants omis)",
 		uiKeyGroupNoChannels: "  (aucun salon)",
 
 		uiKeyGlossaryTermRequired:   "Indiquez à la fois un terme et une traduction.",
@@ -1077,7 +1058,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Le terme `%[1]s` n'est pas enregistré.",
 		uiKeyNoGlossary:             "Aucune entrée de glossaire n'est enregistrée sur ce serveur.",
 		uiKeyGlossaryHeader:         "Glossaire (%[1]d) :",
-		uiKeyGlossaryTruncated:      "\n(entrées restantes omises)",
 
 		uiKeyStyleBothSpecified: "Vous ne pouvez pas indiquer à la fois un préréglage et une instruction personnalisée. N'en indiquez qu'un seul.",
 		uiKeyStyleNoneSpecified: "Indiquez un préréglage ou une instruction personnalisée. Pour réinitialiser le style, indiquez `preset:default`.",
@@ -1098,7 +1078,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "La source `%[1]s` `%[2]s` a été retirée de la liste d’autorisation de ce serveur.",
 		uiKeyNoAllowedSources:        "Aucune source bot ou webhook n’est autorisée sur ce serveur.",
 		uiKeyAllowedSourcesHeader:    "Sources de messages autorisées (%[1]d) :",
-		uiKeyAllowedSourcesTruncated: "\n(sources restantes omises)",
 
 		uiKeyForumTagMapHeader:         "Correspondance des tags : <#%[1]s> ↔ <#%[2]s>\nCorrespondances actuelles :",
 		uiKeyForumTagMapNone:           "(aucune)",
@@ -1221,7 +1200,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Auf diesem Server sind keine Übersetzungsgruppen registriert.",
 		uiKeyGroupsHeader:    "Übersetzungsgruppen (%[1]d):",
-		uiKeyGroupsTruncated: "\n(weitere Gruppen ausgelassen)",
 		uiKeyGroupNoChannels: "  (keine Kanäle)",
 
 		uiKeyGlossaryTermRequired:   "Gib sowohl einen Begriff als auch eine Übersetzung an.",
@@ -1235,7 +1213,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Der Begriff `%[1]s` ist nicht registriert.",
 		uiKeyNoGlossary:             "Auf diesem Server sind keine Glossareinträge registriert.",
 		uiKeyGlossaryHeader:         "Glossar (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(weitere Einträge ausgelassen)",
 
 		uiKeyStyleBothSpecified: "Du kannst nicht gleichzeitig ein Preset und eine benutzerdefinierte Anweisung angeben. Gib nur eines an.",
 		uiKeyStyleNoneSpecified: "Gib entweder ein Preset oder eine benutzerdefinierte Anweisung an. Um den Stil zurückzusetzen, gib `preset:default` an.",
@@ -1256,7 +1233,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "Die `%[1]s`-Quelle `%[2]s` wurde aus der Erlaubnisliste dieses Servers entfernt.",
 		uiKeyNoAllowedSources:        "Auf diesem Server sind keine Bot- oder Webhook-Quellen erlaubt.",
 		uiKeyAllowedSourcesHeader:    "Erlaubte Nachrichtenquellen (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(weitere Quellen ausgelassen)",
 
 		uiKeyForumTagMapHeader:         "Tag-Zuordnung: <#%[1]s> ↔ <#%[2]s>\nAktuelle Zuordnungen:",
 		uiKeyForumTagMapNone:           "(keine)",
@@ -1379,7 +1355,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "No hay grupos de traducción registrados en este servidor.",
 		uiKeyGroupsHeader:    "Grupos de traducción (%[1]d):",
-		uiKeyGroupsTruncated: "\n(se omitieron los grupos restantes)",
 		uiKeyGroupNoChannels: "  (sin canales)",
 
 		uiKeyGlossaryTermRequired:   "Especifica tanto el término como la traducción.",
@@ -1393,7 +1368,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "El término `%[1]s` no está registrado.",
 		uiKeyNoGlossary:             "No hay entradas de glosario registradas en este servidor.",
 		uiKeyGlossaryHeader:         "Glosario (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(se omitieron las entradas restantes)",
 
 		uiKeyStyleBothSpecified: "No puedes especificar un preajuste y una instrucción personalizada a la vez. Especifica solo uno.",
 		uiKeyStyleNoneSpecified: "Especifica un preajuste o una instrucción personalizada. Para restablecer el estilo, especifica `preset:default`.",
@@ -1414,7 +1388,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "Se eliminó el origen `%[1]s` `%[2]s` de la lista de permitidos de este servidor.",
 		uiKeyNoAllowedSources:        "No hay orígenes bot o webhook permitidos en este servidor.",
 		uiKeyAllowedSourcesHeader:    "Orígenes de mensajes permitidos (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(se omitieron los orígenes restantes)",
 
 		uiKeyForumTagMapHeader:         "Mapeo de etiquetas: <#%[1]s> ↔ <#%[2]s>\nMapeos actuales:",
 		uiKeyForumTagMapNone:           "(ninguno)",
@@ -1537,7 +1510,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Nenhum grupo de tradução está registrado neste servidor.",
 		uiKeyGroupsHeader:    "Grupos de tradução (%[1]d):",
-		uiKeyGroupsTruncated: "\n(grupos restantes omitidos)",
 		uiKeyGroupNoChannels: "  (sem canais)",
 
 		uiKeyGlossaryTermRequired:   "Especifique o termo e a tradução.",
@@ -1551,7 +1523,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "O termo `%[1]s` não está registrado.",
 		uiKeyNoGlossary:             "Nenhuma entrada de glossário está registrada neste servidor.",
 		uiKeyGlossaryHeader:         "Glossário (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(entradas restantes omitidas)",
 
 		uiKeyStyleBothSpecified: "Você não pode especificar um preset e uma instrução personalizada ao mesmo tempo. Especifique apenas um.",
 		uiKeyStyleNoneSpecified: "Especifique um preset ou uma instrução personalizada. Para redefinir o estilo, especifique `preset:default`.",
@@ -1572,7 +1543,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "A origem `%[1]s` `%[2]s` foi removida da lista de permissões deste servidor.",
 		uiKeyNoAllowedSources:        "Nenhuma origem bot ou webhook é permitida neste servidor.",
 		uiKeyAllowedSourcesHeader:    "Origens de mensagens permitidas (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(demais origens omitidas)",
 
 		uiKeyForumTagMapHeader:         "Mapeamento de tags: <#%[1]s> ↔ <#%[2]s>\nMapeamentos atuais:",
 		uiKeyForumTagMapNone:           "(nenhum)",
@@ -1695,7 +1665,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Nessun gruppo di traduzione è registrato in questo server.",
 		uiKeyGroupsHeader:    "Gruppi di traduzione (%[1]d):",
-		uiKeyGroupsTruncated: "\n(gruppi rimanenti omessi)",
 		uiKeyGroupNoChannels: "  (nessun canale)",
 
 		uiKeyGlossaryTermRequired:   "Specifica sia il termine sia la traduzione.",
@@ -1709,7 +1678,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Il termine `%[1]s` non è registrato.",
 		uiKeyNoGlossary:             "Nessuna voce di glossario è registrata in questo server.",
 		uiKeyGlossaryHeader:         "Glossario (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(voci rimanenti omesse)",
 
 		uiKeyStyleBothSpecified: "Non puoi specificare sia un preset sia un'istruzione personalizzata. Specificane solo uno.",
 		uiKeyStyleNoneSpecified: "Specifica un preset o un'istruzione personalizzata. Per reimpostare lo stile, specifica `preset:default`.",
@@ -1730,7 +1698,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "L’origine `%[1]s` `%[2]s` è stata rimossa dall’elenco consentiti di questo server.",
 		uiKeyNoAllowedSources:        "Nessuna origine bot o webhook è consentita in questo server.",
 		uiKeyAllowedSourcesHeader:    "Origini messaggio consentite (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(altre origini omesse)",
 
 		uiKeyForumTagMapHeader:         "Mappatura dei tag: <#%[1]s> ↔ <#%[2]s>\nMappature attuali:",
 		uiKeyForumTagMapNone:           "(nessuna)",
@@ -1853,7 +1820,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Tidak ada grup terjemahan yang terdaftar di server ini.",
 		uiKeyGroupsHeader:    "Grup terjemahan (%[1]d):",
-		uiKeyGroupsTruncated: "\n(grup lainnya dihilangkan)",
 		uiKeyGroupNoChannels: "  (tidak ada channel)",
 
 		uiKeyGlossaryTermRequired:   "Tentukan istilah dan terjemahannya.",
@@ -1867,7 +1833,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Istilah `%[1]s` tidak terdaftar.",
 		uiKeyNoGlossary:             "Tidak ada entri glosarium yang terdaftar di server ini.",
 		uiKeyGlossaryHeader:         "Glosarium (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(entri lainnya dihilangkan)",
 
 		uiKeyStyleBothSpecified: "Anda tidak dapat menentukan preset dan instruksi kustom sekaligus. Tentukan salah satu saja.",
 		uiKeyStyleNoneSpecified: "Tentukan preset atau instruksi kustom. Untuk mengatur ulang gaya, tentukan `preset:default`.",
@@ -1888,7 +1853,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "Sumber `%[1]s` `%[2]s` telah dihapus dari daftar izin server ini.",
 		uiKeyNoAllowedSources:        "Tidak ada sumber bot atau webhook yang diizinkan di server ini.",
 		uiKeyAllowedSourcesHeader:    "Sumber pesan yang diizinkan (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(sumber lainnya dihilangkan)",
 
 		uiKeyForumTagMapHeader:         "Pemetaan tag: <#%[1]s> ↔ <#%[2]s>\nPemetaan saat ini:",
 		uiKeyForumTagMapNone:           "(tidak ada)",
@@ -2011,7 +1975,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "ไม่มีกลุ่มการแปลที่ลงทะเบียนในเซิร์ฟเวอร์นี้",
 		uiKeyGroupsHeader:    "กลุ่มการแปล (%[1]d):",
-		uiKeyGroupsTruncated: "\n(ละกลุ่มที่เหลือ)",
 		uiKeyGroupNoChannels: "  (ไม่มีช่อง)",
 
 		uiKeyGlossaryTermRequired:   "โปรดระบุทั้งคำศัพท์และคำแปล",
@@ -2025,7 +1988,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "คำศัพท์ `%[1]s` ยังไม่ได้ลงทะเบียน",
 		uiKeyNoGlossary:             "ไม่มีรายการอภิธานศัพท์ที่ลงทะเบียนในเซิร์ฟเวอร์นี้",
 		uiKeyGlossaryHeader:         "อภิธานศัพท์ (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(ละรายการที่เหลือ)",
 
 		uiKeyStyleBothSpecified: "ไม่สามารถระบุพรีเซ็ตและคำสั่งกำหนดเองพร้อมกันได้ โปรดระบุเพียงอย่างใดอย่างหนึ่ง",
 		uiKeyStyleNoneSpecified: "โปรดระบุพรีเซ็ตหรือคำสั่งกำหนดเอง หากต้องการรีเซ็ตสไตล์ ให้ระบุ `preset:default`",
@@ -2046,7 +2008,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "นำแหล่งที่มา `%[1]s` `%[2]s` ออกจากรายการอนุญาตของเซิร์ฟเวอร์นี้แล้ว",
 		uiKeyNoAllowedSources:        "ไม่มีแหล่งที่มา bot หรือ webhook ที่ได้รับอนุญาตในเซิร์ฟเวอร์นี้",
 		uiKeyAllowedSourcesHeader:    "แหล่งที่มาของข้อความที่อนุญาต (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(ละแหล่งที่มาที่เหลือ)",
 
 		uiKeyForumTagMapHeader:         "การจับคู่แท็ก: <#%[1]s> ↔ <#%[2]s>\nการจับคู่ปัจจุบัน:",
 		uiKeyForumTagMapNone:           "(ไม่มี)",
@@ -2169,7 +2130,6 @@ var uiStrings = map[string]map[uiKey]string{
 
 		uiKeyNoGroups:        "Máy chủ này chưa đăng ký nhóm dịch nào.",
 		uiKeyGroupsHeader:    "Nhóm dịch (%[1]d):",
-		uiKeyGroupsTruncated: "\n(đã lược bỏ các nhóm còn lại)",
 		uiKeyGroupNoChannels: "  (không có kênh)",
 
 		uiKeyGlossaryTermRequired:   "Hãy chỉ định cả thuật ngữ và bản dịch.",
@@ -2183,7 +2143,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeyGlossaryNotFound:       "Thuật ngữ `%[1]s` chưa được đăng ký.",
 		uiKeyNoGlossary:             "Máy chủ này chưa đăng ký mục thuật ngữ nào.",
 		uiKeyGlossaryHeader:         "Bảng thuật ngữ (%[1]d):",
-		uiKeyGlossaryTruncated:      "\n(đã lược bỏ các mục còn lại)",
 
 		uiKeyStyleBothSpecified: "Không thể chỉ định đồng thời preset và hướng dẫn tùy chỉnh. Hãy chỉ định một trong hai.",
 		uiKeyStyleNoneSpecified: "Hãy chỉ định preset hoặc hướng dẫn tùy chỉnh. Để đặt lại kiểu, hãy chỉ định `preset:default`.",
@@ -2204,7 +2163,6 @@ var uiStrings = map[string]map[uiKey]string{
 		uiKeySourceRemoved:           "Đã xóa nguồn `%[1]s` `%[2]s` khỏi danh sách cho phép của máy chủ này.",
 		uiKeyNoAllowedSources:        "Không có nguồn bot hoặc webhook nào được cho phép trong máy chủ này.",
 		uiKeyAllowedSourcesHeader:    "Nguồn tin nhắn được cho phép (%[1]d):",
-		uiKeyAllowedSourcesTruncated: "\n(đã lược bỏ các nguồn còn lại)",
 
 		uiKeyForumTagMapHeader:         "Ánh xạ thẻ: <#%[1]s> ↔ <#%[2]s>\nÁnh xạ hiện tại:",
 		uiKeyForumTagMapNone:           "(không có)",

@@ -200,11 +200,19 @@ func (s *Store) GroupExists(ctx context.Context, guildID, groupID string) (bool,
 	return true, nil
 }
 
+// Groups lists the groups matching query. A limit of zero or less returns
+// every match.
 func (s *Store) Groups(ctx context.Context, guildID, query string, limit int) ([]TranslationGroup, error) {
 	q := "%" + strings.ToLower(query) + "%"
-	rows, err := s.db.QueryContext(ctx, `SELECT id,guild_id,display_name,created_by,created_at,style_preset,style_custom FROM translation_groups
+	statement := `SELECT id,guild_id,display_name,created_by,created_at,style_preset,style_custom FROM translation_groups
 		WHERE guild_id=? AND (lower(id) LIKE ? OR lower(display_name) LIKE ?)
-		ORDER BY display_name LIMIT ?`, guildID, q, q, limit)
+		ORDER BY display_name`
+	args := []any{guildID, q, q}
+	if limit > 0 {
+		statement += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, err
 	}

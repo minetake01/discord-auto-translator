@@ -23,6 +23,10 @@ func captureResponses(handler *CommandHandler) *[]string {
 	handler.respond = func(_ *discordgo.Session, _ *discordgo.InteractionCreate, msg string, _ bool) {
 		*responses = append(*responses, msg)
 	}
+	handler.followUp = func(_ *discordgo.Session, _ *discordgo.InteractionCreate, msg string, _ bool) error {
+		*responses = append(*responses, msg)
+		return nil
+	}
 	return responses
 }
 
@@ -288,7 +292,7 @@ func TestHandleCommandRespondsInInteractionLocale(t *testing.T) {
 	}
 }
 
-func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
+func TestHandleListGlossarySplitsAllEntriesAcrossResponses(t *testing.T) {
 	store := newTestStore(t)
 	handler := NewCommandHandler(store, &fakeDiscordAPI{})
 	ctx := context.Background()
@@ -301,15 +305,19 @@ func TestHandleListGlossaryTruncatesAtDiscordLimit(t *testing.T) {
 
 	responses := captureResponses(handler)
 	handler.Handle(nil, slashCommandInteraction("g1", "list-glossary", nil))
-	if len(*responses) != 1 {
-		t.Fatalf("responses = %#v", *responses)
+	if len(*responses) < 2 {
+		t.Fatalf("responses = %#v, want the list split", *responses)
 	}
-	response := (*responses)[0]
-	if len(response) > discordMessageContentLimit {
-		t.Fatalf("response length = %d", len(response))
+	for i, response := range *responses {
+		if discordContentLength(response) > discordMessageContentLimit {
+			t.Fatalf("response %d has %d units", i, discordContentLength(response))
+		}
 	}
-	if !strings.Contains(response, localizedUIString("en", uiKeyGlossaryTruncated)) {
-		t.Fatalf("response was not marked truncated: %q", response)
+	all := strings.Join(*responses, "\n")
+	for n := range glossaryMaxEntries {
+		if term := fmt.Sprintf("term-%02d", n); !strings.Contains(all, term) {
+			t.Fatalf("entry %q was omitted", term)
+		}
 	}
 }
 
