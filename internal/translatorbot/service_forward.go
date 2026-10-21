@@ -63,14 +63,16 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 			body := forwarded.Content
 			needsAssets := mirrorChannelID == forwarded.ChannelID && mirrorMessageID == forwarded.MessageID
 			if mirrorChannelID != forwarded.ChannelID || mirrorMessageID != forwarded.MessageID {
-				fetched, fetchErr := s.discord.Message(mirrorChannelID, mirrorMessageID)
+				fullBody, fetchErr := s.mirrorMessageText(ctx, mirrorChannelID, mirrorMessageID)
 				if fetchErr != nil {
 					return nil, nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, fetchErr)
 				}
-				body = fetched.Content
+				body = fullBody
+			} else {
+				body = mirroredMessageBody(body)
 			}
 			prepared[dest.targetID] = forwardedTargetContent{
-				body: mirroredMessageBody(body), jumpURL: MessageJumpURL(m.GuildID, mirrorChannelID, mirrorMessageID),
+				body: body, jumpURL: MessageJumpURL(m.GuildID, mirrorChannelID, mirrorMessageID),
 				needsAssets: needsAssets,
 			}
 			continue

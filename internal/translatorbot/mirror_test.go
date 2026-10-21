@@ -583,10 +583,16 @@ func TestMessageContentRejectsInvalidAttachmentURL(t *testing.T) {
 	}
 }
 
-func TestMessageContentRejectsDiscordContentLimit(t *testing.T) {
-	_, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.zip", ContentType: "application/zip"}}, nil)
-	if err == nil || !strings.Contains(err.Error(), "Discord limit") {
-		t.Fatalf("got %v", err)
+func TestMessageContentAllowsTextOverTheDiscordLimit(t *testing.T) {
+	content, err := messageContentWithAssetURLs(strings.Repeat("a", discordMessageContentLimit), []DiscordAttachment{{URL: "https://cdn.discordapp.com/attachments/1/2/a.zip", ContentType: "application/zip"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(content, "\nhttps://cdn.discordapp.com/attachments/1/2/a.zip") {
+		t.Fatalf("asset URL missing from content: %q", content)
+	}
+	if discordContentLength(content) <= discordMessageContentLimit {
+		t.Fatalf("fixture should exceed the Discord limit: %d", discordContentLength(content))
 	}
 }
 

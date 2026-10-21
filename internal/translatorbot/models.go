@@ -33,17 +33,26 @@ type GroupChannel struct {
 }
 
 // MessageLink is one mirrored copy of a source message (message_links row).
+// TargetMessageID is the first message of the copy; ContinuationMessageIDs
+// holds the messages that carry the rest of a copy too long for one Discord
+// message, in order.
 type MessageLink struct {
 	SourceMessageID         string
 	SourceChannelID         string
 	GroupID                 string
 	TargetChannelID         string
 	TargetMessageID         string
+	ContinuationMessageIDs  []string
 	TargetLanguage          string
 	SourceAuthorID          string
 	SourceAuthorDisplayName string
-	SourceContentSnapshot   string
-	SourceImageAttachments  []DiscordAttachment
+	// SourceAuthorAvatarURL and SourceAuthorRoleColor keep the webhook identity
+	// a mirror was posted under, so growing it on an edit can post the new
+	// parts under the same name and avatar.
+	SourceAuthorAvatarURL  string
+	SourceAuthorRoleColor  int
+	SourceContentSnapshot  string
+	SourceImageAttachments []DiscordAttachment
 	// TimestampLine marks a backfilled mirror whose first line shows the
 	// source posting time; edits rebuild it.
 	TimestampLine bool

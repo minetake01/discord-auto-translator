@@ -59,12 +59,12 @@ func (b *backfillRetrier) active(ctx context.Context) error {
 }
 
 // isPermanentBackfillError reports failures that retrying the same message
-// cannot fix: an unusable translation, text over the Discord limit, or a
-// Discord rejection the API layer's transient retry does not cover. A Discord
-// REST error is either retryable or permanent, so permanence is the
-// complement of isDiscordRetryable and the two tables cannot drift apart.
+// cannot fix: an unusable translation or a Discord rejection the API layer's
+// transient retry does not cover. A Discord REST error is either retryable or
+// permanent, so permanence is the complement of isDiscordRetryable and the two
+// tables cannot drift apart.
 func isPermanentBackfillError(err error) bool {
-	if errors.Is(err, errTranslationContent) || errors.Is(err, errContentTooLong) {
+	if errors.Is(err, errTranslationContent) {
 		return true
 	}
 	if _, ok := discordRESTError(err); ok {

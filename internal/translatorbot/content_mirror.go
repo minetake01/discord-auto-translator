@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 // timestampLinePattern matches the subtext line that backfilled mirrors start
@@ -29,23 +28,20 @@ func withTimestampLine(sourceMessageID, content string) (string, error) {
 	return line + "\n" + content, nil
 }
 
-// mirrorText is a mirror body that already carries its timestamp line and fits
-// the Discord content limit. Only content assembly produces it, and sends and
-// edits accept nothing else, so a new path cannot skip the final step.
+// mirrorText is a mirror body that already carries its timestamp line. Only
+// content assembly produces it, and sends and edits accept nothing else, so a
+// new path cannot skip the final step. Sends and edits split it into as many
+// messages as the Discord content limit needs.
 type mirrorText string
 
 // finishMirrorContent turns an assembled mirror body into its final form: the
-// timestamp line when the mirror shows the source posting time, then the
-// Discord content limit on the complete text.
+// timestamp line when the mirror shows the source posting time.
 func finishMirrorContent(sourceMessageID, content string, timestamp bool) (mirrorText, error) {
 	if timestamp {
 		var err error
 		if content, err = withTimestampLine(sourceMessageID, content); err != nil {
 			return "", err
 		}
-	}
-	if n := utf8.RuneCountInString(content); n > discordMessageContentLimit {
-		return "", fmt.Errorf("%w: %d characters, limit %d", errContentTooLong, n, discordMessageContentLimit)
 	}
 	return mirrorText(content), nil
 }

@@ -41,6 +41,40 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	}
 }
 
+func TestForwardReusesEveryPartOfALongMirror(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "700000000000000012", TargetLanguage: "en",
+		ContinuationMessageIDs: []string{"700000000000000013"},
+		SourceContentSnapshot:  "元本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discord := &fakeDiscordAPI{messageContents: map[string]string{
+		"en\x00700000000000000012": "> old quote · [Source](https://discord.com/channels/guild/ja/old)\n\nTranslated first part",
+		"en\x00700000000000000013": "Translated second part",
+	}}
+	translator := &echoTranslator{}
+	service := NewService(store, discord, translator)
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000003", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "-# Forwarded · https://discord.com/channels/guild/en/700000000000000012\nTranslated first part\nTranslated second part"
+	if len(discord.sent) != 1 || discord.sent[0].Content != want {
+		t.Fatalf("got %#v, want %q", discord.sent, want)
+	}
+	if len(translator.contexts) != 0 {
+		t.Fatalf("reused forward was translated: %#v", translator.contexts)
+	}
+}
+
 func TestForwardTranslatesUnmanagedSnapshotAndIncludesAssets(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

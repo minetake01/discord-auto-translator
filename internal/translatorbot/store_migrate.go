@@ -21,6 +21,7 @@ var schemaMigrations = []schemaMigration{
 	migrateBackfillSchema,
 	migrateDropProcessedEvents,
 	migrateResetPollCacheSeconds,
+	migrateMirrorParts,
 }
 
 func currentSchemaVersion() int { return len(schemaMigrations) }
@@ -433,4 +434,26 @@ func migrateDropProcessedEvents(ctx context.Context, tx *sql.Tx) error {
 // being rescaled.
 func migrateResetPollCacheSeconds(ctx context.Context, tx *sql.Tx) error {
 	return execAll(ctx, tx, `DELETE FROM poll_translation_cache`)
+}
+
+// migrateMirrorParts adds the messages that continue a mirror too long for one
+// Discord message, and the author identity needed to post more of them when an
+// edit grows the mirror.
+func migrateMirrorParts(ctx context.Context, tx *sql.Tx) error {
+	return execAll(ctx, tx,
+		`CREATE TABLE message_link_parts (
+			source_message_id INTEGER NOT NULL,
+			source_channel_id TEXT NOT NULL,
+			target_channel_id TEXT NOT NULL,
+			position INTEGER NOT NULL,
+			message_id INTEGER NOT NULL,
+			PRIMARY KEY (source_message_id, source_channel_id, target_channel_id, position),
+			UNIQUE (message_id),
+			FOREIGN KEY (source_message_id, source_channel_id, target_channel_id)
+				REFERENCES message_links(source_message_id, source_channel_id, target_channel_id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX idx_message_link_parts_target ON message_link_parts(target_channel_id, message_id)`,
+		`ALTER TABLE message_links ADD COLUMN source_author_avatar_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE message_links ADD COLUMN source_author_role_color INTEGER NOT NULL DEFAULT 0`,
+	)
 }

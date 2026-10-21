@@ -162,9 +162,20 @@ func (s *Service) sendWebhookMessage(target GroupChannel, send WebhookSend) (Web
 }
 
 func (s *Service) editWebhookMessage(_ context.Context, target GroupChannel, link MessageLink, content mirrorText) error {
+	return s.editWebhookMessageAt(target, link, link.TargetMessageID, string(content))
+}
+
+func (s *Service) editWebhookMessageAt(target GroupChannel, link MessageLink, messageID, content string) error {
 	threadID := threadIDForWebhook(link, &target)
 	return s.withOpenThread(link.TargetChannelID, restoreThreadFully, func() error {
-		return s.discord.EditWebhook(target.WebhookID, target.WebhookToken, link.TargetMessageID, threadID, string(content))
+		return s.discord.EditWebhook(target.WebhookID, target.WebhookToken, messageID, threadID, content)
+	})
+}
+
+func (s *Service) deleteWebhookMessageAt(target GroupChannel, link MessageLink, messageID string) error {
+	threadID := threadIDForWebhook(link, &target)
+	return s.withOpenThread(link.TargetChannelID, restoreThreadFully, func() error {
+		return s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, messageID, threadID)
 	})
 }
 

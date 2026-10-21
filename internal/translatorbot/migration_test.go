@@ -67,6 +67,23 @@ func TestOpenStoreMigratesLegacyDatabaseKeepingDataAndBackup(t *testing.T) {
 	if original, ok, err := s.MessageOriginal(ctx, "en", "100000000000000002"); err != nil || !ok || original.SourceMessageID != "100000000000000001" {
 		t.Fatalf("original = %#v ok=%v err=%v", original, ok, err)
 	}
+	// The mirror-parts columns and table exist after the upgrade.
+	if err := s.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000004", TargetLanguage: "en",
+		ContinuationMessageIDs: []string{"100000000000000005"},
+		SourceAuthorID:         "u", SourceAuthorAvatarURL: "https://example.com/avatar.png", SourceAuthorRoleColor: 1,
+		SourceContentSnapshot: "long",
+	}); err != nil {
+		t.Fatalf("save mirror with continuations: %v", err)
+	}
+	split, err := s.MessageTargets(ctx, "ja", "100000000000000003")
+	if err != nil || len(split) != 1 || len(split[0].ContinuationMessageIDs) != 1 || split[0].ContinuationMessageIDs[0] != "100000000000000005" {
+		t.Fatalf("continuations after migration = %#v err=%v", split, err)
+	}
+	if original, ok, err := s.MessageOriginal(ctx, "en", "100000000000000005"); err != nil || !ok || original.SourceMessageID != "100000000000000003" {
+		t.Fatalf("original from migrated continuation = %#v ok=%v err=%v", original, ok, err)
+	}
 	var processedEvents int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='processed_events'`).Scan(&processedEvents); err != nil || processedEvents != 0 {
 		t.Fatalf("processed_events tables = %d err=%v", processedEvents, err)

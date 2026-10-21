@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
 
-const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_content_snapshot,source_image_attachments,timestamp_line`
+const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_author_avatar_url,source_author_role_color,source_content_snapshot,source_image_attachments,timestamp_line`
 
 // messageLinkColumnsML is messageLinkColumns qualified with the ml alias,
 // for lookups that join message_references over the shared source columns.
@@ -53,8 +54,11 @@ func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageR
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, targetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceContentSnapshot, imagesJSON, l.TimestampLine); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, targetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceAuthorAvatarURL, l.SourceAuthorRoleColor, l.SourceContentSnapshot, imagesJSON, l.TimestampLine); err != nil {
+		return err
+	}
+	if err := replaceMessageLinkParts(ctx, tx, sourceMessageID, l.SourceChannelID, l.TargetChannelID, l.ContinuationMessageIDs); err != nil {
 		return err
 	}
 	if ref.MessageID != "" {
@@ -114,12 +118,14 @@ func (s *Store) DeleteMessageData(ctx context.Context, sourceChannelID, sourceMe
 		return err
 	}
 	for _, copy := range copies {
-		copyMessageID, err := parseDiscordSnowflakeID("target_message_id", copy.TargetMessageID)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE referenced_channel_id=? AND referenced_message_id=?`, copy.TargetChannelID, copyMessageID); err != nil {
-			return err
+		for i, messageID := range append([]string{copy.TargetMessageID}, copy.ContinuationMessageIDs...) {
+			copyMessageID, err := parseDiscordSnowflakeID(fmt.Sprintf("target_message_id[%d]", i), messageID)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM message_references WHERE referenced_channel_id=? AND referenced_message_id=?`, copy.TargetChannelID, copyMessageID); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit()
@@ -149,7 +155,14 @@ func (s *Store) MessageTargets(ctx context.Context, sourceChannelID, sourceMessa
 	if err != nil {
 		return nil, err
 	}
-	return scanMessageLinks(rows)
+	links, err := scanMessageLinks(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachMessageLinkParts(ctx, links); err != nil {
+		return nil, err
+	}
+	return links, nil
 }
 
 func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelID, referencedMessageID string) ([]MessageLink, error) {
@@ -164,10 +177,24 @@ func (s *Store) MessageTargetsReplyingTo(ctx context.Context, referencedChannelI
 	if err != nil {
 		return nil, err
 	}
-	return scanMessageLinks(rows)
+	links, err := scanMessageLinks(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.attachMessageLinkParts(ctx, links); err != nil {
+		return nil, err
+	}
+	return links, nil
 }
 
 func (s *Store) MessagePeers(ctx context.Context, channelID, messageID string) ([]MessageLink, error) {
+	// A continuation part stands for the mirror its first message starts; ask
+	// for the peers of that message instead.
+	if link, found, err := s.messageLinkForPart(ctx, channelID, messageID); err != nil {
+		return nil, err
+	} else if found {
+		channelID, messageID = link.TargetChannelID, link.TargetMessageID
+	}
 	peers, err := s.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
 		return nil, err
@@ -223,9 +250,11 @@ type MessageOriginalResult struct {
 }
 
 func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string) (MessageOriginalResult, bool, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
-	link, err := scanMessageLink(row)
-	if err == nil {
+	link, found, err := s.messageLinkByTarget(ctx, channelID, messageID)
+	if err != nil {
+		return MessageOriginalResult{}, false, err
+	}
+	if found {
 		return MessageOriginalResult{
 			SourceChannelID:         link.SourceChannelID,
 			SourceMessageID:         link.SourceMessageID,
@@ -235,9 +264,6 @@ func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string
 			TargetLanguage:          link.TargetLanguage,
 			IsSource:                false,
 		}, true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return MessageOriginalResult{}, false, err
 	}
 
 	links, err := s.MessageTargets(ctx, channelID, messageID)
@@ -276,13 +302,12 @@ func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, ta
 		return source, source.SourceChannelID, source.SourceMessageID, true, nil
 	}
 
-	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageID)
-	link, err := scanMessageLink(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return MessageLink{}, "", "", false, nil
-	}
+	link, found, err := s.messageLinkByTarget(ctx, channelID, messageID)
 	if err != nil {
 		return MessageLink{}, "", "", false, err
+	}
+	if !found {
+		return MessageLink{}, "", "", false, nil
 	}
 	if link.TargetChannelID == targetChannelID {
 		return link, link.TargetChannelID, link.TargetMessageID, true, nil
@@ -360,7 +385,7 @@ type messageLinkScanner interface {
 func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
 	var l MessageLink
 	var imagesJSON string
-	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceContentSnapshot, &imagesJSON, &l.TimestampLine); err != nil {
+	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceAuthorAvatarURL, &l.SourceAuthorRoleColor, &l.SourceContentSnapshot, &imagesJSON, &l.TimestampLine); err != nil {
 		return MessageLink{}, err
 	}
 	images, err := unmarshalImageAttachments(imagesJSON)
@@ -369,6 +394,133 @@ func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
 	}
 	l.SourceImageAttachments = images
 	return l, nil
+}
+
+// UpdateMessageLinkContinuations replaces the continuation messages of a
+// mirror after an edit added or removed parts.
+func (s *Store) UpdateMessageLinkContinuations(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string, messageIDs []string) error {
+	sourceID, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := replaceMessageLinkParts(ctx, tx, sourceID, sourceChannelID, targetChannelID, messageIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func replaceMessageLinkParts(ctx context.Context, x execer, sourceMessageID int64, sourceChannelID, targetChannelID string, messageIDs []string) error {
+	if _, err := x.ExecContext(ctx, `DELETE FROM message_link_parts WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=?`,
+		sourceChannelID, sourceMessageID, targetChannelID); err != nil {
+		return err
+	}
+	for i, messageID := range messageIDs {
+		partID, err := parseDiscordSnowflakeID(fmt.Sprintf("continuation_message_id[%d]", i), messageID)
+		if err != nil {
+			return err
+		}
+		if _, err := x.ExecContext(ctx, `INSERT INTO message_link_parts(source_message_id,source_channel_id,target_channel_id,position,message_id) VALUES(?,?,?,?,?)`,
+			sourceMessageID, sourceChannelID, targetChannelID, i+1, partID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// attachMessageLinkParts loads the continuation messages of every link.
+func (s *Store) attachMessageLinkParts(ctx context.Context, links []MessageLink) error {
+	for i := range links {
+		messageIDs, err := s.messageLinkParts(ctx, links[i].SourceChannelID, links[i].SourceMessageID, links[i].TargetChannelID)
+		if err != nil {
+			return err
+		}
+		links[i].ContinuationMessageIDs = messageIDs
+	}
+	return nil
+}
+
+func (s *Store) messageLinkParts(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string) ([]string, error) {
+	sourceID, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT CAST(message_id AS TEXT) FROM message_link_parts WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=? ORDER BY position`,
+		sourceChannelID, sourceID, targetChannelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var messageIDs []string
+	for rows.Next() {
+		var messageID string
+		if err := rows.Scan(&messageID); err != nil {
+			return nil, err
+		}
+		messageIDs = append(messageIDs, messageID)
+	}
+	return messageIDs, rows.Err()
+}
+
+// messageLinkForPart resolves a message posted as a continuation part to the
+// mirror it belongs to.
+func (s *Store) messageLinkForPart(ctx context.Context, channelID, messageID string) (MessageLink, bool, error) {
+	messageIDValue, err := parseDiscordSnowflakeID("target_message_id", messageID)
+	if err != nil {
+		return MessageLink{}, false, err
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumnsML+`
+		FROM message_link_parts p
+		JOIN message_links ml ON ml.source_channel_id=p.source_channel_id
+			AND ml.source_message_id=p.source_message_id
+			AND ml.target_channel_id=p.target_channel_id
+		WHERE p.target_channel_id=? AND p.message_id=?`, channelID, messageIDValue)
+	link, err := scanMessageLink(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return MessageLink{}, false, nil
+	}
+	if err != nil {
+		return MessageLink{}, false, err
+	}
+	messageIDs, err := s.messageLinkParts(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID)
+	if err != nil {
+		return MessageLink{}, false, err
+	}
+	link.ContinuationMessageIDs = messageIDs
+	return link, true, nil
+}
+
+// MessageLinkForTarget resolves a message posted by the bot to the mirror it
+// belongs to, whether it is the mirror's first message or a continuation.
+func (s *Store) MessageLinkForTarget(ctx context.Context, channelID, messageID string) (MessageLink, bool, error) {
+	return s.messageLinkByTarget(ctx, channelID, messageID)
+}
+
+// messageLinkByTarget resolves a message posted by the bot to the mirror it
+// belongs to, whether it is the mirror's first message or a continuation.
+func (s *Store) messageLinkByTarget(ctx context.Context, channelID, messageID string) (MessageLink, bool, error) {
+	messageIDValue, err := parseDiscordSnowflakeID("target_message_id", messageID)
+	if err != nil {
+		return MessageLink{}, false, err
+	}
+	row := s.db.QueryRowContext(ctx, `SELECT `+messageLinkColumns+` FROM message_links WHERE target_channel_id=? AND target_message_id=? LIMIT 1`, channelID, messageIDValue)
+	link, err := scanMessageLink(row)
+	if err == nil {
+		messageIDs, err := s.messageLinkParts(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID)
+		if err != nil {
+			return MessageLink{}, false, err
+		}
+		link.ContinuationMessageIDs = messageIDs
+		return link, true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return MessageLink{}, false, err
+	}
+	return s.messageLinkForPart(ctx, channelID, messageID)
 }
 
 func (s *Store) GetPinState(ctx context.Context, channelID, messageID string) (pinned bool, known bool, err error) {
@@ -423,6 +575,9 @@ func (s *Store) PurgeMessageLinksTranslatedBefore(ctx context.Context, cutoff ti
 		SELECT 1 FROM message_links ml
 		WHERE (ml.source_channel_id=pin_states.channel_id AND ml.source_message_id=pin_states.message_id)
 			OR (ml.target_channel_id=pin_states.channel_id AND ml.target_message_id=pin_states.message_id)
+	) AND NOT EXISTS (
+		SELECT 1 FROM message_link_parts p
+		WHERE p.target_channel_id=pin_states.channel_id AND p.message_id=pin_states.message_id
 	)`); err != nil {
 		return 0, err
 	}

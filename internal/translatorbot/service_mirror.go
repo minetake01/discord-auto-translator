@@ -2,20 +2,106 @@ package translatorbot
 
 import "context"
 
-// sendAndSaveLink posts a webhook message and persists its link. When the
-// link cannot be saved, the just-posted message is deleted as compensation.
-// ref may be zero when the source message is not a reply.
+// sendAndSaveLink posts a webhook message and persists its link. A body longer
+// than the Discord content limit becomes one primary message followed by
+// continuation messages under the same webhook identity. When any part cannot
+// be posted or the link cannot be saved, every part already posted is deleted
+// as compensation. ref may be zero when the source message is not a reply.
 func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) (WebhookSendResult, error) {
-	result, err := s.sendWebhookMessage(target, send)
+	parts := splitMessageContent(send.Content, discordMessageContentLimit)
+	primary := send
+	primary.Content = parts[0]
+	result, err := s.sendWebhookMessage(target, primary)
 	if err != nil {
 		return WebhookSendResult{}, err
 	}
+	sent := []string{result.MessageID}
+	for _, part := range parts[1:] {
+		continuation := send
+		continuation.Content = part
+		continuation.Embeds = nil
+		continuation.Files = nil
+		continuationResult, err := s.sendWebhookMessage(target, continuation)
+		if err != nil {
+			s.deletePostedMirror(target, threadID, sent)
+			return WebhookSendResult{}, err
+		}
+		sent = append(sent, continuationResult.MessageID)
+	}
 	link.TargetMessageID = result.MessageID
+	link.ContinuationMessageIDs = sent[1:]
 	if err := s.store.SaveMessageLinkWithReference(ctx, link, ref); err != nil {
-		_ = s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, result.MessageID, threadID)
+		s.deletePostedMirror(target, threadID, sent)
 		return WebhookSendResult{}, err
 	}
 	return result, nil
+}
+
+// deletePostedMirror deletes messages the bot just posted. It is compensation
+// for a failed send or link save, so failures are left to the caller's error.
+func (s *Service) deletePostedMirror(target GroupChannel, threadID string, messageIDs []string) {
+	channelID := target.ChannelID
+	if threadID != "" {
+		channelID = threadID
+	}
+	for _, messageID := range messageIDs {
+		_ = s.withOpenThread(channelID, restoreThreadFully, func() error {
+			return s.discord.DeleteWebhook(target.WebhookID, target.WebhookToken, messageID, threadID)
+		})
+	}
+}
+
+// replaceMirrorMessages rewrites a posted mirror to content, however many
+// messages it takes: existing parts are edited in order, new parts are posted
+// under the same author identity, and parts the shorter text no longer needs
+// are deleted. The link's stored continuation IDs follow the result.
+func (s *Service) replaceMirrorMessages(ctx context.Context, target GroupChannel, link *MessageLink, content mirrorText) error {
+	parts := splitMessageContent(string(content), discordMessageContentLimit)
+	existing := append([]string{link.TargetMessageID}, link.ContinuationMessageIDs...)
+	common := min(len(parts), len(existing))
+	for i := 0; i < common; i++ {
+		if err := s.editWebhookMessageAt(target, *link, existing[i], parts[i]); err != nil {
+			return err
+		}
+	}
+	threadID := threadIDForWebhook(*link, &target)
+	addedIDs := make([]string, 0, len(parts)-common)
+	for _, part := range parts[common:] {
+		messageID, err := s.sendMirrorContinuation(target, *link, part)
+		if err != nil {
+			s.deletePostedMirror(target, threadID, addedIDs)
+			return err
+		}
+		existing = append(existing, messageID)
+		addedIDs = append(addedIDs, messageID)
+	}
+	for _, messageID := range existing[len(parts):] {
+		if err := s.deleteWebhookMessageAt(target, *link, messageID); err != nil && !isUnknownMessageError(err) {
+			return err
+		}
+	}
+	existing = existing[:len(parts)]
+	link.ContinuationMessageIDs = existing[1:]
+	if err := s.store.UpdateMessageLinkContinuations(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, link.ContinuationMessageIDs); err != nil {
+		s.deletePostedMirror(target, threadID, addedIDs)
+		return err
+	}
+	return nil
+}
+
+// sendMirrorContinuation posts one further message of a mirror under the
+// author identity the mirror was created with.
+func (s *Service) sendMirrorContinuation(target GroupChannel, link MessageLink, content string) (string, error) {
+	result, err := s.sendWebhookMessage(target, WebhookSend{
+		Content:   content,
+		Username:  link.SourceAuthorDisplayName,
+		AvatarURL: avatarProxyURL(s.publicBaseURL, link.SourceAuthorAvatarURL, link.SourceAuthorRoleColor),
+		ThreadID:  threadIDForWebhook(link, &target),
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.MessageID, nil
 }
 
 // targetAlreadySynced reports whether a source message already has a mirror

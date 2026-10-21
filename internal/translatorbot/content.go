@@ -6,14 +6,12 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
-	"unicode/utf8"
 )
 
+// discordMessageContentLimit is the number of characters Discord accepts in
+// one message content. splitMessageContent measures text in UTF-16 code units,
+// which never undercounts a character relative to this limit.
 const discordMessageContentLimit = 2000
-
-// errContentTooLong marks a mirror whose final text exceeds the Discord
-// content limit; the message cannot be posted as is.
-var errContentTooLong = errors.New("message content exceeds the Discord limit")
 
 const (
 	stickerFormatPNG    = 1
@@ -65,9 +63,6 @@ func messageContentWithAssetURLsOption(content string, attachments []DiscordAtta
 			content += "\n"
 		}
 		content += strings.Join(assetURLs, "\n")
-	}
-	if utf8.RuneCountInString(content) > discordMessageContentLimit {
-		return "", fmt.Errorf("%w: %d characters, limit %d", errContentTooLong, utf8.RuneCountInString(content), discordMessageContentLimit)
 	}
 	return content, nil
 }

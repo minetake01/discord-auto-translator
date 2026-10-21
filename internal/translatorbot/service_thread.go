@@ -19,6 +19,7 @@ type threadCreateRequest struct {
 	InitialMessageID        string
 	InitialMessageAuthor    string
 	InitialMessageUsername  string
+	InitialMessageAvatarURL string
 	InitialMessageRoleColor int
 	InitialMessageText      string
 	InitialMessagePoll      *DiscordPoll
@@ -174,7 +175,7 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		translatedInitial = withPollStartedHeader(translatedInitial, target.Language, req.GuildID, req.SourceThreadID, req.InitialMessageID, true)
 	}
 
-	threadID, initialMessageID, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds, plan, scope)
+	threadID, initialMessageID, continuationIDs, err := s.createTargetThread(ctx, source.GroupID, req, target, translatedName, translatedInitial, embeds, plan, scope)
 	if err != nil {
 		return false, err
 	}
@@ -204,8 +205,10 @@ func (s *Service) createThreadForTarget(ctx context.Context, req threadCreateReq
 		if !synced {
 			if err := s.store.SaveMessageLink(ctx, MessageLink{
 				SourceMessageID: req.InitialMessageID, SourceChannelID: req.SourceThreadID, GroupID: source.GroupID,
-				TargetChannelID: threadID, TargetMessageID: initialMessageID, TargetLanguage: target.Language,
-				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername, SourceContentSnapshot: snapshot,
+				TargetChannelID: threadID, TargetMessageID: initialMessageID, ContinuationMessageIDs: continuationIDs, TargetLanguage: target.Language,
+				SourceAuthorID: req.InitialMessageAuthor, SourceAuthorDisplayName: req.InitialMessageUsername,
+				SourceAuthorAvatarURL: req.InitialMessageAvatarURL, SourceAuthorRoleColor: req.InitialMessageRoleColor,
+				SourceContentSnapshot:  snapshot,
 				SourceImageAttachments: imageAttachmentsOnly(req.InitialMessageFiles), TimestampLine: req.Timestamp,
 			}); err != nil {
 				return false, err
@@ -255,18 +258,19 @@ func (s *Service) resolveTargetThreadPlan(ctx context.Context, groupID string, r
 // createTargetThread creates the mirrored thread in one target channel.
 // For forum/media targets the thread starts with the translated initial
 // message. For text/news targets it is attached to the mirrored source
-// message when one exists.
-func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed, plan targetThreadPlan, scope translationScope) (string, string, error) {
+// message when one exists. The returned continuation IDs are the messages
+// that carry the initial message's text beyond the Discord content limit.
+func (s *Service) createTargetThread(ctx context.Context, groupID string, req threadCreateRequest, target GroupChannel, name, initialMessage string, embeds []*discordgo.MessageEmbed, plan targetThreadPlan, scope translationScope) (string, string, []string, error) {
 	switch plan.action {
 	case targetThreadForum:
 		content, err := messageContentWithAssetURLs(initialMessage, req.InitialMessageFiles, req.InitialMessageStickers)
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		loaded := s.loadImageAttachments(ctx, imageAttachmentsOnly(req.InitialMessageFiles))
 		content, err = messageContentWithAllAssetURLs(content, imagesNotReuploaded(req.InitialMessageFiles, loaded), nil)
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
 		alts, altErr := s.translateAttachmentAltsWithLimit(ctx, req.GuildID, loaded, []string{target.Language}, func() TranslationContext {
 			return TranslationContext{GuildID: req.GuildID, MessageID: req.InitialMessageID}
@@ -278,22 +282,47 @@ func (s *Service) createTargetThread(ctx context.Context, groupID string, req th
 		}
 		final, err := finishMirrorContent(req.InitialMessageID, content, req.Timestamp && req.InitialMessageID != "")
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
-		content = string(final)
+		parts := splitMessageContent(string(final), discordMessageContentLimit)
 		appliedTags, err := s.mappedAppliedTagsForTarget(ctx, req.GuildID, groupID, req.SourceChannelID, target, req.AppliedTags)
 		if err != nil {
-			return "", "", err
+			return "", "", nil, err
 		}
-		return s.discord.CreateThread(target.ChannelID, target.ChannelType, name, content, embeds, appliedTags, files)
+		threadID, initialMessageID, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, parts[0], embeds, appliedTags, files)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if len(parts) == 1 {
+			return threadID, initialMessageID, nil, nil
+		}
+		if initialMessageID == "" {
+			_ = s.discord.DeleteThread(threadID)
+			return "", "", nil, fmt.Errorf("create target thread in %s: initial message id is empty, so continuation parts cannot be linked", target.ChannelID)
+		}
+		continuationIDs := make([]string, 0, len(parts)-1)
+		for _, part := range parts[1:] {
+			result, err := s.sendWebhookMessage(target, WebhookSend{
+				Content:   part,
+				Username:  req.InitialMessageUsername,
+				AvatarURL: avatarProxyURL(s.publicBaseURL, req.InitialMessageAvatarURL, req.InitialMessageRoleColor),
+				ThreadID:  threadID,
+			})
+			if err != nil {
+				_ = s.discord.DeleteThread(threadID)
+				return "", "", nil, err
+			}
+			continuationIDs = append(continuationIDs, result.MessageID)
+		}
+		return threadID, initialMessageID, continuationIDs, nil
 	case targetThreadFromMessage:
 		threadID, err := s.discord.CreateThreadFromMessage(target.ChannelID, plan.fromMessageID, name)
-		return threadID, "", err
+		return threadID, "", nil, err
 	case targetThreadStandalone:
 		threadID, _, err := s.discord.CreateThread(target.ChannelID, target.ChannelType, name, "", nil, nil, nil)
-		return threadID, "", err
+		return threadID, "", nil, err
 	default:
-		return "", "", fmt.Errorf("unhandled target thread action %d", plan.action)
+		return "", "", nil, fmt.Errorf("unhandled target thread action %d", plan.action)
 	}
 }
 
@@ -368,6 +397,7 @@ func (s *Service) ensureThreadSynced(ctx context.Context, m DiscordMessage) (boo
 		req.InitialMessageID = m.ID
 		req.InitialMessageAuthor = m.AuthorID
 		req.InitialMessageUsername = m.AuthorDisplayName
+		req.InitialMessageAvatarURL = m.AuthorAvatarURL
 		req.InitialMessageRoleColor = m.AuthorRoleColor
 		req.InitialMessageText = m.Content
 		req.InitialMessagePoll = m.Poll

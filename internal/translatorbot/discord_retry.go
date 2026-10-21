@@ -32,6 +32,14 @@ func isDiscordRetryable(err error) bool {
 	return code == http.StatusTooManyRequests || code >= http.StatusInternalServerError
 }
 
+// isUnknownMessageError reports the 404 Discord returns for a message that no
+// longer exists. Deleting a mirror part a moderator already removed is not a
+// failure.
+func isUnknownMessageError(err error) bool {
+	restErr, ok := discordRESTError(err)
+	return ok && restErr.Response.StatusCode == http.StatusNotFound
+}
+
 // withDiscordRetry is the application-layer retry policy shared by every
 // Discord REST call in this package: 429 and 5xx responses are retried with
 // exponential backoff. It sits above discordgo's own transport-level retry

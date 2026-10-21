@@ -81,6 +81,7 @@ func (t *backfillThreads) create(ctx context.Context, family *threadFamily, m *D
 			req.InitialMessageID = m.ID
 			req.InitialMessageAuthor = m.AuthorID
 			req.InitialMessageUsername = m.AuthorDisplayName
+			req.InitialMessageAvatarURL = m.AuthorAvatarURL
 			req.InitialMessageRoleColor = m.AuthorRoleColor
 			req.InitialMessageText = m.Content
 			req.InitialMessagePoll = m.Poll
