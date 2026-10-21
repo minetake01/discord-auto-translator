@@ -56,6 +56,10 @@ type MessageLink struct {
 	// TimestampLine marks a backfilled mirror whose first line shows the
 	// source posting time; edits rebuild it.
 	TimestampLine bool
+	// MirrorBody is the mirror text without the generated headers on its first
+	// message: the reference for re-quoting on an edit and for reusing the
+	// mirror through a forwarded message without retranslating.
+	MirrorBody string
 }
 
 // MessageReference is the reply target of a source message (message_references row).

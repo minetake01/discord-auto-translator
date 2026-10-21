@@ -116,18 +116,9 @@ func splitMessageContent(text string, limit int) []string {
 		reopen()
 	}
 
-	appendText := func(text string) {
-		if lineOpen {
-			b.WriteByte('\n')
-			bLen++
-		}
-		b.WriteString(text)
-		bLen += discordContentLength(text)
-		lineOpen = true
-	}
-	// appendLineChunk appends a piece of a line, adding the newline that
+	// appendText appends a line or a piece of a line, adding the newline that
 	// separates it from earlier content unless the part was just reopened.
-	appendLineChunk := func(text string) {
+	appendText := func(text string) {
 		if lineOpen {
 			b.WriteByte('\n')
 			bLen++
@@ -193,7 +184,7 @@ func splitMessageContent(text string, limit int) []string {
 						flush()
 						continue
 					}
-					appendLineChunk(chunk)
+					appendText(chunk)
 					rest = remaining
 					if rest != "" {
 						flush()

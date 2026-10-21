@@ -255,38 +255,6 @@ func (s *Service) assembleMirrorContent(ctx context.Context, m DiscordMessage, l
 	return finishMirrorContent(m.ID, withPollStartedHeader(content, language, m.GuildID, m.ChannelID, m.ID, m.Poll != nil), timestamp)
 }
 
-// mirrorMessageText returns the body of a posted mirror without the generated
-// headers on its first message, joining every message the mirror was split
-// into. It is how a forwarded message reuses an existing translation.
-func (s *Service) mirrorMessageText(ctx context.Context, channelID, messageID string) (string, error) {
-	link, ok, err := s.store.MessageLinkForTarget(ctx, channelID, messageID)
-	if err != nil {
-		return "", err
-	}
-	if !ok {
-		return "", fmt.Errorf("mirror %s/%s is not linked", channelID, messageID)
-	}
-	if link.TargetMessageID != messageID {
-		channelID, messageID = link.TargetChannelID, link.TargetMessageID
-	}
-	primary, err := s.discord.Message(channelID, messageID)
-	if err != nil {
-		return "", err
-	}
-	body := mirroredMessageBody(primary.Content)
-	for _, partID := range link.ContinuationMessageIDs {
-		part, err := s.discord.Message(channelID, partID)
-		if err != nil {
-			return "", err
-		}
-		if body != "" && part.Content != "" {
-			body += "\n"
-		}
-		body += part.Content
-	}
-	return body, nil
-}
-
 // sendMirror posts the prepared content to one destination and records the
 // message link with the given source snapshot.
 func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID string, dest mirrorDestination, content mirrorText, embeds []*discordgo.MessageEmbed, files []WebhookFile, snapshot string) (WebhookSendResult, error) {
@@ -452,9 +420,11 @@ func (s *Service) HandleMessageUpdate(ctx context.Context, m DiscordMessage) err
 
 // refreshReplyingQuotes re-renders the quote header of every mirror of a
 // message replying to the edited message, so the snippet and jump link follow
-// the referenced message's current state. A quote that cannot be rebuilt is
-// left as rendered, and a mirror whose rebuilt text is unchanged is not
-// edited again.
+// the referenced message's current state. The quote is rebuilt on the mirror
+// body the link records and the mirror is re-split like any other edit, so a
+// longer quote still leaves every part within Discord's content limit. Parts
+// whose text does not change are left untouched, and a quote that cannot be
+// rebuilt leaves the quote as rendered.
 func (s *Service) refreshReplyingQuotes(ctx context.Context, m DiscordMessage, copies []MessageLink) error {
 	replies, err := s.messageTargetsReplyingToCopies(ctx, m.ChannelID, m.ID, copies)
 	if err != nil {
@@ -472,27 +442,57 @@ func (s *Service) refreshReplyingQuotes(ctx context.Context, m DiscordMessage, c
 				if quote == "" {
 					continue
 				}
-				message, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
-				if err != nil {
-					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
-				}
-				content, err := finishMirrorContent(p.link.SourceMessageID, withQuote(
-					quote,
-					mirroredMessageBody(message.Content),
-				), p.link.TimestampLine)
+				rebuilt, err := s.requotedMirrorContent(p.link, quote)
 				if err != nil {
 					return err
 				}
-				if string(content) == message.Content {
+				primary, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
+				if err != nil {
+					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
+				}
+				if splitMessageContent(string(rebuilt), discordMessageContentLimit)[0] == primary.Content {
 					continue
 				}
-				if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+				previous, err := s.mirrorPartContents(ctx, p.link)
+				if err != nil {
+					return err
+				}
+				if err := s.replaceMirrorMessages(ctx, p.target, &p.link, rebuilt, previous); err != nil {
 					return err
 				}
 			}
 			return nil
 		},
 	)
+}
+
+// requotedMirrorContent rebuilds a mirror's text with quote on top, from the
+// body the link records. A link without that body has nothing to re-quote:
+// the mirror predates the body column or its record broke, and guessing a
+// body would post a wrong, silently truncated mirror.
+func (s *Service) requotedMirrorContent(link MessageLink, quote string) (mirrorText, error) {
+	if link.MirrorBody == "" {
+		return "", fmt.Errorf("mirror %s/%s has no recorded body; re-mirror the message before refreshing its quote", link.TargetChannelID, link.TargetMessageID)
+	}
+	return finishMirrorContent(link.SourceMessageID, withQuote(quote, link.MirrorBody), link.TimestampLine)
+}
+
+// mirrorPartContents returns the posted contents of a mirror in order, first
+// message first, for comparison against a rebuild.
+func (s *Service) mirrorPartContents(ctx context.Context, link MessageLink) ([]string, error) {
+	primary, err := s.discord.Message(link.TargetChannelID, link.TargetMessageID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch mirror %s/%s: %w", link.TargetChannelID, link.TargetMessageID, err)
+	}
+	previous := []string{primary.Content}
+	for _, partID := range link.ContinuationMessageIDs {
+		part, err := s.discord.Message(link.TargetChannelID, partID)
+		if err != nil {
+			return nil, fmt.Errorf("fetch mirror %s/%s: %w", link.TargetChannelID, partID, err)
+		}
+		previous = append(previous, part.Content)
+	}
+	return previous, nil
 }
 
 // replyingMessageQuote rebuilds the quote header for a mirror of a message
@@ -545,7 +545,7 @@ func (s *Service) editMessageMirrors(ctx context.Context, m DiscordMessage, grou
 		if err != nil {
 			return err
 		}
-		if err := s.replaceMirrorMessages(ctx, p.target, &p.link, content); err != nil {
+		if err := s.replaceMirrorMessages(ctx, p.target, &p.link, content, nil); err != nil {
 			return err
 		}
 		if err := s.store.UpdateMessageLinkSnapshot(ctx, p.link.SourceChannelID, p.link.SourceMessageID, p.link.TargetChannelID, m.Content); err != nil {
@@ -682,18 +682,22 @@ func (s *Service) replaceDeletedReplyQuotes(ctx context.Context, guildID string,
 		s.messageLinkTarget,
 		func(ctx context.Context, groupID string, pending []editPair[MessageLink]) error {
 			for _, p := range pending {
-				message, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
-				if err != nil {
-					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
-				}
-				content, err := finishMirrorContent(p.link.SourceMessageID, withQuote(
-					deletedReplyQuoteLine(p.link.TargetLanguage),
-					mirroredMessageBody(message.Content),
-				), p.link.TimestampLine)
+				rebuilt, err := s.requotedMirrorContent(p.link, deletedReplyQuoteLine(p.link.TargetLanguage))
 				if err != nil {
 					return err
 				}
-				if err := s.editWebhookMessage(ctx, p.target, p.link, content); err != nil {
+				primary, err := s.discord.Message(p.link.TargetChannelID, p.link.TargetMessageID)
+				if err != nil {
+					return fmt.Errorf("fetch reply mirror %s/%s: %w", p.link.TargetChannelID, p.link.TargetMessageID, err)
+				}
+				if splitMessageContent(string(rebuilt), discordMessageContentLimit)[0] == primary.Content {
+					continue
+				}
+				previous, err := s.mirrorPartContents(ctx, p.link)
+				if err != nil {
+					return err
+				}
+				if err := s.replaceMirrorMessages(ctx, p.target, &p.link, rebuilt, previous); err != nil {
 					return err
 				}
 			}

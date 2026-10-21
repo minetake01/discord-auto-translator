@@ -161,10 +161,6 @@ func (s *Service) sendWebhookMessage(target GroupChannel, send WebhookSend) (Web
 	return result, s.withOpenThread(send.ThreadID, keepThreadOpen, op)
 }
 
-func (s *Service) editWebhookMessage(_ context.Context, target GroupChannel, link MessageLink, content mirrorText) error {
-	return s.editWebhookMessageAt(target, link, link.TargetMessageID, string(content))
-}
-
 func (s *Service) editWebhookMessageAt(target GroupChannel, link MessageLink, messageID, content string) error {
 	threadID := threadIDForWebhook(link, &target)
 	return s.withOpenThread(link.TargetChannelID, restoreThreadFully, func() error {

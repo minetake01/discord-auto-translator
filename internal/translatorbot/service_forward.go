@@ -55,19 +55,18 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 	prepared := make(map[string]forwardedTargetContent, len(dests))
 	translateDests := make([]mirrorDestination, 0, len(dests))
 	for _, dest := range dests {
-		_, mirrorChannelID, mirrorMessageID, ok, err := s.store.MessageQuoteTarget(ctx, forwarded.ChannelID, forwarded.MessageID, dest.targetID)
+		mirrorLink, mirrorChannelID, mirrorMessageID, ok, err := s.store.MessageQuoteTarget(ctx, forwarded.ChannelID, forwarded.MessageID, dest.targetID)
 		if err != nil {
 			return nil, nil, err
 		}
 		if ok && mirrorChannelID == dest.targetID && mirrorMessageID != "" {
-			body := forwarded.Content
 			needsAssets := mirrorChannelID == forwarded.ChannelID && mirrorMessageID == forwarded.MessageID
-			if mirrorChannelID != forwarded.ChannelID || mirrorMessageID != forwarded.MessageID {
-				fullBody, fetchErr := s.mirrorMessageText(ctx, mirrorChannelID, mirrorMessageID)
-				if fetchErr != nil {
-					return nil, nil, fmt.Errorf("fetch forwarded mirror %s/%s: %w", mirrorChannelID, mirrorMessageID, fetchErr)
+			body := forwarded.Content
+			if !needsAssets {
+				if mirrorLink.MirrorBody == "" {
+					return nil, nil, fmt.Errorf("mirror %s/%s has no recorded body for forward reuse; re-mirror the message", mirrorChannelID, mirrorMessageID)
 				}
-				body = fullBody
+				body = mirrorLink.MirrorBody
 			} else {
 				body = mirroredMessageBody(body)
 			}

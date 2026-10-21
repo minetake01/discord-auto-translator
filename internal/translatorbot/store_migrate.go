@@ -22,6 +22,7 @@ var schemaMigrations = []schemaMigration{
 	migrateDropProcessedEvents,
 	migrateResetPollCacheSeconds,
 	migrateMirrorParts,
+	migrateMirrorBodies,
 }
 
 func currentSchemaVersion() int { return len(schemaMigrations) }
@@ -455,5 +456,14 @@ func migrateMirrorParts(ctx context.Context, tx *sql.Tx) error {
 		`CREATE INDEX idx_message_link_parts_target ON message_link_parts(target_channel_id, message_id)`,
 		`ALTER TABLE message_links ADD COLUMN source_author_avatar_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE message_links ADD COLUMN source_author_role_color INTEGER NOT NULL DEFAULT 0`,
+	)
+}
+
+// migrateMirrorBodies adds the mirror body each link records: the mirror text
+// without the generated headers on its first message, so re-quoting and
+// forward reuse rebuild mirrors from what was posted, not from Discord.
+func migrateMirrorBodies(ctx context.Context, tx *sql.Tx) error {
+	return execAll(ctx, tx,
+		`ALTER TABLE message_links ADD COLUMN target_body TEXT NOT NULL DEFAULT ''`,
 	)
 }

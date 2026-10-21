@@ -278,7 +278,9 @@ func TestHandleMessageUpdateRefreshesReplyQuoteWithoutTouchingContinuations(t *t
 	}
 	sendsBefore := len(discord.sent)
 
-	referenced.Content = "second line\n" + strings.Repeat("a", 2500)
+	// An edit of the same length rewrites the quote but not the split, so the
+	// continuation keeps its content byte for byte.
+	referenced.Content = "firsx line\n" + strings.Repeat("a", 2500)
 	if err := service.HandleMessageUpdate(ctx, referenced); err != nil {
 		t.Fatal(err)
 	}
@@ -301,12 +303,126 @@ func TestHandleMessageUpdateRefreshesReplyQuoteWithoutTouchingContinuations(t *t
 	if quoteEdit == nil {
 		t.Fatalf("reply primary was not edited: %#v", discord.webhookEdits)
 	}
-	if !strings.HasPrefix(quoteEdit.content, "> -# [en] second line") {
+	if !strings.HasPrefix(quoteEdit.content, "> -# [en] firsx line") {
 		t.Fatalf("quote was not refreshed: %q", quoteEdit.content)
 	}
 	link := smallMirrorLinks(t, store, "ja", reply.ID)[0]
 	if len(link.ContinuationMessageIDs) != 1 || link.ContinuationMessageIDs[0] != replyContinuation {
 		t.Fatalf("continuations changed: %#v", link.ContinuationMessageIDs)
+	}
+}
+
+func TestHandleMessageUpdateRefreshesReplyQuoteResplitsWhenTheQuoteGrows(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+
+	referenced := DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "author", Content: "hi\n" + strings.Repeat("a", 2500),
+	}
+	if err := service.HandleMessageCreate(ctx, referenced); err != nil {
+		t.Fatal(err)
+	}
+	reply := DiscordMessage{
+		ID: "100000000000000002", ChannelID: "ja", GuildID: "guild", AuthorID: "u",
+		AuthorDisplayName: "author", Content: strings.Repeat("b", 2500),
+		ReferencedMessageID: referenced.ID, ReferencedMessageChannelID: "ja",
+		ReferencedMessageContent: referenced.Content,
+	}
+	if err := service.HandleMessageCreate(ctx, reply); err != nil {
+		t.Fatal(err)
+	}
+	replyLinks := smallMirrorLinks(t, store, "ja", reply.ID)
+	if len(replyLinks[0].ContinuationMessageIDs) != 1 {
+		t.Fatalf("reply mirror was not split: %#v", replyLinks[0])
+	}
+	replyPrimary, replyContinuation := replyLinks[0].TargetMessageID, replyLinks[0].ContinuationMessageIDs[0]
+	sendsBefore, editsBefore := len(discord.sent), len(discord.webhookEdits)
+
+	// A much longer snippet moves the split boundary: the refresh re-splits
+	// the mirror instead of writing an oversized part, and the continuation
+	// carries the shifted remainder.
+	referenced.Content = strings.Repeat("c", 90) + "\n" + strings.Repeat("a", 2500)
+	if err := service.HandleMessageUpdate(ctx, referenced); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(discord.sent) != sendsBefore || len(discord.webhookDeletes) != 0 {
+		t.Fatalf("quote refresh changed the part count: sent=%#v deletes=%#v", discord.sent[sendsBefore:], discord.webhookDeletes)
+	}
+	var quoteEdit *webhookEditCall
+	var continuationEdit *webhookEditCall
+	for i := range discord.webhookEdits {
+		switch discord.webhookEdits[i].messageID {
+		case replyPrimary:
+			quoteEdit = &discord.webhookEdits[i]
+		case replyContinuation:
+			continuationEdit = &discord.webhookEdits[i]
+		}
+	}
+	if quoteEdit == nil || continuationEdit == nil {
+		t.Fatalf("refresh did not rewrite the shifted split: %#v", discord.webhookEdits[editsBefore:])
+	}
+	for i, edit := range []*webhookEditCall{quoteEdit, continuationEdit} {
+		if got := discordContentLength(edit.content); got > discordMessageContentLimit {
+			t.Fatalf("part %d has %d units, over the limit", i, got)
+		}
+	}
+	if !strings.HasPrefix(quoteEdit.content, "> -# [en] "+strings.Repeat("c", 30)) {
+		t.Fatalf("quote was not refreshed: %q", quoteEdit.content)
+	}
+	if got := strings.Count(quoteEdit.content, "b") + strings.Count(continuationEdit.content, "b"); got != 2500 {
+		t.Fatalf("refresh lost body characters: %d b across the parts", got)
+	}
+	link := smallMirrorLinks(t, store, "ja", reply.ID)[0]
+	if len(link.ContinuationMessageIDs) != 1 || link.ContinuationMessageIDs[0] != replyContinuation {
+		t.Fatalf("continuations changed: %#v", link.ContinuationMessageIDs)
+	}
+}
+
+func TestHandleMessageUpdateFailsFastWhenMirrorBodyIsMissing(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	seedGroup(t, store)
+	// The quoted message has its own mirror, so the edit pass completes and
+	// the refresh reaches the reply mirror below...
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000001", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000002", TargetLanguage: "en",
+		SourceAuthorID: "u", SourceContentSnapshot: "quoted text", MirrorBody: "[en] quoted text",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// ...whose link has no recorded body.
+	if err := store.SaveMessageLinkWithReference(ctx, MessageLink{
+		SourceMessageID: "100000000000000010", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "100000000000000011", TargetLanguage: "ja",
+		SourceAuthorID: "u", SourceContentSnapshot: "snapshot",
+	}, MessageReference{MessageID: "100000000000000001", ChannelID: "ja"}); err != nil {
+		t.Fatal(err)
+	}
+
+	err := service.HandleMessageUpdate(ctx, DiscordMessage{
+		ID: "100000000000000001", ChannelID: "ja", GuildID: "guild", AuthorID: "u", Content: "changed",
+	})
+	if err == nil {
+		t.Fatal("expected a missing mirror body to fail the quote refresh")
+	}
+	if !strings.Contains(err.Error(), "100000000000000011") {
+		t.Fatalf("error does not name the mirror: %v", err)
+	}
+	for _, edit := range discord.webhookEdits {
+		if edit.messageID == "100000000000000011" {
+			t.Fatalf("quote refresh rewrote the mirror without a recorded body: %#v", edit)
+		}
+	}
+	if len(discord.webhookDeletes) != 0 {
+		t.Fatalf("quote refresh deleted messages without a recorded body: %#v", discord.webhookDeletes)
 	}
 }
 
@@ -428,7 +544,7 @@ func TestMessageLinkPartsResolveAndCascade(t *testing.T) {
 		t.Fatalf("peers of a continuation = %#v", peers)
 	}
 
-	if err := store.UpdateMessageLinkContinuations(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, []string{"900000000000000004"}); err != nil {
+	if err := store.UpdateMessageLinkContent(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, "new body", []string{"900000000000000004"}); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := store.MessageTargets(ctx, "ja", link.SourceMessageID)
@@ -439,6 +555,9 @@ func TestMessageLinkPartsResolveAndCascade(t *testing.T) {
 		if candidate.TargetChannelID == "en" {
 			if got := candidate.ContinuationMessageIDs; len(got) != 1 || got[0] != "900000000000000004" {
 				t.Fatalf("updated continuations = %#v", got)
+			}
+			if candidate.MirrorBody != "new body" {
+				t.Fatalf("updated body = %q", candidate.MirrorBody)
 			}
 		}
 	}

@@ -118,7 +118,10 @@ func interactionMessageFlags(ephemeral bool) discordgo.MessageFlags {
 }
 
 // respondText delivers a response, splitting it across follow-up messages when
-// it exceeds the Discord content limit.
+// it exceeds the Discord content limit. A follow-up that cannot be posted is
+// logged and the response is left partially delivered: unlike a mirror, an
+// interaction response cannot be withdrawn and re-asked, so there is nothing
+// to compensate.
 func (h *CommandHandler) respondText(s *discordgo.Session, i *discordgo.InteractionCreate, msg string, ephemeral bool) {
 	parts := splitMessageContent(msg, discordMessageContentLimit)
 	h.respond(s, i, parts[0], ephemeral)
@@ -405,37 +408,29 @@ func (h *CommandHandler) handleListGroups(s *discordgo.Session, i *discordgo.Int
 	h.respondText(s, i, msg, true)
 }
 
-// listBuilder assembles a list message. The response transport splits it into
-// as many messages as the Discord content limit needs.
-type listBuilder struct {
-	b strings.Builder
-}
-
-func newListBuilder(header string) *listBuilder {
-	list := &listBuilder{}
-	list.b.WriteString(header)
-	list.b.WriteString("\n")
-	return list
-}
-
-func (t *listBuilder) add(line string) {
-	t.b.WriteString(line)
-}
-
-func (t *listBuilder) String() string {
-	return strings.TrimSpace(t.b.String())
+// listText assembles a list response: the localized header, then one block per
+// entry. The response transport splits it into as many messages as the Discord
+// content limit needs.
+func listText(header string, entries []string) string {
+	var b strings.Builder
+	b.WriteString(header)
+	b.WriteString("\n")
+	for _, entry := range entries {
+		b.WriteString(entry)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func formatListGroupsMessage(ctx context.Context, store *Store, guildID, lang string, groups []TranslationGroup) (string, error) {
-	list := newListBuilder(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)))
+	entries := make([]string, 0, len(groups))
 	for _, g := range groups {
 		channels, err := store.ChannelsInGroup(ctx, guildID, g.ID)
 		if err != nil {
 			return "", err
 		}
-		list.add(formatGroupBlock(g, channels, lang))
+		entries = append(entries, formatGroupBlock(g, channels, lang))
 	}
-	return list.String(), nil
+	return listText(localizedUIStringf(lang, uiKeyGroupsHeader, len(groups)), entries), nil
 }
 
 func formatGroupBlock(g TranslationGroup, channels []GroupChannel, lang string) string {
@@ -502,12 +497,12 @@ func (h *CommandHandler) handleListGlossary(s *discordgo.Session, i *discordgo.I
 		h.reply(s, i, uiKeyNoGlossary)
 		return
 	}
-	list := newListBuilder(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)))
+	lines := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		mode, attribute := glossaryLabels(lang, entry.AlwaysInclude, entry.Attribute)
-		list.add(fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode))
+		lines = append(lines, fmt.Sprintf("- `%s` → `%s` (%s, %s)\n", entry.SourceTerm, entry.PreferredTranslation, attribute, mode))
 	}
-	h.respondText(s, i, list.String(), true)
+	h.respondText(s, i, listText(localizedUIStringf(lang, uiKeyGlossaryHeader, len(entries)), lines), true)
 }
 
 func (h *CommandHandler) handleRemoveGlossary(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {
@@ -670,11 +665,11 @@ func (h *CommandHandler) handleListSources(s *discordgo.Session, i *discordgo.In
 		return
 	}
 	lang := commandLocale(i)
-	list := newListBuilder(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)))
+	lines := make([]string, 0, len(sources))
 	for _, source := range sources {
-		list.add(fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID))
+		lines = append(lines, fmt.Sprintf("- `%s`: `%s`\n", source.Type, source.ID))
 	}
-	h.respondText(s, i, list.String(), true)
+	h.respondText(s, i, listText(localizedUIStringf(lang, uiKeyAllowedSourcesHeader, len(sources)), lines), true)
 }
 
 func (h *CommandHandler) handleViewOriginal(s *discordgo.Session, i *discordgo.InteractionCreate, data discordgo.ApplicationCommandInteractionData) {

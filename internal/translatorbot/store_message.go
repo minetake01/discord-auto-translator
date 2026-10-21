@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_author_avatar_url,source_author_role_color,source_content_snapshot,source_image_attachments,timestamp_line`
+const messageLinkColumns = `source_message_id,source_channel_id,group_id,target_channel_id,target_message_id,target_language,source_author_id,source_author_display_name,source_author_avatar_url,source_author_role_color,source_content_snapshot,source_image_attachments,timestamp_line,target_body`
 
 // messageLinkColumnsML is messageLinkColumns qualified with the ml alias,
 // for lookups that join message_references over the shared source columns.
@@ -54,8 +54,8 @@ func (s *Store) saveMessageLink(ctx context.Context, l MessageLink, ref MessageR
 	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, targetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceAuthorAvatarURL, l.SourceAuthorRoleColor, l.SourceContentSnapshot, imagesJSON, l.TimestampLine); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO message_links(`+messageLinkColumns+`) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		sourceMessageID, l.SourceChannelID, l.GroupID, l.TargetChannelID, targetMessageID, l.TargetLanguage, l.SourceAuthorID, l.SourceAuthorDisplayName, l.SourceAuthorAvatarURL, l.SourceAuthorRoleColor, l.SourceContentSnapshot, imagesJSON, l.TimestampLine, l.MirrorBody); err != nil {
 		return err
 	}
 	if err := replaceMessageLinkParts(ctx, tx, sourceMessageID, l.SourceChannelID, l.TargetChannelID, l.ContinuationMessageIDs); err != nil {
@@ -285,18 +285,19 @@ func (s *Store) MessageOriginal(ctx context.Context, channelID, messageID string
 }
 
 // MessageQuoteTarget resolves what a quote to a message looks like in a
-// target channel: the source link the snapshot and attachments come from,
-// plus the message the quote should link to.
-func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (source MessageLink, quoteChannelID, quoteMessageID string, ok bool, err error) {
+// target channel: the mirror copy that hosts the quote, plus the message the
+// quote should link to. The mirror copy's source columns carry the snapshot
+// and attachments the quote is built from.
+func (s *Store) MessageQuoteTarget(ctx context.Context, channelID, messageID, targetChannelID string) (mirror MessageLink, quoteChannelID, quoteMessageID string, ok bool, err error) {
 	links, err := s.MessageTargets(ctx, channelID, messageID)
 	if err != nil {
 		return MessageLink{}, "", "", false, err
 	}
 	if len(links) > 0 {
-		source = links[0]
+		source := links[0]
 		for _, target := range links {
 			if target.TargetChannelID == targetChannelID {
-				return source, target.TargetChannelID, target.TargetMessageID, true, nil
+				return target, target.TargetChannelID, target.TargetMessageID, true, nil
 			}
 		}
 		return source, source.SourceChannelID, source.SourceMessageID, true, nil
@@ -385,7 +386,7 @@ type messageLinkScanner interface {
 func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
 	var l MessageLink
 	var imagesJSON string
-	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceAuthorAvatarURL, &l.SourceAuthorRoleColor, &l.SourceContentSnapshot, &imagesJSON, &l.TimestampLine); err != nil {
+	if err := row.Scan(&l.SourceMessageID, &l.SourceChannelID, &l.GroupID, &l.TargetChannelID, &l.TargetMessageID, &l.TargetLanguage, &l.SourceAuthorID, &l.SourceAuthorDisplayName, &l.SourceAuthorAvatarURL, &l.SourceAuthorRoleColor, &l.SourceContentSnapshot, &imagesJSON, &l.TimestampLine, &l.MirrorBody); err != nil {
 		return MessageLink{}, err
 	}
 	images, err := unmarshalImageAttachments(imagesJSON)
@@ -396,9 +397,10 @@ func scanMessageLink(row messageLinkScanner) (MessageLink, error) {
 	return l, nil
 }
 
-// UpdateMessageLinkContinuations replaces the continuation messages of a
-// mirror after an edit added or removed parts.
-func (s *Store) UpdateMessageLinkContinuations(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID string, messageIDs []string) error {
+// UpdateMessageLinkContent replaces what a posted mirror says: the mirror body
+// the link records and the message IDs that carry it across Discord's content
+// limit, after an edit added, removed, or rewrote parts.
+func (s *Store) UpdateMessageLinkContent(ctx context.Context, sourceChannelID, sourceMessageID, targetChannelID, body string, messageIDs []string) error {
 	sourceID, err := parseDiscordSnowflakeID("source_message_id", sourceMessageID)
 	if err != nil {
 		return err
@@ -408,6 +410,10 @@ func (s *Store) UpdateMessageLinkContinuations(ctx context.Context, sourceChanne
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `UPDATE message_links SET target_body=? WHERE source_channel_id=? AND source_message_id=? AND target_channel_id=?`,
+		body, sourceChannelID, sourceID, targetChannelID); err != nil {
+		return err
+	}
 	if err := replaceMessageLinkParts(ctx, tx, sourceID, sourceChannelID, targetChannelID, messageIDs); err != nil {
 		return err
 	}
@@ -492,12 +498,6 @@ func (s *Store) messageLinkForPart(ctx context.Context, channelID, messageID str
 	}
 	link.ContinuationMessageIDs = messageIDs
 	return link, true, nil
-}
-
-// MessageLinkForTarget resolves a message posted by the bot to the mirror it
-// belongs to, whether it is the mirror's first message or a continuation.
-func (s *Store) MessageLinkForTarget(ctx context.Context, channelID, messageID string) (MessageLink, bool, error) {
-	return s.messageLinkByTarget(ctx, channelID, messageID)
 }
 
 // messageLinkByTarget resolves a message posted by the bot to the mirror it

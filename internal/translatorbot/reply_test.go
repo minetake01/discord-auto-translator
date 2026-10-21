@@ -397,6 +397,7 @@ func TestHandleMessageDeleteReplacesExistingReplyQuote(t *testing.T) {
 		SourceMessageID: "100000000000000002", SourceChannelID: "en", GroupID: "g",
 		TargetChannelID: "ja", TargetMessageID: "100000000000000015", TargetLanguage: "ja",
 		SourceAuthorID: "bob", SourceContentSnapshot: "reply body",
+		MirrorBody: "[ja] 返信本文",
 	}, MessageReference{MessageID: "100000000000000014", ChannelID: "en"}); err != nil {
 		t.Fatal(err)
 	}

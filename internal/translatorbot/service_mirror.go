@@ -1,12 +1,17 @@
 package translatorbot
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // sendAndSaveLink posts a webhook message and persists its link. A body longer
 // than the Discord content limit becomes one primary message followed by
-// continuation messages under the same webhook identity. When any part cannot
-// be posted or the link cannot be saved, every part already posted is deleted
-// as compensation. ref may be zero when the source message is not a reply.
+// continuation messages under the same webhook identity. The link records the
+// body the mirror renders, without the generated headers on its first message.
+// When any part cannot be posted or the link cannot be saved, every part
+// already posted is deleted as compensation. ref may be zero when the source
+// message is not a reply.
 func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, threadID string, send WebhookSend, link MessageLink, ref MessageReference) (WebhookSendResult, error) {
 	parts := splitMessageContent(send.Content, discordMessageContentLimit)
 	primary := send
@@ -16,20 +21,15 @@ func (s *Service) sendAndSaveLink(ctx context.Context, target GroupChannel, thre
 		return WebhookSendResult{}, err
 	}
 	sent := []string{result.MessageID}
-	for _, part := range parts[1:] {
-		continuation := send
-		continuation.Content = part
-		continuation.Embeds = nil
-		continuation.Files = nil
-		continuationResult, err := s.sendWebhookMessage(target, continuation)
-		if err != nil {
-			s.deletePostedMirror(target, threadID, sent)
-			return WebhookSendResult{}, err
-		}
-		sent = append(sent, continuationResult.MessageID)
+	continuationIDs, err := s.postMirrorContinuations(target, threadID, send, parts[1:])
+	if err != nil {
+		s.deletePostedMirror(target, threadID, append(sent, continuationIDs...))
+		return WebhookSendResult{}, err
 	}
+	sent = append(sent, continuationIDs...)
 	link.TargetMessageID = result.MessageID
 	link.ContinuationMessageIDs = sent[1:]
+	link.MirrorBody = mirroredMessageBody(send.Content)
 	if err := s.store.SaveMessageLinkWithReference(ctx, link, ref); err != nil {
 		s.deletePostedMirror(target, threadID, sent)
 		return WebhookSendResult{}, err
@@ -52,28 +52,43 @@ func (s *Service) deletePostedMirror(target GroupChannel, threadID string, messa
 }
 
 // replaceMirrorMessages rewrites a posted mirror to content, however many
-// messages it takes: existing parts are edited in order, new parts are posted
-// under the same author identity, and parts the shorter text no longer needs
-// are deleted. The link's stored continuation IDs follow the result.
-func (s *Service) replaceMirrorMessages(ctx context.Context, target GroupChannel, link *MessageLink, content mirrorText) error {
+// messages it takes: parts whose text is unchanged in previous stay untouched,
+// differing parts are edited in order, new parts are posted under the same
+// author identity, and parts the shorter text no longer needs are deleted.
+// previous holds the current contents of the mirror's messages in order,
+// starting with the primary; nil means every part is edited without
+// comparison. The link's stored body and continuation IDs follow the result.
+func (s *Service) replaceMirrorMessages(ctx context.Context, target GroupChannel, link *MessageLink, content mirrorText, previous []string) error {
 	parts := splitMessageContent(string(content), discordMessageContentLimit)
 	existing := append([]string{link.TargetMessageID}, link.ContinuationMessageIDs...)
+	if previous != nil && len(previous) != len(existing) {
+		return fmt.Errorf("replace mirror %s/%s: %d stored contents for %d messages", link.TargetChannelID, link.TargetMessageID, len(previous), len(existing))
+	}
 	common := min(len(parts), len(existing))
+	threadID := threadIDForWebhook(*link, &target)
 	for i := 0; i < common; i++ {
+		if previous != nil && previous[i] == parts[i] {
+			continue
+		}
 		if err := s.editWebhookMessageAt(target, *link, existing[i], parts[i]); err != nil {
 			return err
 		}
 	}
-	threadID := threadIDForWebhook(*link, &target)
 	addedIDs := make([]string, 0, len(parts)-common)
-	for _, part := range parts[common:] {
-		messageID, err := s.sendMirrorContinuation(target, *link, part)
+	if len(parts) > common {
+		identity := WebhookSend{
+			Username:  link.SourceAuthorDisplayName,
+			AvatarURL: avatarProxyURL(s.publicBaseURL, link.SourceAuthorAvatarURL, link.SourceAuthorRoleColor),
+		}
+		added, err := s.postMirrorContinuations(target, threadID, identity, parts[common:])
+		addedIDs = append(addedIDs, added...)
+		if len(addedIDs) > 0 {
+			existing = append(existing, addedIDs...)
+		}
 		if err != nil {
 			s.deletePostedMirror(target, threadID, addedIDs)
 			return err
 		}
-		existing = append(existing, messageID)
-		addedIDs = append(addedIDs, messageID)
 	}
 	for _, messageID := range existing[len(parts):] {
 		if err := s.deleteWebhookMessageAt(target, *link, messageID); err != nil && !isUnknownMessageError(err) {
@@ -82,26 +97,33 @@ func (s *Service) replaceMirrorMessages(ctx context.Context, target GroupChannel
 	}
 	existing = existing[:len(parts)]
 	link.ContinuationMessageIDs = existing[1:]
-	if err := s.store.UpdateMessageLinkContinuations(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, link.ContinuationMessageIDs); err != nil {
+	if err := s.store.UpdateMessageLinkContent(ctx, link.SourceChannelID, link.SourceMessageID, link.TargetChannelID, mirroredMessageBody(string(content)), link.ContinuationMessageIDs); err != nil {
 		s.deletePostedMirror(target, threadID, addedIDs)
 		return err
 	}
 	return nil
 }
 
-// sendMirrorContinuation posts one further message of a mirror under the
-// author identity the mirror was created with.
-func (s *Service) sendMirrorContinuation(target GroupChannel, link MessageLink, content string) (string, error) {
-	result, err := s.sendWebhookMessage(target, WebhookSend{
-		Content:   content,
-		Username:  link.SourceAuthorDisplayName,
-		AvatarURL: avatarProxyURL(s.publicBaseURL, link.SourceAuthorAvatarURL, link.SourceAuthorRoleColor),
-		ThreadID:  threadIDForWebhook(link, &target),
-	})
-	if err != nil {
-		return "", err
+// postMirrorContinuations posts the messages after a mirror's first one under
+// the author identity the mirror was posted with: the identity's name and
+// avatar only, so a continuation carries text rather than TTS, embeds, or
+// files. When any part cannot be posted, the IDs posted so far come back with
+// the error for the caller's compensation.
+func (s *Service) postMirrorContinuations(target GroupChannel, threadID string, identity WebhookSend, parts []string) ([]string, error) {
+	ids := make([]string, 0, len(parts))
+	for _, part := range parts {
+		result, err := s.sendWebhookMessage(target, WebhookSend{
+			Content:   part,
+			Username:  identity.Username,
+			AvatarURL: identity.AvatarURL,
+			ThreadID:  threadID,
+		})
+		if err != nil {
+			return ids, err
+		}
+		ids = append(ids, result.MessageID)
 	}
-	return result.MessageID, nil
+	return ids, nil
 }
 
 // targetAlreadySynced reports whether a source message already has a mirror

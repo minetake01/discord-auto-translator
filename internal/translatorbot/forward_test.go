@@ -13,6 +13,7 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
 		TargetChannelID: "en", TargetMessageID: "700000000000000012", TargetLanguage: "en",
 		SourceContentSnapshot: "元本文",
+		MirrorBody:            "Translated first line\nTranslated second line",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -41,6 +42,31 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	}
 }
 
+func TestForwardReuseFailsFastWhenMirrorBodyIsMissing(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	if err := store.SaveMessageLink(ctx, MessageLink{
+		SourceMessageID: "100000000000000003", SourceChannelID: "ja", GroupID: "g",
+		TargetChannelID: "en", TargetMessageID: "700000000000000012", TargetLanguage: "en",
+		SourceContentSnapshot: "元本文",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &echoTranslator{})
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000003", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
+	})
+	if err == nil {
+		t.Fatal("expected a missing mirror body to fail forward reuse")
+	}
+	if len(discord.sent) != 0 {
+		t.Fatalf("forward reuse posted without a recorded body: %#v", discord.sent)
+	}
+}
+
 func TestForwardReusesEveryPartOfALongMirror(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -50,13 +76,11 @@ func TestForwardReusesEveryPartOfALongMirror(t *testing.T) {
 		TargetChannelID: "en", TargetMessageID: "700000000000000012", TargetLanguage: "en",
 		ContinuationMessageIDs: []string{"700000000000000013"},
 		SourceContentSnapshot:  "元本文",
+		MirrorBody:             "Translated first part\nTranslated second part",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	discord := &fakeDiscordAPI{messageContents: map[string]string{
-		"en\x00700000000000000012": "> old quote · [Source](https://discord.com/channels/guild/ja/old)\n\nTranslated first part",
-		"en\x00700000000000000013": "Translated second part",
-	}}
+	discord := &fakeDiscordAPI{}
 	translator := &echoTranslator{}
 	service := NewService(store, discord, translator)
 	err := service.HandleMessageCreate(ctx, DiscordMessage{
