@@ -1256,18 +1256,70 @@ func TestOpenAITranslatorDoesNotRetryContractViolation(t *testing.T) {
 	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
-			`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{}"}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`,
+			`{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":"{}"}}],"usage":{"prompt_tokens":1,"completion_tokens":2}}`,
 		))}, nil
 	})
 	_, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if errors.Is(err, errTranslationProvider) {
-		t.Fatalf("contract violation must not be a provider outage: %v", err)
+	if !errors.Is(err, errTranslationContent) || errors.Is(err, errTranslationProvider) {
+		t.Fatalf("contract violation must be a content error, not a provider outage: %v", err)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestOpenAITranslatorRetriesLengthTruncationOnceAndPreservesContentError(t *testing.T) {
+	var calls atomic.Int32
+	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		if calls.Add(1) == 1 {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+				`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{\"en\":   "}}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`,
+			))}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(successfulOpenAIResponse(`{"en":{"translated_text":"Hello"}}`, 1, 1)))}, nil
+	})
+	result, err := translateMulti(t, context.Background(), testTranslator(client), []string{"en"}, "hello", TranslationContext{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Translations["en"] != "Hello" || calls.Load() != 2 {
+		t.Fatalf("result = %#v, calls = %d", result, calls.Load())
+	}
+
+	var permanentCalls atomic.Int32
+	permanentClient := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		permanentCalls.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{\"en\":   "}}],"usage":{"prompt_tokens":1,"completion_tokens":4096}}`,
+		))}, nil
+	})
+	_, err = translateMulti(t, context.Background(), testTranslator(permanentClient), []string{"en"}, "hello", TranslationContext{}, nil)
+	if !errors.Is(err, errTranslationContent) || errors.Is(err, errTranslationProvider) {
+		t.Fatalf("exhausted length truncation must remain a content error, got %v", err)
+	}
+	if permanentCalls.Load() != 2 {
+		t.Fatalf("calls = %d, want 2", permanentCalls.Load())
+	}
+}
+
+func TestOpenAITranslatorDoesNotRetrySubstantiveMultiMessageBatchTruncation(t *testing.T) {
+	var calls atomic.Int32
+	client := openaiRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(
+			`{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"{\"1\":{\"translated_text\":\"first message translated completely\"},\"2\":{\"translated_text\":\"truncated"}}],"usage":{"prompt_tokens":10,"completion_tokens":4096}}`,
+		))}, nil
+	})
+	prepared := preparedBatch(t, "一つ目", "二つ目")
+	_, err := testTranslator(client).TranslateBatch(context.Background(), prepared)
+	if !errors.Is(err, errTranslationContent) || errors.Is(err, errTranslationProvider) {
+		t.Fatalf("batch truncation must be a content error for splitting, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("substantive multi-message batch truncation must split instead of retrying: calls = %d, want 1", calls.Load())
 	}
 }
 

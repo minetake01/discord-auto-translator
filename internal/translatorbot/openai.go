@@ -44,9 +44,26 @@ const (
 var errTranslationProvider = errors.New("translation provider unavailable")
 
 // errTranslationContent marks a completed response that cannot be used:
-// truncation by max_tokens, empty content, or an invalid structure. Retrying
-// the same request is pointless; batch translation splits instead.
+// truncation by max_tokens, empty content, or an invalid structure.
 var errTranslationContent = errors.New("translation response is unusable")
+
+const openaiDegenerateTruncationBytes = 32
+
+// openaiLengthTruncationError marks a finish_reason=length response.
+// Degenerate truncations (where the model loops on whitespace before emitting
+// content) and non-splittable requests are retried once; substantive
+// truncations on multi-message batches are left to batch splitting.
+type openaiLengthTruncationError struct {
+	contentLength int
+}
+
+func (e *openaiLengthTruncationError) Error() string {
+	return "OpenAI response was truncated by max_tokens"
+}
+
+func (e *openaiLengthTruncationError) Unwrap() error {
+	return errTranslationContent
+}
 
 func contentError(err error) error {
 	if errors.Is(err, errTranslationContent) {
@@ -87,6 +104,17 @@ func isOpenAIRetryable(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+func shouldRetryOpenAIAttempt(prepared preparedTranslation, err error) bool {
+	if isOpenAIRetryable(err) {
+		return true
+	}
+	var truncErr *openaiLengthTruncationError
+	if errors.As(err, &truncErr) {
+		return len(prepared.batchSources) <= 1 || truncErr.contentLength < openaiDegenerateTruncationBytes
+	}
+	return false
 }
 
 type openaiHTTPClient interface {
@@ -324,7 +352,7 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 			return text, inputTokens, outputTokens, nil
 		}
 		lastErr = err
-		if attempt == openaiRetryAttempts-1 || !isOpenAIRetryable(err) || ctx.Err() != nil {
+		if attempt == openaiRetryAttempts-1 || !shouldRetryOpenAIAttempt(prepared, err) || ctx.Err() != nil {
 			return "", 0, 0, wrapProviderIssue(lastErr)
 		}
 		timer := time.NewTimer(openaiRetryBackoff)
@@ -339,13 +367,13 @@ func (t *OpenAITranslator) invokePreparedWithRetry(ctx context.Context, prepared
 }
 
 type openaiChatCompletionRequest struct {
-	Model              string                    `json:"model"`
-	Messages           []openaiChatMessage       `json:"messages"`
-	MaxTokens          int                       `json:"max_tokens"`
-	ReasoningEffort    string                    `json:"reasoning_effort,omitempty"`
-	PromptCacheKey     string                `json:"prompt_cache_key,omitempty"`
+	Model              string                 `json:"model"`
+	Messages           []openaiChatMessage    `json:"messages"`
+	MaxTokens          int                    `json:"max_tokens"`
+	ReasoningEffort    string                 `json:"reasoning_effort,omitempty"`
+	PromptCacheKey     string                 `json:"prompt_cache_key,omitempty"`
 	PromptCacheOptions *openaiPromptCacheMode `json:"prompt_cache_options,omitempty"`
-	ResponseFormat     openaiResponseFormat  `json:"response_format"`
+	ResponseFormat     openaiResponseFormat   `json:"response_format"`
 }
 
 type openaiResponseFormat struct {
@@ -374,8 +402,8 @@ type openaiImagePart struct {
 }
 
 type openaiTextPart struct {
-	Type                  string                `json:"type"`
-	Text                  string                `json:"text"`
+	Type                  string                 `json:"type"`
+	Text                  string                 `json:"text"`
 	PromptCacheBreakpoint *openaiPromptCacheMode `json:"prompt_cache_breakpoint,omitempty"`
 }
 
@@ -554,7 +582,8 @@ func extractOpenAIChatText(output openaiChatCompletionResponse) (text string, in
 	}
 	choice := output.Choices[0]
 	if strings.EqualFold(choice.FinishReason, "length") {
-		return "", 0, 0, fmt.Errorf("%w: OpenAI response was truncated by max_tokens", errTranslationContent)
+		content, _ := decodeOpenAIMessageContent(choice.Message.Content)
+		return "", 0, 0, &openaiLengthTruncationError{contentLength: len(strings.TrimSpace(content))}
 	}
 	if choice.Message.Role != "" && choice.Message.Role != "assistant" {
 		return "", 0, 0, fmt.Errorf("OpenAI response has unexpected message role %q", choice.Message.Role)
