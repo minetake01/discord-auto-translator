@@ -853,6 +853,21 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 		t.Fatalf("name only = %#v", nameOnly["en"])
 	}
 
+	// A provider that ignores the name-only schema can still answer with a
+	// message; the parser ignores it rather than failing the translation.
+	strayMessage, err := parseThreadCreateTranslationResponse(
+		`{"en":{"name":"Topic","message":"unexpected"}}`,
+		[]string{"en"},
+		false,
+		p,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strayMessage["en"] != (ThreadCreateTranslation{Name: "Topic", Message: ""}) {
+		t.Fatalf("stray message = %#v", strayMessage["en"])
+	}
+
 	for _, tc := range []struct {
 		raw              string
 		langs            []string
@@ -876,12 +891,6 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 			langs:            []string{"en"},
 			messageRequired:  true,
 			wantErrSubstring: "empty name",
-		},
-		{
-			raw:              `{"en":{"name":"Topic","message":"unexpected"}}`,
-			langs:            []string{"en"},
-			messageRequired:  false,
-			wantErrSubstring: "unknown field",
 		},
 	} {
 		if _, err := parseThreadCreateTranslationResponse(tc.raw, tc.langs, tc.messageRequired, p); err == nil {

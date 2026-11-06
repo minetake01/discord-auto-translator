@@ -526,34 +526,16 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 	return prepared, nil
 }
 
-type threadCreateNameResponseItem struct {
-	Name string `json:"name"`
-}
-
 type threadCreateTranslationResponseItem struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
 }
 
+// parseThreadCreateTranslationResponse reads a thread create translation. A
+// name-only payload asks the model for the name alone, but a provider that
+// does not enforce the response schema can still answer with a message; that
+// extra field is ignored instead of failing the translation.
 func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, messageRequired bool, protector *Protector) (map[string]ThreadCreateTranslation, error) {
-	if !messageRequired {
-		parsed, err := decodeLanguageKeyedJSON[threadCreateNameResponseItem](raw, targetLanguages)
-		if err != nil {
-			return nil, fmt.Errorf("parse thread create translation response: %w", err)
-		}
-		out := make(map[string]ThreadCreateTranslation, len(targetLanguages))
-		for _, targetLanguage := range targetLanguages {
-			name := strings.TrimSpace(html.UnescapeString(parsed[targetLanguage].Name))
-			if name == "" {
-				return nil, fmt.Errorf("parse thread create translation response: empty name for %q", targetLanguage)
-			}
-			out[targetLanguage] = ThreadCreateTranslation{
-				Name: protector.Restore(name),
-			}
-		}
-		return out, nil
-	}
-
 	parsed, err := decodeLanguageKeyedJSON[threadCreateTranslationResponseItem](raw, targetLanguages)
 	if err != nil {
 		return nil, fmt.Errorf("parse thread create translation response: %w", err)
@@ -566,14 +548,15 @@ func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, 
 		if name == "" {
 			return nil, fmt.Errorf("parse thread create translation response: empty name for %q", targetLanguage)
 		}
-		message := strings.TrimSpace(html.UnescapeString(item.Message))
-		if message == "" {
-			return nil, fmt.Errorf("parse thread create translation response: empty message for %q", targetLanguage)
+		translation := ThreadCreateTranslation{Name: protector.Restore(name)}
+		if messageRequired {
+			message := strings.TrimSpace(html.UnescapeString(item.Message))
+			if message == "" {
+				return nil, fmt.Errorf("parse thread create translation response: empty message for %q", targetLanguage)
+			}
+			translation.Message = protector.Restore(message)
 		}
-		out[targetLanguage] = ThreadCreateTranslation{
-			Name:    protector.Restore(name),
-			Message: protector.Restore(message),
-		}
+		out[targetLanguage] = translation
 	}
 	return out, nil
 }
