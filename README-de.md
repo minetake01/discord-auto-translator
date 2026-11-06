@@ -241,7 +241,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 #### 2. Sicherheit & Fail-Closed-Verhalten
 - **Schutz vor Prompt-Injection**: Alle Benutzereingaben werden XML-escaped und in isolierten Tags verpackt.
-- **Fail-Closed-Prinzip**: Bei Token-Überschreitung (`finish_reason=length`), ungültigem JSON oder Netzwerkfehlern wird keine fehlerhafte Nachricht gespiegelt, sondern eine lokalisierte Fehlermeldung im Quellkanal gepostet.
+- **Fail-Closed-Prinzip**: Bei Token-Überschreitung (`finish_reason=length`), ungültigem JSON oder Netzwerkfehlern wird niemals eine unvollständige oder beschädigte Übersetzung gespiegelt. Stattdessen wird die Originalnachricht mit einem lokalisierten Hinweis „Übersetzung fehlgeschlagen“ in jeden Zielkanal gepostet.
 
 #### 3. Zuverlässigkeit & Datenkonsistenz
 - **Idempotenz**: Verhindert doppelte Nachrichten bei mehrfach empfangenen Gateway-Events über `message_links` und `processed_events`.

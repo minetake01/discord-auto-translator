@@ -219,9 +219,6 @@ func TestBackfillSplitsFailingBatchAndSkipsOnlyTheBrokenMessage(t *testing.T) {
 			t.Fatalf("the broken message must not be posted: %q", got)
 		}
 	}
-	if len(f.discord.channelMessages) != 0 {
-		t.Fatalf("skipped messages must not notify the source channel: %#v", f.discord.channelMessages)
-	}
 }
 
 func TestBackfillGapNoticeInsideAThreadUsesTheThreadID(t *testing.T) {

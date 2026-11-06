@@ -440,12 +440,11 @@ func (s *Service) mirrorThreadMessage(ctx context.Context, m DiscordMessage, thr
 	if synced {
 		return nil
 	}
-	sourceLanguage := languageForChannel(targets, thread.SourceChannelID)
 	contextFn := func() TranslationContext {
 		return s.translationContextForMessage(ctx, m, thread.GroupID, thread.SourceChannelID, m.ChannelID, s.resolveThreadName(m), liveTranslation)
 	}
 	dests := []mirrorDestination{destinationForThread(*target, thread.TargetThreadID)}
-	return s.mirrorMessage(ctx, m, thread.GroupID, sourceLanguage, contextFn, dests, liveTranslation)
+	return s.mirrorMessage(ctx, m, thread.GroupID, contextFn, dests, liveTranslation)
 }
 
 func (s *Service) SyncThreadUpdate(ctx context.Context, guildID, sourceThreadID, name string, appliedTags []string, nameChanged, tagsChanged bool) error {

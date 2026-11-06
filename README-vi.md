@@ -241,7 +241,7 @@ Xác thực thông tin đăng nhập API, kết nối mô hình và cấu trúc 
 
 #### 2. An toàn & Nguyên tắc Fail-Closed
 - **Chống Prompt Injection**: Toàn bộ nội dung người dùng được thoát ký tự XML và cô lập trong các thẻ riêng biệt.
-- **Nguyên tắc Fail-Closed**: Khi vượt quá giới hạn token (`finish_reason=length`), phản hồi JSON không hợp lệ hoặc lỗi mạng, bot hủy việc chuyển tiếp và gửi thông báo lỗi tại kênh gốc thay vì đăng nội dung hỏng.
+- **Nguyên tắc Fail-Closed**: Khi vượt quá giới hạn token (`finish_reason=length`), phản hồi JSON không hợp lệ hoặc lỗi mạng, bot không bao giờ đăng bản dịch dở dang hay hỏng. Thay vào đó, bot đăng nguyên văn tin nhắn gốc kèm ghi chú "Dịch thất bại." đã được bản địa hóa trong từng kênh đích.
 
 #### 3. Độ tin cậy & Tính nhất quán Dữ liệu
 - **Tính Idempotent**: `message_links` và `processed_events` ngăn chặn việc gửi trùng lặp tin nhắn khi nhận các sự kiện Gateway lặp lại.

@@ -27,7 +27,6 @@ type Service struct {
 	messageLocks         keyedLocks
 	topicSummaryAttempts sync.Map
 	runTopicSummary      func(func())
-	issueNotices         issueNoticeState
 	editDebounce         *editDebouncer
 	threadStates         threadStateTracker
 	backfill             backfillWorkers

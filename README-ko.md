@@ -241,7 +241,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 #### 2. 보안 및 Fail-Closed 설계
 - **프롬프트 인젝션 방어**: 모든 사용자 입력은 XML 이스케이프 처리되며 격리 태그 내에 배치됩니다. 플레이스홀더 메커니즘으로 시스템 지침 덮어쓰기를 원천 차단합니다.
-- **Fail-Closed 원칙**: 토큰 수 초과(`finish_reason=length`), 유효하지 않은 JSON 응답, 일시적 네트워크 오류 발생 시 불완전한 번역을 전송하지 않고 원본 채널에 에러 알림을 게시합니다.
+- **Fail-Closed 원칙**: 토큰 수 초과(`finish_reason=length`), 유효하지 않은 JSON 응답, 일시적 네트워크 오류가 발생해도 불완전하거나 손상된 번역을 전송하지 않습니다. 대신 각 대상 채널에 원문과 함께 현지화된 "번역 실패" 안내를 게시합니다.
 
 #### 3. 신뢰성 및 데이터 일관성
 - **멱등성 보장 (Idempotency)**: `message_links` 및 `processed_events`를 통해 중복 게이트웨이 이벤트 수신 시 메시지 중복 미러링을 방지합니다.

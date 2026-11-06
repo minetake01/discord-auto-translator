@@ -21,10 +21,10 @@ type forwardedMirrorPayload struct {
 // mirrorForwardedMessage mirrors a forwarded message to every destination.
 // When the forwarded source already has a mirror in the destination, its
 // translated body and jump URL are reused without calling the translator.
-func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
+func (s *Service) mirrorForwardedMessage(ctx context.Context, m DiscordMessage, groupID string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
 	contents, pendingAlts, err := s.forwardedContents(ctx, m, contextFn, dests, scope)
 	if err != nil {
-		return s.translationFailure(ctx, m, sourceLanguage, err, scope)
+		return s.translationFailure(ctx, m, groupID, dests, err, scope)
 	}
 	var posted []postedWebhookMirror
 	var errs []error
@@ -133,11 +133,7 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 			}
 			files = webhookFilesForImages(loaded, alts[dest.channel.Language])
 		}
-		header := fmt.Sprintf("-# %s · %s", localizedUIString(dest.channel.Language, uiKeyForwarded), item.jumpURL)
-		content := header
-		if strings.TrimSpace(body) != "" {
-			content = header + "\n" + body
-		}
+		content := forwardedMirrorContent(dest.channel.Language, item.jumpURL, body)
 		final, err := finishMirrorContent(m.ID, content, dest.timestamp)
 		if err != nil {
 			return nil, nil, err
@@ -145,6 +141,25 @@ func (s *Service) forwardedContents(ctx context.Context, m DiscordMessage, conte
 		contents[dest.targetID] = forwardedMirrorPayload{content: final, files: files}
 	}
 	return contents, pendingAlts, nil
+}
+
+// forwardedMirrorContent is a forwarded mirror's body: the localized forwarded
+// header with the source jump URL, then the forwarded text when there is any.
+func forwardedMirrorContent(language, jumpURL, body string) string {
+	header := fmt.Sprintf("-# %s · %s", localizedUIString(language, uiKeyForwarded), jumpURL)
+	if strings.TrimSpace(body) == "" {
+		return header
+	}
+	return header + "\n" + body
+}
+
+// forwardedJumpURL is the source link a forwarded mirror header points at.
+func forwardedJumpURL(m DiscordMessage) string {
+	guildID := m.ForwardedMessage.GuildID
+	if guildID == "" {
+		guildID = m.GuildID
+	}
+	return MessageJumpURL(guildID, m.ForwardedMessage.ChannelID, m.ForwardedMessage.MessageID)
 }
 
 func anyForwardNeedsAssets(prepared map[string]forwardedTargetContent) bool {

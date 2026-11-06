@@ -159,6 +159,16 @@ func withQuote(quote, content string) string {
 	}
 }
 
+// withTranslationFailedNote appends the localized note a mirror carries when
+// its translation failed, as the last subtext line under the original text.
+func withTranslationFailedNote(content mirrorText, language string) mirrorText {
+	note := "-# " + localizedUIString(language, uiKeyTranslationFailed)
+	if strings.TrimSpace(string(content)) == "" {
+		return mirrorText(note)
+	}
+	return mirrorText(string(content) + "\n" + note)
+}
+
 func truncateRunes(text string, maxRunes int, ellipsis string) string {
 	runes := []rune(text)
 	if len(runes) <= maxRunes {

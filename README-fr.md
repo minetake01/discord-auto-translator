@@ -241,7 +241,7 @@ Permet de vérifier les identifiants API, la connectivité et le schéma de rép
 
 #### 2. Sécurité & Fail-Closed
 - **Défense contre l'injection de prompt** : Tout le contenu utilisateur est échappé en XML et isolé dans des balises dédiées.
-- **Principe Fail-Closed** : En cas de dépassement de tokens (`finish_reason=length`), de JSON invalide ou d'erreur réseau, le bot n'envoie pas de message partiel ou corrompu, mais poste une notification d'erreur dans le salon source.
+- **Principe Fail-Closed** : En cas de dépassement de tokens (`finish_reason=length`), de JSON invalide ou d'erreur réseau, le bot ne publie jamais de traduction partielle ou corrompue. Il publie à la place le message original avec une note « traduction échouée » localisée dans chaque salon cible.
 
 #### 3. Fiabilité & Cohérence des Données
 - **Idempotence** : `message_links` et `processed_events` préviennent la duplication des messages en cas d'événements réseau répétés.

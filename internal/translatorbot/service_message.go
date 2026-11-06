@@ -175,21 +175,20 @@ func (s *Service) mirrorMessageToGroup(ctx context.Context, m DiscordMessage, so
 	contextFn := func() TranslationContext {
 		return s.translationContextForMessage(ctx, m, source.GroupID, m.ChannelID, m.ChannelID, "", liveTranslation)
 	}
-	return s.mirrorMessage(ctx, m, source.GroupID, source.Language, contextFn, dests, liveTranslation)
+	return s.mirrorMessage(ctx, m, source.GroupID, contextFn, dests, liveTranslation)
 }
 
 // mirrorMessage translates a source message once and sends it to every
 // destination, handling forwarded messages, reply quotes, and asset URLs.
-// Translation failures are reported to the source channel in its language.
-func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
+func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
 	if m.ForwardedMessage != nil {
-		return s.mirrorForwardedMessage(ctx, m, groupID, sourceLanguage, contextFn, dests, scope)
+		return s.mirrorForwardedMessage(ctx, m, groupID, contextFn, dests, scope)
 	}
 	if m.PollResult != nil {
 		return s.mirrorPollResultMessage(ctx, m, groupID, dests)
 	}
 	if m.Poll != nil {
-		return s.mirrorPollMessage(ctx, m, groupID, sourceLanguage, contextFn, dests, scope)
+		return s.mirrorPollMessage(ctx, m, groupID, contextFn, dests, scope)
 	}
 
 	languages := destinationLanguages(dests)
@@ -197,7 +196,7 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	altCh := s.startAttachmentAltTranslation(ctx, m.GuildID, loaded, languages, contextFn, scope)
 	translations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, loaded, languages, contextFn, scope)
 	if err != nil {
-		return s.translationFailure(ctx, m, sourceLanguage, err, scope)
+		return s.translationFailure(ctx, m, groupID, dests, err, scope)
 	}
 	alts, pendingAlts := takeReadyAttachmentAlts(altCh)
 
@@ -224,6 +223,53 @@ func (s *Service) mirrorMessage(ctx context.Context, m DiscordMessage, groupID, 
 	}
 	s.applyReadyAttachmentAlts(pendingAlts, posted)
 	return errors.Join(errs...)
+}
+
+// mirrorUntranslated mirrors a source message whose translation failed: every
+// destination receives the original text with a localized note that the
+// translation failed, so the target history keeps the message and the gap is
+// visible where it happened. The post is a mirror like any other, so its link
+// keeps edits, deletions, reply quotes, and duplicate deliveries in step with
+// it. Images stay links instead of uploads: a failed translation must not turn
+// into a second failure while fetching them again.
+func (s *Service) mirrorUntranslated(ctx context.Context, m DiscordMessage, groupID string, dests []mirrorDestination) error {
+	body := untranslatedSourceText(m)
+	jumpURL := ""
+	if m.ForwardedMessage != nil {
+		jumpURL = forwardedJumpURL(m)
+	}
+	var errs []error
+	for _, dest := range dests {
+		destBody := body
+		if m.ForwardedMessage != nil {
+			destBody = forwardedMirrorContent(dest.channel.Language, jumpURL, destBody)
+		}
+		content, err := s.mirrorContent(ctx, m, dest.targetID, dest.channel.Language, destBody, sourceImageAttachments(m), dest.timestamp)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+			continue
+		}
+		content = withTranslationFailedNote(content, dest.channel.Language)
+		if _, err := s.sendMirror(ctx, m, groupID, dest, content, nil, nil, body); err != nil {
+			errs = append(errs, fmt.Errorf("target %s: %w", dest.targetID, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// untranslatedSourceText is the source text a failed translation falls back to:
+// the forwarded snapshot for a forward, the poll question and answers for a
+// poll, and the message content otherwise. It is also the snapshot the
+// fallback mirror records on its link.
+func untranslatedSourceText(m DiscordMessage) string {
+	switch {
+	case m.ForwardedMessage != nil:
+		return m.ForwardedMessage.Content
+	case m.Poll != nil:
+		return pollMessageSnapshot(m.Content, m.Poll)
+	default:
+		return m.Content
+	}
 }
 
 // mirrorContent builds the finished text of a mirrored message from its
@@ -276,7 +322,9 @@ func (s *Service) sendMirror(ctx context.Context, m DiscordMessage, groupID stri
 	}, ref)
 }
 
-func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, groupID, sourceLanguage string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
+// mirrorPollMessage mirrors a message that carries a poll: the message text is
+// translated as a body and the poll question and answers as an embed.
+func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, groupID string, contextFn func() TranslationContext, dests []mirrorDestination, scope translationScope) error {
 	languages := destinationLanguages(dests)
 	question := strings.TrimSpace(m.Poll.Question)
 	answers := pollAnswerTexts(m.Poll)
@@ -284,11 +332,11 @@ func (s *Service) mirrorPollMessage(ctx context.Context, m DiscordMessage, group
 
 	contentTranslations, err := s.translateWithLimit(ctx, m.GuildID, m.Content, nil, languages, contextFn, scope)
 	if err != nil {
-		return s.translationFailure(ctx, m, sourceLanguage, err, scope)
+		return s.translationFailure(ctx, m, groupID, dests, err, scope)
 	}
 	pollTranslations, err := s.translatePollWithLimit(ctx, m.GuildID, question, answers, languages, contextFn, scope)
 	if err != nil {
-		return s.translationFailure(ctx, m, sourceLanguage, err, scope)
+		return s.translationFailure(ctx, m, groupID, dests, err, scope)
 	}
 
 	var errs []error

@@ -40,7 +40,7 @@ const (
 )
 
 // errTranslationProvider marks a translation API outage (timeout, transport, or
-// HTTP 429/5xx after retry). Channel notices are shown at most once per hour.
+// HTTP 429/5xx after retry).
 var errTranslationProvider = errors.New("translation provider unavailable")
 
 // errTranslationContent marks a completed response that cannot be used:

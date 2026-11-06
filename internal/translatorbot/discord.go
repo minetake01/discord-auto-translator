@@ -22,7 +22,6 @@ type DiscordAPI interface {
 	ChannelTopic(channelID string) (string, error)
 	Message(channelID, messageID string) (DiscordFetchedMessage, error)
 	CreateWebhook(channelID, name string) (id, token string, err error)
-	SendChannelMessage(channelID, replyToMessageID, content string) error
 	SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error)
 	EditWebhook(webhookID, token, messageID, threadID, content string) error
 	EditWebhookAttachments(webhookID, token, messageID, threadID string, attachments []WebhookAttachmentEdit) error
@@ -179,19 +178,6 @@ func fetchedMessageFromDiscord(message *discordgo.Message) DiscordFetchedMessage
 		result.ReferencedChannelID = message.MessageReference.ChannelID
 	}
 	return result
-}
-
-func (d DiscordGoAPI) SendChannelMessage(channelID, replyToMessageID, content string) error {
-	if replyToMessageID == "" {
-		return errors.New("send channel message: replyToMessageID is required")
-	}
-	_, err := withDiscordRetryValue(func() (*discordgo.Message, error) {
-		return d.session.ChannelMessageSendReply(channelID, content, &discordgo.MessageReference{
-			MessageID: replyToMessageID,
-			ChannelID: channelID,
-		})
-	})
-	return err
 }
 
 func (d DiscordGoAPI) CreateWebhook(channelID, name string) (string, string, error) {

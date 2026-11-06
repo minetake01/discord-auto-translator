@@ -6,104 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"sync"
-	"time"
 )
-
-type issueNoticeKind string
-
-const (
-	issueNoticeProvider  issueNoticeKind = "provider"
-	issueNoticeRateLimit issueNoticeKind = "rate_limit"
-
-	providerNoticeCooldown = time.Hour
-)
-
-// issueNoticeState suppresses repeat source-channel notices. Provider outages
-// stay muted for one hour after a notice, even if some translations succeed in
-// between. Guild token rate limits notify once until the limiter allows again.
-type issueNoticeState struct {
-	mu                 sync.Mutex
-	now                func() time.Time
-	providerNotifiedAt map[string]time.Time
-	rateLimitNotified  map[string]struct{}
-}
-
-func issueNoticeKindFor(err error) (issueNoticeKind, bool) {
-	switch {
-	case errors.Is(err, errTranslationProvider):
-		return issueNoticeProvider, true
-	case errors.Is(err, errTranslationRateLimited):
-		return issueNoticeRateLimit, true
-	default:
-		return "", false
-	}
-}
-
-func (p *issueNoticeState) nowTime() time.Time {
-	if p.now != nil {
-		return p.now()
-	}
-	return time.Now()
-}
-
-func (p *issueNoticeState) allow(channelID string, err error) bool {
-	kind, suppress := issueNoticeKindFor(err)
-	if !suppress {
-		return true
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	switch kind {
-	case issueNoticeProvider:
-		if p.providerNotifiedAt == nil {
-			p.providerNotifiedAt = make(map[string]time.Time)
-		}
-		now := p.nowTime()
-		if last, ok := p.providerNotifiedAt[channelID]; ok && now.Sub(last) < providerNoticeCooldown {
-			return false
-		}
-		p.providerNotifiedAt[channelID] = now
-		return true
-	case issueNoticeRateLimit:
-		if p.rateLimitNotified == nil {
-			p.rateLimitNotified = make(map[string]struct{})
-		}
-		if _, already := p.rateLimitNotified[channelID]; already {
-			return false
-		}
-		p.rateLimitNotified[channelID] = struct{}{}
-		return true
-	default:
-		return true
-	}
-}
-
-func (p *issueNoticeState) clearRateLimit() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.rateLimitNotified = nil
-}
-
-// notifyTranslationIssue posts a localized notice as a reply to the source
-// message when it could not be mirrored. The language is the source channel's
-// registered language, since that is where the notice is shown. Provider
-// outages notify each source channel at most once per hour. Token rate limits
-// notify each source channel once until the limiter allows again.
-func (s *Service) notifyTranslationIssue(channelID, messageID, language string, err error) {
-	if !s.issueNotices.allow(channelID, err) {
-		return
-	}
-	key := uiKeyTranslationFailedNotice
-	if errors.Is(err, errTranslationRateLimited) {
-		key = uiKeyRateLimitNotice
-	}
-	content := localizedUIString(language, key)
-	if errors.Is(err, errTranslationProvider) {
-		content = content + " " + localizedUIString(language, uiKeyProviderMayContinueNotice)
-	}
-	_ = s.discord.SendChannelMessage(channelID, messageID, content)
-}
 
 func (s *Service) prepareTranslation(ctx context.Context, guildID, lookupText string, languages []string, contextFn func() TranslationContext, prepare func([]string, TranslationContext, []GlossaryEntry) (preparedTranslation, error), reservedVision []visionImage, scope translationScope) (preparedTranslation, error) {
 	glossary, err := s.store.ListGlossaryEntries(ctx, guildID)
@@ -354,24 +257,19 @@ func (s *Service) checkPreparedTranslationRateLimit(guildID string, prepared pre
 	if !s.rateLimiter.AllowShare(guildID, estimatePreparedTokens(prepared), fraction) {
 		return errTranslationRateLimited
 	}
-	if fraction == 1 {
-		s.issueNotices.clearRateLimit()
-	}
 	return nil
 }
 
-// translationFailure reports a failed live translation to the source channel
-// and decides whether the caller should surface the error. Backfill never
-// posts notices and needs rate-limit errors back so it can wait and retry.
-func (s *Service) translationFailure(ctx context.Context, m DiscordMessage, sourceLanguage string, err error, scope translationScope) error {
+// translationFailure handles a live translation failure by mirroring the source
+// message untranslated with a localized failure note in every destination, so
+// the target history keeps the message and the gap is visible where it
+// happened. The translation error still reaches the caller. Backfill returns
+// the error unchanged: it retries transient failures and reports gaps itself.
+func (s *Service) translationFailure(ctx context.Context, m DiscordMessage, groupID string, dests []mirrorDestination, err error, scope translationScope) error {
 	if scope.backfill != nil {
 		return err
 	}
-	s.notifyTranslationIssue(m.ChannelID, m.ID, sourceLanguage, err)
-	if errors.Is(err, errTranslationRateLimited) {
-		return nil
-	}
-	return err
+	return errors.Join(err, s.mirrorUntranslated(ctx, m, groupID, dests))
 }
 
 func (s *Service) recordTranslationUsage(guildID string, inputTokens, outputTokens int) {

@@ -2,6 +2,7 @@ package translatorbot
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -42,7 +43,7 @@ func TestForwardReusesTargetMirrorWithoutRetranslation(t *testing.T) {
 	}
 }
 
-func TestForwardReuseFailsFastWhenMirrorBodyIsMissing(t *testing.T) {
+func TestForwardReuseFailureFallsBackToUntranslatedForward(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	seedGroup(t, store)
@@ -62,8 +63,36 @@ func TestForwardReuseFailsFastWhenMirrorBodyIsMissing(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a missing mirror body to fail forward reuse")
 	}
-	if len(discord.sent) != 0 {
-		t.Fatalf("forward reuse posted without a recorded body: %#v", discord.sent)
+	// The forwarded message already has a mirror in the target, so the header's
+	// jump link follows the managed reference rewrite.
+	want := "-# Forwarded · " + MessageJumpURL("guild", "en", "700000000000000012") + "\n" +
+		untranslatedMirrorContent("en", "元本文")
+	if sent := discord.webhookSends(); len(sent) != 1 || sent[0].Content != want {
+		t.Fatalf("sent = %#v, want the untranslated forward %q", sent, want)
+	}
+}
+
+func TestForwardMirrorsUntranslatedWhenTranslationFails(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	seedGroup(t, store)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &stickyErrorTranslator{err: errors.New("translation failed")})
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000004", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		ForwardedMessage: &DiscordForwardedMessage{MessageID: "100000000000000003", ChannelID: "ja", GuildID: "guild", Content: "元本文"},
+	})
+	if err == nil {
+		t.Fatal("expected the translation error")
+	}
+	want := "-# Forwarded · " + MessageJumpURL("guild", "ja", "100000000000000003") + "\n" +
+		untranslatedMirrorContent("en", "元本文")
+	if sent := discord.webhookSends(); len(sent) != 1 || sent[0].Content != want {
+		t.Fatalf("sent = %#v, want %q", sent, want)
+	}
+	links, err := store.MessageTargets(ctx, "ja", "100000000000000004")
+	if err != nil || len(links) != 1 || links[0].SourceContentSnapshot != "元本文" {
+		t.Fatalf("fallback forward link = %#v, err=%v", links, err)
 	}
 }
 

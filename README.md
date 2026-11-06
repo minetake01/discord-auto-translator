@@ -241,7 +241,7 @@ You can validate API credentials, model connectivity, and response schema contra
 
 #### 2. Security & Fail-Closed Behavior
 - **Prompt Injection Defense**: All user content is XML-escaped and quarantined within dedicated context sections. Masked placeholders ensure LLM instructions cannot be hijacked.
-- **Fail-Closed Principle**: If token limits are exceeded (`finish_reason=length`), invalid JSON is returned, or temporary network failures persist, the bot aborts mirroring and posts a localized notification in the source channel instead of posting corrupted content.
+- **Fail-Closed Principle**: If token limits are exceeded (`finish_reason=length`), invalid JSON is returned, or temporary network failures persist, the bot never mirrors a partial or corrupted translation. It posts the original message with a localized "translation failed" note in each target channel instead.
 
 #### 3. Reliability & Data Consistency
 - **Idempotency**: Message IDs are tracked via `message_links` and `processed_events` to ensure at-most-once processing under duplicate gateway events.

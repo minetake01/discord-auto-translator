@@ -436,7 +436,7 @@ func (r *backfillRunner) load(ctx context.Context, m DiscordMessage) []loadedIma
 }
 
 func (r *backfillRunner) alone(ctx context.Context, m DiscordMessage, dest mirrorDestination) error {
-	return r.poster.single(ctx, m, dest, languageForChannel(r.channels, m.ChannelID), r.contextFn(ctx, m))
+	return r.poster.single(ctx, m, dest, r.contextFn(ctx, m))
 }
 
 func (r *backfillRunner) flush(ctx context.Context, items []backfillItem) error {

@@ -39,7 +39,6 @@ type fakeDiscordAPI struct {
 	mu                     sync.Mutex
 	sent                   []WebhookSend
 	sentContents           map[string]string // webhook message ID → posted content
-	channelMessages        []channelMessageCall
 	reactions              []reactionCall
 	removedReactions       []reactionCall
 	threads                []threadCall
@@ -80,11 +79,6 @@ type threadStateCall struct {
 func fakeSentID(n int) string   { return fmt.Sprintf("%d", 900000000000000000+n) }
 func fakeThreadID(n int) string { return fmt.Sprintf("%d", 800000000000000000+n) }
 
-type channelMessageCall struct {
-	channelID        string
-	replyToMessageID string
-	content          string
-}
 type reactionCall struct {
 	channelID string
 	messageID string
@@ -176,17 +170,6 @@ func (f *fakeDiscordAPI) Message(channelID, messageID string) (DiscordFetchedMes
 }
 func (f *fakeDiscordAPI) CreateWebhook(channelID, name string) (id, token string, err error) {
 	return "webhook-" + channelID, "token-" + channelID, nil
-}
-func (f *fakeDiscordAPI) SendChannelMessage(channelID, replyToMessageID, content string) error {
-	if replyToMessageID == "" {
-		return errors.New("send channel message: replyToMessageID is required")
-	}
-	f.channelMessages = append(f.channelMessages, channelMessageCall{
-		channelID:        channelID,
-		replyToMessageID: replyToMessageID,
-		content:          content,
-	})
-	return nil
 }
 func (f *fakeDiscordAPI) SendWebhook(webhookID, token string, msg WebhookSend) (WebhookSendResult, error) {
 	f.mu.Lock()

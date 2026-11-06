@@ -241,7 +241,7 @@ Memvalidasi kredensial API, koneksi model, dan skema respons sebelum deployment:
 
 #### 2. Keamanan & Prinsip Fail-Closed
 - **Pertahanan Prompt Injection**: Semua input pengguna di-escape dalam XML dan diisolasi dalam tag khusus.
-- **Prinsip Fail-Closed**: Jika batas token terlampaui (`finish_reason=length`), JSON tidak valid, atau terjadi gangguan jaringan, bot membatalkan pengiriman dan mengirimkan notifikasi kesalahan di saluran asal.
+- **Prinsip Fail-Closed**: Jika batas token terlampaui (`finish_reason=length`), JSON tidak valid, atau terjadi gangguan jaringan, bot tidak pernah mengirim terjemahan yang tidak lengkap atau rusak. Sebagai gantinya, bot mengirim pesan asli dengan catatan "terjemahan gagal" yang dilokalkan ke setiap saluran tujuan.
 
 #### 3. Keandalan & Konsistensi Data
 - **Idempotensi**: `message_links` dan `processed_events` mencegah duplikasi pesan saat menerima event gateway berulang.

@@ -241,7 +241,7 @@ Verifica credenziali, connettività e schema di risposta prima del deployment:
 
 #### 2. Sicurezza e Principio Fail-Closed
 - **Difesa da Prompt Injection**: Tutti i contenuti utente vengono convertiti in XML ed elaborati all'interno di tag dedicati.
-- **Comportamento Fail-Closed**: In caso di superamento dei token (`finish_reason=length`), JSON non valido o errori di rete, il bot non invia messaggi corrotti, ma pubblica una notifica di errore localizzata nel canale di origine.
+- **Comportamento Fail-Closed**: In caso di superamento dei token (`finish_reason=length`), JSON non valido o errori di rete, il bot non pubblica mai una traduzione parziale o corrotta. Pubblica invece il messaggio originale con un avviso localizzato «la traduzione non è riuscita» in ogni canale di destinazione.
 
 #### 3. Affidabilità e Coerenza dei Dati
 - **Idempotenza**: `message_links` e `processed_events` prevengono la duplicazione dei messaggi in caso di eventi Gateway ripetuti.

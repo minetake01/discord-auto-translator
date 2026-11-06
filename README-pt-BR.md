@@ -241,7 +241,7 @@ Verifica credenciais, conexão e conformidade do esquema de resposta antes da im
 
 #### 2. Segurança e Comportamento Fail-Closed
 - **Defesa contra Prompt Injection**: Todo o conteúdo do usuário passa por escape XML e é isolado em tags dedicadas.
-- **Princípio Fail-Closed**: Em caso de limite de tokens excedido (`finish_reason=length`), JSON inválido ou falhas de rede, o bot não envia mensagens corrompidas e publica um aviso de erro localizado no canal de origem.
+- **Princípio Fail-Closed**: Em caso de limite de tokens excedido (`finish_reason=length`), JSON inválido ou falhas de rede, o bot nunca publica uma tradução parcial ou corrompida. Em vez disso, publica a mensagem original com um aviso localizado de «a tradução falhou» em cada canal de destino.
 
 #### 3. Confiabilidade e Consistência de Dados
 - **Idempotência**: `message_links` e `processed_events` evitam a duplicação de mensagens durante eventos repetidos do Gateway.

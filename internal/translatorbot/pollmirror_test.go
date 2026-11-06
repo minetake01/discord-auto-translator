@@ -359,6 +359,41 @@ func TestHandleMessageCreateSkipsPollCacheWithoutExpiry(t *testing.T) {
 	}
 }
 
+func TestHandleMessageCreateMirrorsUntranslatedPollWhenTranslationFails(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	discord := &fakeDiscordAPI{}
+	service := NewService(store, discord, &selectiveFailTranslator{failLanguage: "en"})
+	seedGroup(t, store)
+
+	err := service.HandleMessageCreate(ctx, DiscordMessage{
+		ID: "100000000000000050", ChannelID: "ja", GuildID: "guild", AuthorID: "u", AuthorDisplayName: "u",
+		Poll: &DiscordPoll{
+			Question: "好きな色は？",
+			Answers: []DiscordPollAnswer{
+				{Text: "赤", Emoji: &DiscordPollEmoji{Name: "🔴"}},
+				{Text: "青"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected the translation error")
+	}
+	sent := discord.webhookSends()
+	wantHeader := fmt.Sprintf("> -# %s · [%s](%s)",
+		localizedUIString("en", uiKeyPollStarted),
+		localizedUIString("en", uiKeyPollVote),
+		MessageJumpURL("guild", "ja", "100000000000000050"),
+	)
+	want := wantHeader + "\n" + untranslatedMirrorContent("en", "好きな色は？\n1. 🔴 赤\n2. 青")
+	if len(sent) != 1 || sent[0].Content != want {
+		t.Fatalf("sent = %#v, want %q", sent, want)
+	}
+	if len(sent[0].Embeds) != 0 {
+		t.Fatalf("an untranslated fallback must not build a poll embed: %#v", sent[0].Embeds)
+	}
+}
+
 func TestPurgeExpiredPollTranslationCache(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

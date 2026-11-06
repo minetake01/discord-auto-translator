@@ -241,7 +241,7 @@ go build -o discord-auto-translator ./cmd/discord-auto-translator
 
 #### 2. 安全性与 Fail-Closed 原则
 - **提示词注入防护**: 所有用户输入均经过 XML 转义并在隔离标记中包裹，占位符机制杜绝系统指令被恶意覆盖。
-- **Fail-Closed 故障安全**: 当超出 Token 限制（`finish_reason=length`）、返回格式错误或发生不可恢复的通信异常时，机器人坚决不推送破损或截断的翻译，而是在源频道发送本地化错误提示。
+- **Fail-Closed 故障安全**: 当超出 Token 限制（`finish_reason=length`）、返回格式错误或发生不可恢复的通信异常时，机器人绝不会推送破损或截断的翻译，而是在各目标频道发布原文，并附上本地化的“翻译失败”提示。
 
 #### 3. 数据一致性与可靠性
 - **幂等性保障 (Idempotency)**: 基于 `message_links` 与 `processed_events` 防止网络重试导致的消息重复镜像。
