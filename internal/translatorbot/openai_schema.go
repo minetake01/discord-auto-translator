@@ -106,17 +106,22 @@ func openaiPollTranslationSchema(targetLanguages []string) (json.RawMessage, err
 	}))
 }
 
-func openaiThreadCreateTranslationSchema(targetLanguages []string) (json.RawMessage, error) {
-	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema([]string{"name", "message"}, map[string]any{
+func openaiThreadCreateTranslationSchema(targetLanguages []string, messageRequired bool) (json.RawMessage, error) {
+	required := []string{"name"}
+	properties := map[string]any{
 		"name": map[string]any{
 			"type":        "string",
 			"description": "The thread <name> translated into this language.",
 		},
-		"message": map[string]any{
+	}
+	if messageRequired {
+		required = append(required, "message")
+		properties["message"] = map[string]any{
 			"type":        "string",
-			"description": "The initial thread <message> translated into this language. Empty when <message> was omitted.",
-		},
-	}))
+			"description": "The initial thread <message> translated into this language.",
+		}
+	}
+	return openaiLanguageKeyedSchema(targetLanguages, openaiObjectSchema(required, properties))
 }
 
 func openaiTopicSummarySchema() (json.RawMessage, error) {

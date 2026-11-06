@@ -252,7 +252,7 @@ func (t *OpenAITranslator) TranslateThreadCreateMulti(ctx context.Context, prepa
 	if len(prepared.targetLanguages) == 0 {
 		return ThreadCreateMultiTranslationResult{Translations: map[string]ThreadCreateTranslation{}}, nil
 	}
-	schema, err := openaiThreadCreateTranslationSchema(prepared.targetLanguages)
+	schema, err := openaiThreadCreateTranslationSchema(prepared.targetLanguages, prepared.messageRequired)
 	if err != nil {
 		return ThreadCreateMultiTranslationResult{}, err
 	}

@@ -104,11 +104,13 @@ type tokenUsage interface {
 	tokenUsage() (inputTokens, outputTokens int)
 }
 
-func (r MultiTranslationResult) tokenUsage() (int, int)             { return r.InputTokens, r.OutputTokens }
-func (r AttachmentAltTranslationResult) tokenUsage() (int, int)     { return r.InputTokens, r.OutputTokens }
-func (r PollMultiTranslationResult) tokenUsage() (int, int)         { return r.InputTokens, r.OutputTokens }
-func (r ThreadCreateMultiTranslationResult) tokenUsage() (int, int) { return r.InputTokens, r.OutputTokens }
-func (r TopicSummaryResult) tokenUsage() (int, int)                 { return r.InputTokens, r.OutputTokens }
+func (r MultiTranslationResult) tokenUsage() (int, int)         { return r.InputTokens, r.OutputTokens }
+func (r AttachmentAltTranslationResult) tokenUsage() (int, int) { return r.InputTokens, r.OutputTokens }
+func (r PollMultiTranslationResult) tokenUsage() (int, int)     { return r.InputTokens, r.OutputTokens }
+func (r ThreadCreateMultiTranslationResult) tokenUsage() (int, int) {
+	return r.InputTokens, r.OutputTokens
+}
+func (r TopicSummaryResult) tokenUsage() (int, int) { return r.InputTokens, r.OutputTokens }
 
 type Translator interface {
 	TranslateMulti(ctx context.Context, prepared preparedTranslation) (MultiTranslationResult, error)
@@ -524,12 +526,34 @@ func prepareThreadCreateTranslation(targetLanguages []string, name, message stri
 	return prepared, nil
 }
 
+type threadCreateNameResponseItem struct {
+	Name string `json:"name"`
+}
+
 type threadCreateTranslationResponseItem struct {
 	Name    string `json:"name"`
 	Message string `json:"message"`
 }
 
 func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, messageRequired bool, protector *Protector) (map[string]ThreadCreateTranslation, error) {
+	if !messageRequired {
+		parsed, err := decodeLanguageKeyedJSON[threadCreateNameResponseItem](raw, targetLanguages)
+		if err != nil {
+			return nil, fmt.Errorf("parse thread create translation response: %w", err)
+		}
+		out := make(map[string]ThreadCreateTranslation, len(targetLanguages))
+		for _, targetLanguage := range targetLanguages {
+			name := strings.TrimSpace(html.UnescapeString(parsed[targetLanguage].Name))
+			if name == "" {
+				return nil, fmt.Errorf("parse thread create translation response: empty name for %q", targetLanguage)
+			}
+			out[targetLanguage] = ThreadCreateTranslation{
+				Name: protector.Restore(name),
+			}
+		}
+		return out, nil
+	}
+
 	parsed, err := decodeLanguageKeyedJSON[threadCreateTranslationResponseItem](raw, targetLanguages)
 	if err != nil {
 		return nil, fmt.Errorf("parse thread create translation response: %w", err)
@@ -543,12 +567,8 @@ func parseThreadCreateTranslationResponse(raw string, targetLanguages []string, 
 			return nil, fmt.Errorf("parse thread create translation response: empty name for %q", targetLanguage)
 		}
 		message := strings.TrimSpace(html.UnescapeString(item.Message))
-		if messageRequired {
-			if message == "" {
-				return nil, fmt.Errorf("parse thread create translation response: empty message for %q", targetLanguage)
-			}
-		} else {
-			message = ""
+		if message == "" {
+			return nil, fmt.Errorf("parse thread create translation response: empty message for %q", targetLanguage)
 		}
 		out[targetLanguage] = ThreadCreateTranslation{
 			Name:    protector.Restore(name),

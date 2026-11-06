@@ -155,9 +155,9 @@ func mustPollSchema(t *testing.T, langs []string) json.RawMessage {
 	return schema
 }
 
-func mustThreadCreateSchema(t *testing.T, langs []string) json.RawMessage {
+func mustThreadCreateSchema(t *testing.T, langs []string, messageRequired bool) json.RawMessage {
 	t.Helper()
-	schema, err := openaiThreadCreateTranslationSchema(langs)
+	schema, err := openaiThreadCreateTranslationSchema(langs, messageRequired)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,7 +506,8 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 		mustMessageSchema(t, langs),
 		mustAttachmentAltSchema(t, langs, 2),
 		mustPollSchema(t, langs),
-		mustThreadCreateSchema(t, langs),
+		mustThreadCreateSchema(t, langs, false),
+		mustThreadCreateSchema(t, langs, true),
 	}
 	for _, schema := range schemas {
 		assertStrictJSONSchema(t, schema, "root")
@@ -519,6 +520,17 @@ func TestTranslationJSONSchemasAreStrictStructuredOutputs(t *testing.T) {
 				t.Fatalf("language keys include an English name: %#v", gotLangs)
 			}
 		}
+	}
+}
+
+func TestThreadCreateTranslationSchemaMatchesMessagePresence(t *testing.T) {
+	nameOnly := schemaItemRequired(t, mustThreadCreateSchema(t, []string{"en"}, false))
+	if !nameOnly["name"] || nameOnly["message"] {
+		t.Fatalf("name-only required = %#v", nameOnly)
+	}
+	withMessage := schemaItemRequired(t, mustThreadCreateSchema(t, []string{"en"}, true))
+	if !withMessage["name"] || !withMessage["message"] {
+		t.Fatalf("with-message required = %#v", withMessage)
 	}
 }
 
@@ -1345,7 +1357,7 @@ func TestOpenAITranslatorTranslateThreadCreateMulti(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
 			t.Fatal(err)
 		}
-		requireJSONSchemaResponseFormat(t, input, openaiThreadCreateTranslationSchemaName, mustThreadCreateSchema(t, []string{"en"}))
+		requireJSONSchemaResponseFormat(t, input, openaiThreadCreateTranslationSchemaName, mustThreadCreateSchema(t, []string{"en"}, true))
 		if schemaHasJSONSchemaDump(openaiContentText(t, input.Messages[0].Content)) {
 			t.Fatalf("thread-create schema must not be copied into the system instruction: %s", input.Messages[0].Content)
 		}
@@ -1369,6 +1381,23 @@ func TestOpenAITranslatorTranslateThreadCreateMulti(t *testing.T) {
 	}
 	if result.InputTokens != 3 || result.OutputTokens != 4 {
 		t.Fatalf("tokens = %d/%d", result.InputTokens, result.OutputTokens)
+	}
+
+	nameOnlyClient := openaiRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var input openaiChatCompletionRequest
+		if err := json.NewDecoder(req.Body).Decode(&input); err != nil {
+			t.Fatal(err)
+		}
+		requireJSONSchemaResponseFormat(t, input, openaiThreadCreateTranslationSchemaName, mustThreadCreateSchema(t, []string{"en"}, false))
+		body := successfulOpenAIResponse(`{"en":{"name":"Topic"}}`, 2, 3)
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}, nil
+	})
+	nameOnlyResult, err := translateThreadCreateMulti(t, testTranslator(nameOnlyClient), []string{"en"}, "議題", "", TranslationContext{Author: "alice"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nameOnlyResult.Translations["en"] != (ThreadCreateTranslation{Name: "Topic"}) {
+		t.Fatalf("got %#v", nameOnlyResult.Translations["en"])
 	}
 }
 

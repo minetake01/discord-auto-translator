@@ -840,8 +840,8 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 		t.Fatalf("ja = %#v", got["ja"])
 	}
 
-	emptyMessage, err := parseThreadCreateTranslationResponse(
-		`{"en":{"name":"Topic","message":""}}`,
+	nameOnly, err := parseThreadCreateTranslationResponse(
+		`{"en":{"name":"Topic"}}`,
 		[]string{"en"},
 		false,
 		p,
@@ -849,21 +849,8 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if emptyMessage["en"] != (ThreadCreateTranslation{Name: "Topic", Message: ""}) {
-		t.Fatalf("empty message = %#v", emptyMessage["en"])
-	}
-
-	ignoredExtra, err := parseThreadCreateTranslationResponse(
-		`{"en":{"name":"Topic","message":"ignored"}}`,
-		[]string{"en"},
-		false,
-		p,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ignoredExtra["en"].Message != "" {
-		t.Fatalf("non-required message should be cleared: %#v", ignoredExtra["en"])
+	if nameOnly["en"] != (ThreadCreateTranslation{Name: "Topic", Message: ""}) {
+		t.Fatalf("name only = %#v", nameOnly["en"])
 	}
 
 	for _, tc := range []struct {
@@ -889,6 +876,12 @@ func TestParseThreadCreateTranslationResponse(t *testing.T) {
 			langs:            []string{"en"},
 			messageRequired:  true,
 			wantErrSubstring: "empty name",
+		},
+		{
+			raw:              `{"en":{"name":"Topic","message":"unexpected"}}`,
+			langs:            []string{"en"},
+			messageRequired:  false,
+			wantErrSubstring: "unknown field",
 		},
 	} {
 		if _, err := parseThreadCreateTranslationResponse(tc.raw, tc.langs, tc.messageRequired, p); err == nil {
